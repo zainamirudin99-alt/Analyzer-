@@ -15,9 +15,15 @@ export const SettingsTab: React.FC = () => {
   const [copiedSql, setCopiedSql] = useState(false);
 
   useEffect(() => {
-    // Load local settings
+    // Load local settings & migrasi otomatis model lama
     const storedKey = localStorage.getItem('custom_gemini_key') || '';
-    const storedModel = localStorage.getItem('custom_gemini_model') || 'gemini-3.6-flash';
+    let storedModel = localStorage.getItem('custom_gemini_model') || 'gemini-3.6-flash';
+    
+    if (storedModel === 'gemini-2.5-flash' || !FALLBACK_MODELS.includes(storedModel)) {
+      storedModel = 'gemini-3.6-flash';
+      localStorage.setItem('custom_gemini_model', storedModel);
+    }
+
     setApiKey(storedKey);
     setSelectedModel(storedModel);
     checkSystemStatus();
@@ -39,22 +45,25 @@ export const SettingsTab: React.FC = () => {
   };
 
   const handleSaveLocalSettings = () => {
+    const chosenModel = selectedModel === 'gemini-2.5-flash' ? 'gemini-3.6-flash' : selectedModel;
     localStorage.setItem('custom_gemini_key', apiKey.trim());
-    localStorage.setItem('custom_gemini_model', selectedModel);
+    localStorage.setItem('custom_gemini_model', chosenModel);
+    setSelectedModel(chosenModel);
     setTestResult({
       success: true,
-      message: 'Pengaturan API Key & Model berhasil disimpan di browser lokal.'
+      message: `Pengaturan API Key & Model (${chosenModel}) berhasil disimpan di browser lokal.`
     });
   };
 
   const handleTestConnection = async () => {
     setIsTestingKey(true);
     setTestResult(null);
+    const chosenModel = selectedModel === 'gemini-2.5-flash' ? 'gemini-3.6-flash' : selectedModel;
     try {
       const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey: apiKey.trim(), model: selectedModel })
+        body: JSON.stringify({ apiKey: apiKey.trim(), model: chosenModel })
       });
       const json = await res.json();
       setTestResult({
@@ -103,12 +112,13 @@ CREATE TABLE IF NOT EXISTS public.ced_results (
         ec1 + ec2 + ec3 + rc1 + rc2 + rc3 + rc4 + acc1 + acc2
     ) STORED,
     disclosure_level VARCHAR(50) DEFAULT 'Rendah',
-    model_used VARCHAR(100) DEFAULT 'gemini-2.5-flash',
+    model_used VARCHAR(100) DEFAULT 'gemini-3.6-flash',
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
 ALTER TABLE public.ced_results ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public All Access" ON public.ced_results;
 CREATE POLICY "Public All Access" ON public.ced_results FOR ALL USING (true);`;
 
     navigator.clipboard.writeText(sqlText);
@@ -146,7 +156,7 @@ CREATE POLICY "Public All Access" ON public.ced_results FOR ALL USING (true);`;
             <input
               type="password"
               className="form-input font-mono"
-              placeholder="AIzaSy... (atau atur via GEMINI_API_KEY di .env / Vercel)"
+              placeholder="AQ.... atau AIzaSy... (dari Google AI Studio)"
               value={apiKey}
               onChange={e => setApiKey(e.target.value)}
             />
@@ -161,7 +171,7 @@ CREATE POLICY "Public All Access" ON public.ced_results FOR ALL USING (true);`;
             >
               {FALLBACK_MODELS.map(m => (
                 <option key={m} value={m}>
-                  {m} {m.includes('3.6-flash') ? '⭐ (Rekomendasi Utama Google)' : ''}
+                  {m} {m.includes('3.6-flash') ? '⭐ (Rekomendasi Resmi Google)' : ''}
                 </option>
               ))}
             </select>
@@ -259,7 +269,7 @@ CREATE TABLE IF NOT EXISTS public.ced_results (
         ec1 + ec2 + ec3 + rc1 + rc2 + rc3 + rc4 + acc1 + acc2
     ) STORED,
     disclosure_level VARCHAR(50) DEFAULT 'Rendah',
-    model_used VARCHAR(100) DEFAULT 'gemini-2.5-flash',
+    model_used VARCHAR(100) DEFAULT 'gemini-3.6-flash',
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );

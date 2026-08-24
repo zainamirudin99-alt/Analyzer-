@@ -188,7 +188,10 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
     throw new Error('GEMINI_API_KEY belum dikonfigurasi. Masukkan API Key di tab Pengaturan atau file .env.local.');
   }
 
-  const primaryModel = options.preferredModel || (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-3.6-flash';
+  let primaryModel = (options.preferredModel || (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-3.6-flash').trim();
+  if (primaryModel === 'gemini-2.5-flash' || !primaryModel) {
+    primaryModel = 'gemini-3.6-flash';
+  }
   const modelQueue = [primaryModel, ...FALLBACK_MODELS.filter(m => m !== primaryModel)];
   const prompt = buildCEDPrompt(options.companyCode, options.fiscalYear);
 

@@ -97,7 +97,11 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
 
     // Ambil custom API key atau model dari localStorage jika ada
     const storedKey = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_key') : null;
-    const storedModel = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') : null;
+    let storedModel = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') : null;
+    if (storedModel === 'gemini-2.5-flash') {
+      storedModel = 'gemini-3.6-flash';
+      localStorage.setItem('custom_gemini_model', 'gemini-3.6-flash');
+    }
     if (storedKey) formData.append('apiKey', storedKey);
     if (storedModel) formData.append('model', storedModel);
 

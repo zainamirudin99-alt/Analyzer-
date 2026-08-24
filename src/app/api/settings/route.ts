@@ -56,7 +56,10 @@ export async function POST(req: NextRequest) {
     const apiKey = body?.apiKey;
     const model = body?.model;
     const testKey = (apiKey || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '') || '').trim();
-    const testModel = model || (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-3.6-flash';
+    let testModel = (model || (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-3.6-flash').trim();
+    if (testModel === 'gemini-2.5-flash' || !testModel) {
+      testModel = 'gemini-3.6-flash';
+    }
 
     if (!testKey) {
       return NextResponse.json({
