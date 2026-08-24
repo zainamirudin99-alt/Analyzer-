@@ -1,5 +1,5 @@
 // ============================================================
-// PDF to Clean TXT Converter
+// PDF to Clean TXT Converter (Vercel Serverless Compatible)
 // ============================================================
 
 export interface PDFExtractionResult {
@@ -13,63 +13,30 @@ export interface PDFExtractionResult {
 
 /**
  * Mengekstrak teks dari Buffer PDF menjadi teks bersih (.txt)
- * Menggunakan pdfjs-dist untuk parsing per-halaman.
  */
-export async function extractTextFromPDF(pdfBuffer: Buffer | Uint8Array): Promise<PDFExtractionResult> {
+export async function extractTextFromPDF(pdfBuffer: Buffer): Promise<PDFExtractionResult> {
   try {
-    // Import pdfjs-dist dynamically (legacy build for Node serverless environment)
+    // Import pdf-parse dynamically
     // @ts-ignore
-    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.js');
+    const pdfParse = (await import('pdf-parse')).default || (await import('pdf-parse'));
 
-    const data = new Uint8Array(pdfBuffer);
-    const loadingTask = pdfjsLib.getDocument({
-      data,
-      useSystemFonts: true,
-      disableFontFace: true
-    });
+    const data = await pdfParse(pdfBuffer);
+    const rawText = data.text || '';
+    
+    // Rapikan baris baru dan spasi ganda
+    const cleanText = rawText
+      .replace(/\r\n/g, '\n')
+      .replace(/\n\s*\n/g, '\n\n')
+      .trim();
 
-    const doc = await loadingTask.promise;
-    const pageCount = doc.numPages;
-    const pageTexts: string[] = [];
-
-    for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
-      try {
-        const page = await doc.getPage(pageNum);
-        const textContent = await page.getTextContent();
-        
-        // Gabungkan string dengan pemisah spasi & baris baru yang rapi
-        let lastY: number | null = null;
-        let pageStr = '';
-
-        for (const item of textContent.items as any[]) {
-          if (!item.str) continue;
-          if (lastY !== null && Math.abs(item.transform[5] - lastY) > 5) {
-            pageStr += '\n';
-          } else if (pageStr.length > 0 && !pageStr.endsWith(' ') && !pageStr.endsWith('\n')) {
-            pageStr += ' ';
-          }
-          pageStr += item.str;
-          lastY = item.transform[5];
-        }
-
-        const trimmedPage = pageStr.trim();
-        if (trimmedPage) {
-          pageTexts.push(`[Halaman ${pageNum}]\n${trimmedPage}`);
-        }
-      } catch (pageErr) {
-        console.warn(`Gagal membaca halaman ${pageNum}:`, pageErr);
-      }
-    }
-
-    const fullText = pageTexts.join('\n\n');
-    const totalChars = fullText.length;
-    const isScannedOrEmpty = totalChars < 50; // Jika di bawah 50 karakter kemungkinan besar adalah scan foto/gambar
+    const totalChars = cleanText.length;
+    const isScannedOrEmpty = totalChars < 50;
 
     return {
       success: true,
-      pageCount,
+      pageCount: data.numpages || 1,
       totalCharacters: totalChars,
-      text: fullText,
+      text: cleanText,
       isScannedOrEmpty
     };
   } catch (err: any) {
