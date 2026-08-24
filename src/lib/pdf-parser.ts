@@ -14,7 +14,7 @@ export interface PDFExtractionResult {
 /**
  * Mengekstrak teks dari Buffer PDF menjadi teks bersih (.txt)
  */
-export async function extractTextFromPDF(pdfBuffer: Buffer): Promise<PDFExtractionResult> {
+export async function extractTextFromPDF(pdfBuffer: any): Promise<PDFExtractionResult> {
   try {
     // Import pdf-parse dynamically
     // @ts-ignore

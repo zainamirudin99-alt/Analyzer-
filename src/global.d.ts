@@ -17,6 +17,9 @@ declare namespace NodeJS {
 
 declare var process: NodeJS.Process;
 
+declare type Buffer = any;
+declare var Buffer: any;
+
 declare module 'next/server' {
   export class NextRequest extends Request {
     readonly nextUrl: URL;
@@ -48,7 +51,7 @@ declare module '@supabase/supabase-js' {
 
 declare module 'pdf-parse' {
   export default function pdf(
-    dataBuffer: Buffer | Uint8Array,
+    dataBuffer: any,
     options?: any
   ): Promise<{
     numpages: number;
@@ -65,14 +68,17 @@ declare module 'clsx' {
 }
 
 declare module 'lucide-react' {
-  import * as React from 'react';
-  export interface LucideProps extends React.SVGProps<SVGSVGElement> {
+  export interface LucideProps {
     size?: string | number;
     color?: string;
     strokeWidth?: string | number;
     className?: string;
+    style?: any;
+    onClick?: (e?: any) => void;
+    title?: string;
+    disabled?: boolean;
   }
-  export type LucideIcon = React.FC<LucideProps>;
+  export type LucideIcon = (props: LucideProps) => any;
 
   export const UploadCloud: LucideIcon;
   export const FileText: LucideIcon;
