@@ -62,7 +62,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
     }
 
     setSelectedFile(file);
-    setExtractedData(null); // Reset hasil ekstraksi sebelumnya
+    setExtractedData(null);
     setScoreResult(null);
     setAlertInfo({
       type: 'info',
@@ -114,16 +114,16 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
       }
 
       setExtractedData({
-        text: json.data.text,
-        pageCount: json.data.pageCount,
-        totalCharacters: json.data.totalCharacters,
-        isScanned: json.data.isScanned,
-        fileName: json.data.fileName
+        text: json.data.text || '',
+        pageCount: json.data.pageCount || 1,
+        totalCharacters: json.data.totalCharacters || 0,
+        isScanned: json.data.isScanned || false,
+        fileName: json.data.fileName || selectedFile.name
       });
 
       setAlertInfo({
         type: 'success',
-        message: `Ekstraksi TXT Sukses! Berhasil membaca ${json.data.pageCount} halaman (${json.data.totalCharacters.toLocaleString()} karakter). Anda dapat melihat preview teks atau langsung klik "✨ 2. Analisis dengan AI".`
+        message: `Ekstraksi TXT Sukses! Berhasil membaca ${json.data.pageCount} halaman (${(json.data.totalCharacters || 0).toLocaleString()} karakter). Anda dapat melihat preview teks atau langsung klik "✨ 2. Analisis dengan AI".`
       });
     } catch (err: any) {
       console.error(err);
@@ -142,15 +142,15 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
   const handleStartAnalysis = async () => {
     const code = companyCode.trim().toUpperCase();
     if (!code) {
-      setAlertInfo({ type: 'warn', message: 'Kode emiten / perusahaan wajib diisi (contoh: TINS, ANTM, AKRA).' });
+      setAlertInfo({ type: 'warn', message: 'Kode emiten / perusahaan wajib diisi (contoh: AKRA, TINS, ANTM).' });
       return;
     }
     if (!fiscalYear) {
       setAlertInfo({ type: 'warn', message: 'Tahun fiskal (FY) wajib dipilih.' });
       return;
     }
-    if (!extractedData?.text && !selectedFile) {
-      setAlertInfo({ type: 'warn', message: 'Silakan ubah PDF ke TXT terlebih dahulu.' });
+    if (!selectedFile && !extractedData?.text) {
+      setAlertInfo({ type: 'warn', message: 'Silakan pilih file PDF dan ubah ke TXT terlebih dahulu.' });
       return;
     }
 
@@ -206,7 +206,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
 
       setScoreResult(resultObj);
 
-      // Simpan selalu ke LocalStorage agar tidak pernah hilang
+      // Simpan ke LocalStorage
       if (typeof window !== 'undefined') {
         try {
           const newRecord: CEDResultRecord = {
@@ -234,7 +234,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
 
       setAlertInfo({
         type: 'success',
-        message: `Analisis untuk ${code} (${fiscalYear}) selesai! Total skor: ${data.total_score}/90. Klik "Salin 18 Nilai Skor Saja" untuk menempelkan nilai ke spreadsheet.`
+        message: `Analisis untuk ${code} (${fiscalYear}) selesai! Total skor: ${data.total_score}/90. Klik tombol hijau di kanan untuk menyalin 18 angka skor.`
       });
 
       onSuccessAnalysis();
@@ -413,7 +413,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
               <span>PDF Berhasil Diubah ke TXT! ✅</span>
             </div>
             <div style={{ fontSize: '12.5px', color: 'var(--moss)', marginBottom: '10px' }}>
-              Terbaca <strong>{extractedData.pageCount} Halaman</strong> ({extractedData.totalCharacters.toLocaleString()} Karakter Teks Bersih).
+              Terbaca <strong>{extractedData.pageCount} Halaman</strong> ({extractedData.totalCharacters.toLocaleString()} Karakter).
             </div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <button
