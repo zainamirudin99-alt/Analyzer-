@@ -57,15 +57,15 @@ DROP POLICY IF EXISTS "Public Access Heartbeat" ON public.ced_heartbeat;
 CREATE POLICY "Public Access Heartbeat" ON public.ced_heartbeat FOR ALL USING (true) WITH CHECK (true);`;
 
 export const SettingsTab: React.FC = () => {
-  const [apiKey, setApiKey] = useState('');
-  const [selectedModel, setSelectedModel] = useState('gemini-1.5-flash');
-  const [customModelInput, setCustomModelInput] = useState('');
-  const [isCustomMode, setIsCustomMode] = useState(false);
-  const [isTestingKey, setIsTestingKey] = useState(false);
+  const [apiKey, setApiKey] = useState<string>('');
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-1.5-flash');
+  const [customModelInput, setCustomModelInput] = useState<string>('');
+  const [isCustomMode, setIsCustomMode] = useState<boolean>(false);
+  const [isTestingKey, setIsTestingKey] = useState<boolean>(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const [sysStatus, setSysStatus] = useState<any>(null);
-  const [copiedSql, setCopiedSql] = useState(false);
+  const [copiedSql, setCopiedSql] = useState<boolean>(false);
 
   useEffect(() => {
     // Load local settings
@@ -76,7 +76,7 @@ export const SettingsTab: React.FC = () => {
     if (ALL_SUPPORTED_MODELS.includes(storedModel)) {
       setSelectedModel(storedModel);
       setIsCustomMode(false);
-    } else if (storedModel) {
+    } else if (storedModel && storedModel !== 'gemini-1.5-flash') {
       setSelectedModel('custom');
       setCustomModelInput(storedModel);
       setIsCustomMode(true);
