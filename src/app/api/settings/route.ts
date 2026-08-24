@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase';
-import { FALLBACK_MODELS } from '@/lib/gemini';
+import { FALLBACK_MODELS, buildGeminiEndpointAndHeaders } from '@/lib/gemini';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const { apiKey, model } = await req.json();
-    const testKey = apiKey || process.env.GEMINI_API_KEY;
+    const testKey = (apiKey || process.env.GEMINI_API_KEY || '').trim();
     const testModel = model || process.env.DEFAULT_GEMINI_MODEL || 'gemini-2.5-flash';
 
     if (!testKey) {
@@ -63,10 +63,11 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${testModel}:generateContent?key=${testKey}`;
+    const { endpoint, headers } = buildGeminiEndpointAndHeaders(testModel, testKey);
+
     const response = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         contents: [{ parts: [{ text: 'Halo Gemini, konfirmasi koneksi OK.' }] }],
         generationConfig: { maxOutputTokens: 10 }

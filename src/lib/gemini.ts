@@ -141,10 +141,31 @@ function normalizeScores(rawObj: Record<string, any>): CEDScores {
 }
 
 /**
+ * Helper: Bangun endpoint URL dan Headers yang mendukung format key AIza... maupun AQ...
+ */
+export function buildGeminiEndpointAndHeaders(model: string, apiKey: string) {
+  const isOAuthKey = apiKey.startsWith('AQ.') || apiKey.startsWith('ya29.');
+  const endpoint = isOAuthKey
+    ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
+    : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'x-goog-api-key': apiKey
+  };
+
+  if (isOAuthKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
+
+  return { endpoint, headers };
+}
+
+/**
  * Panggil Gemini AI Studio API dengan model queue fallback
  */
 export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise<GeminiAnalysisResult> {
-  const apiKey = options.apiKey || process.env.GEMINI_API_KEY;
+  const apiKey = (options.apiKey || process.env.GEMINI_API_KEY || '').trim();
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY belum dikonfigurasi. Masukkan API Key di tab Pengaturan atau file .env.local.');
   }
@@ -157,7 +178,7 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
 
   for (const model of modelQueue) {
     console.log(`[Gemini CED] Mencoba model: ${model}...`);
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const { endpoint, headers } = buildGeminiEndpointAndHeaders(model, apiKey);
 
     // Siapkan parts konten (Utamakan TXT jika ada, fallback ke PDF Base64 jika scanned)
     const parts: any[] = [];
@@ -190,7 +211,7 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(requestBody)
       });
 
