@@ -420,7 +420,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
               <span>PDF Berhasil Diubah ke TXT! ✅</span>
             </div>
             <div style={{ fontSize: '12.5px', color: 'var(--moss)', marginBottom: '10px' }}>
-              Terbaca <strong>{extractedData.pageCount} Halaman</strong> ({extractedData.totalCharacters.toLocaleString()} Karakter).
+              Terbaca <strong>{extractedData?.pageCount || 1} Halaman</strong> ({(extractedData?.totalCharacters || 0).toLocaleString()} Karakter).
             </div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <button
@@ -500,7 +500,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
                 ) : (
                   <>
                     <Sparkles size={18} />
-                    <span>2. Analisis dengan AI {extractedData.totalCharacters < 50 ? '(Multimodal Vision)' : ''}</span>
+                    <span>2. Analisis dengan AI {(extractedData?.totalCharacters ?? 0) < 50 ? '(Multimodal Vision)' : ''}</span>
                   </>
                 )}
               </button>
@@ -698,7 +698,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
                   📄 Preview Konten Teks Hasil Ekstraksi TXT
                 </h3>
                 <div style={{ fontSize: '12px', color: 'var(--stone)', marginTop: '3px' }}>
-                  {extractedData.fileName} · {extractedData.pageCount} Halaman · {extractedData.totalCharacters.toLocaleString()} Karakter
+                  {extractedData?.fileName} · {extractedData?.pageCount || 1} Halaman · {(extractedData?.totalCharacters || 0).toLocaleString()} Karakter
                 </div>
               </div>
               <button
@@ -711,27 +711,27 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
 
             {/* Modal Body: Text Area */}
             <div style={{ padding: '20px', flex: 1, overflowY: 'auto' }}>
-              {extractedData.totalCharacters < 50 && (
+              {(extractedData?.totalCharacters || 0) < 50 && (
                 <div style={{ padding: '16px 18px', background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '10px', color: '#92400e', marginBottom: '14px', fontSize: '13px', lineHeight: '1.6' }}>
                   <div style={{ fontWeight: 800, fontSize: '14px', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span>📷</span>
                     <span>Laporan Menggunakan Format Gambar / Vektor / InDesign</span>
                   </div>
                   <div>
-                    File PDF ini memiliki <strong>{extractedData.pageCount} halaman</strong> namun teksnya tersusun dalam layer gambar/vektor khusus (bukan plain text ASCII standar).
+                    File PDF ini memiliki <strong>{extractedData?.pageCount || 1} halaman</strong> namun teksnya tersusun dalam layer gambar/vektor khusus (bukan plain text ASCII standar).
                     <br />
-                    <strong>✨ Keunggulan Sistem:</strong> Saat Anda mengklik <strong>"2. Analisis dengan AI"</strong>, sistem otomatis mengaktifkan mode <strong>Google Gemini Multimodal Vision</strong> untuk memindai dan membaca seluruh {extractedData.pageCount} halaman secara visual dan menghitung ke-18 indikator secara akurat!
+                    <strong>✨ Keunggulan Sistem:</strong> Saat Anda mengklik <strong>"2. Analisis dengan AI"</strong>, sistem otomatis mengaktifkan mode <strong>Google Gemini Multimodal Vision</strong> untuk memindai dan membaca seluruh {extractedData?.pageCount || 1} halaman secara visual dan menghitung ke-18 indikator secara akurat!
                   </div>
                 </div>
               )}
 
               <textarea
                 readOnly
-                placeholder={extractedData.totalCharacters < 50 ? 'Konten PDF berbasis visual/vektor layer. Gemini AI akan menganalisis langsung via Multimodal PDF Vision...' : ''}
-                value={extractedData.text}
+                placeholder={(extractedData?.totalCharacters || 0) < 50 ? 'Konten PDF berbasis visual/vektor layer. Gemini AI akan menganalisis langsung via Multimodal PDF Vision...' : ''}
+                value={extractedData?.text || ''}
                 style={{
                   width: '100%',
-                  height: extractedData.totalCharacters < 50 ? '260px' : '420px',
+                  height: (extractedData?.totalCharacters || 0) < 50 ? '260px' : '420px',
                   fontFamily: "'DM Mono', monospace",
                   fontSize: '12px',
                   lineHeight: '1.6',
