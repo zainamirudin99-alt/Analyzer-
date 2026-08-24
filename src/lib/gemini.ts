@@ -11,8 +11,7 @@ export const PROVEN_GEMINI_MODELS = [
   'gemini-1.5-pro',
   'gemini-1.5-flash-8b',
   'gemini-2.0-flash-exp',
-  'gemini-2.5-flash',
-  'gemini-flash-latest'
+  'gemini-2.5-flash'
 ];
 
 export interface GeminiAnalysisOptions {
@@ -139,20 +138,28 @@ function normalizeScores(rawObj: Record<string, any>): CEDScores {
 }
 
 /**
- * Deteksi otomatis model yang aktif dan tersedia untuk API Key pengguna
+ * Deteksi otomatis model yang aktif dan tersedia untuk API Key pengguna di endpoint resmi v1beta
  */
 export async function getAvailableModelsFromApi(apiKey: string): Promise<string[]> {
   const cleanKey = apiKey.trim();
+  if (!cleanKey) return PROVEN_GEMINI_MODELS;
+
   const endpoints = [
-    `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(cleanKey)}`,
-    `https://generativelanguage.googleapis.com/v1/models?key=${encodeURIComponent(cleanKey)}`
+    {
+      url: `https://generativelanguage.googleapis.com/v1beta/models`,
+      headers: { 'x-goog-api-key': cleanKey }
+    },
+    {
+      url: `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(cleanKey)}`,
+      headers: {}
+    }
   ];
 
   for (const ep of endpoints) {
     try {
-      const res = await fetch(ep, {
+      const res = await fetch(ep.url, {
         method: 'GET',
-        headers: { 'x-goog-api-key': cleanKey }
+        headers: ep.headers
       });
 
       if (res.ok) {
@@ -163,20 +170,17 @@ export async function getAvailableModelsFromApi(apiKey: string): Promise<string[
               const methods: string[] = m.supportedGenerationMethods || [];
               return methods.includes('generateContent');
             })
-            .map((m: any) => {
-              const name: string = m.name || '';
-              return name.replace(/^models\//, '');
-            });
+            .map((m: any) => (m.name || '').replace(/^models\//, ''));
 
           if (validModels.length > 0) {
-            // Urutkan: model flash dan stabil ditaruh di depan
             const sorted = [
-              ...validModels.filter(m => m.includes('flash') && !m.includes('lite') && !m.includes('8b')),
-              ...validModels.filter(m => m.includes('pro')),
+              ...validModels.filter(m => m.includes('1.5-flash') && !m.includes('8b')),
+              ...validModels.filter(m => m.includes('2.0-flash')),
+              ...validModels.filter(m => m.includes('1.5-pro')),
               ...validModels.filter(m => !m.includes('flash') && !m.includes('pro')),
-              ...validModels.filter(m => m.includes('8b') || m.includes('lite'))
+              ...validModels.filter(m => m.includes('8b'))
             ];
-            console.log(`[Gemini API] Berhasil menemukan ${sorted.length} model aktif dari Google AI Studio:`, sorted);
+            console.log(`[Gemini API] Berhasil mendeteksi ${sorted.length} model aktif dari Google AI Studio:`, sorted);
             return Array.from(new Set(sorted));
           }
         }
@@ -190,44 +194,46 @@ export async function getAvailableModelsFromApi(apiKey: string): Promise<string[
 }
 
 /**
- * Panggil Gemini AI dengan dual endpoint (v1beta dan v1) serta dual auth
+ * Panggil Gemini AI Studio menggunakan endpoint resmi v1beta
  */
 export async function executeGeminiRequest(model: string, apiKey: string, requestBody: any): Promise<Response> {
   const cleanKey = apiKey.trim();
   const cleanModel = model.replace(/^models\//, '');
 
-  const urls = [
-    `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${encodeURIComponent(cleanKey)}`,
-    `https://generativelanguage.googleapis.com/v1/models/${cleanModel}:generateContent?key=${encodeURIComponent(cleanKey)}`
+  const attempts = [
+    {
+      url: `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent`,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': cleanKey
+      }
+    },
+    {
+      url: `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${encodeURIComponent(cleanKey)}`,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    }
   ];
 
   let lastResponse: Response | null = null;
 
-  for (const url of urls) {
+  for (const attempt of attempts) {
     try {
-      const res = await fetch(url, {
+      const res = await fetch(attempt.url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': cleanKey
-        },
+        headers: attempt.headers,
         body: JSON.stringify(requestBody)
       });
 
       if (res.ok) return res;
       lastResponse = res;
-
-      // Jika error 404 (model tidak ada di endpoint ini), coba endpoint berikutnya
-      if (res.status === 404) continue;
-      
-      // Jika 429 atau 400, kembalikan langsung untuk diproses fallback
-      return res;
     } catch (err: any) {
-      console.warn(`[Gemini Request Failed on ${url}]:`, err?.message);
+      console.warn(`[Gemini Request Failed on ${attempt.url}]:`, err?.message);
     }
   }
 
-  return lastResponse || new Response(JSON.stringify({ error: { message: 'Semua endpoint Google AI gagal dihubungi.' } }), { status: 500 });
+  return lastResponse || new Response(JSON.stringify({ error: { message: 'Gagal menghubungi server Google AI Studio (v1beta).' } }), { status: 500 });
 }
 
 /**
@@ -244,7 +250,7 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
   
   let primaryModel = (options.preferredModel || (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-1.5-flash').trim();
   if (!primaryModel || primaryModel.includes('3.6') || primaryModel.includes('3.5') || primaryModel.includes('2.5')) {
-    primaryModel = 'gemini-1.5-flash';
+    primaryModel = discoveredModels[0] || 'gemini-1.5-flash';
   }
 
   const modelQueue = Array.from(new Set([
