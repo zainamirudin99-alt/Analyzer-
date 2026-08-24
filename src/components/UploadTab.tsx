@@ -704,12 +704,27 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
 
             {/* Modal Body: Text Area */}
             <div style={{ padding: '20px', flex: 1, overflowY: 'auto' }}>
+              {extractedData.totalCharacters < 50 && (
+                <div style={{ padding: '16px 18px', background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '10px', color: '#92400e', marginBottom: '14px', fontSize: '13px', lineHeight: '1.6' }}>
+                  <div style={{ fontWeight: 800, fontSize: '14px', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>📷</span>
+                    <span>Laporan Menggunakan Format Gambar / Vektor / InDesign</span>
+                  </div>
+                  <div>
+                    File PDF ini memiliki <strong>{extractedData.pageCount} halaman</strong> namun teksnya tersusun dalam layer gambar/vektor khusus (bukan plain text ASCII standar).
+                    <br />
+                    <strong>✨ Keunggulan Sistem:</strong> Saat Anda mengklik <strong>"2. Analisis dengan AI"</strong>, sistem otomatis mengaktifkan mode <strong>Google Gemini Multimodal Vision</strong> untuk memindai dan membaca seluruh {extractedData.pageCount} halaman secara visual dan menghitung ke-18 indikator secara akurat!
+                  </div>
+                </div>
+              )}
+
               <textarea
                 readOnly
+                placeholder={extractedData.totalCharacters < 50 ? 'Konten PDF berbasis visual/vektor layer. Gemini AI akan menganalisis langsung via Multimodal PDF Vision...' : ''}
                 value={extractedData.text}
                 style={{
                   width: '100%',
-                  height: '420px',
+                  height: extractedData.totalCharacters < 50 ? '260px' : '420px',
                   fontFamily: "'DM Mono', monospace",
                   fontSize: '12px',
                   lineHeight: '1.6',

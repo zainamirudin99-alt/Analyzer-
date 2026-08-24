@@ -36,15 +36,18 @@ export async function POST(req: NextRequest) {
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
 
-      if (!textToAnalyze) {
+      if (!textToAnalyze || textToAnalyze.trim().length < 50) {
         console.log(`[Analyze] Mengekstrak teks dari PDF: ${fileName}...`);
         const extraction = await extractTextFromPdf(buffer);
         textToAnalyze = extraction.text;
         pageCount = extraction.pageCount;
         totalCharacters = extraction.totalCharacters;
-        if (extraction.isScannedOrEmpty) {
-          base64Fallback = buffer.toString('base64');
-        }
+      }
+
+      // Jika teks kosong atau berbasis gambar/vektor, siapkan PDF base64 untuk Gemini Vision
+      if (!textToAnalyze || textToAnalyze.trim().length < 50) {
+        console.log(`[Analyze] Teks PDF kosong/sedikit (${totalCharacters} chars), mengaktifkan mode Multimodal PDF untuk Gemini AI...`);
+        base64Fallback = buffer.toString('base64');
       }
     } else if (textToAnalyze) {
       totalCharacters = textToAnalyze.length;
@@ -57,7 +60,7 @@ export async function POST(req: NextRequest) {
     const aiResult = await analyzeWithGemini({
       companyCode,
       fiscalYear,
-      pdfText: textToAnalyze,
+      pdfText: textToAnalyze.length >= 50 ? textToAnalyze : undefined,
       pdfBase64: base64Fallback,
       apiKey: customApiKey || undefined,
       preferredModel: customModel || undefined
