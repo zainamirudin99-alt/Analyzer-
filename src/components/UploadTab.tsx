@@ -121,10 +121,17 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
         fileName: json.data.fileName || selectedFile.name
       });
 
-      setAlertInfo({
-        type: 'success',
-        message: `Ekstraksi TXT Sukses! Berhasil membaca ${json.data.pageCount} halaman (${(json.data.totalCharacters || 0).toLocaleString()} karakter). Anda dapat melihat preview teks atau langsung klik "✨ 2. Analisis dengan AI".`
-      });
+      if ((json.data.totalCharacters || 0) < 50) {
+        setAlertInfo({
+          type: 'info',
+          message: `📄 PDF ini berisi ${json.data.pageCount} Halaman dengan format visual/vektor layer (InDesign). Mode Google Gemini Multimodal Vision aktif dan siap membaca seluruh halaman secara visual. Silakan klik tombol "✨ 2. Analisis dengan AI" di bawah!`
+        });
+      } else {
+        setAlertInfo({
+          type: 'success',
+          message: `Ekstraksi TXT Sukses! Berhasil membaca ${json.data.pageCount} halaman (${(json.data.totalCharacters || 0).toLocaleString()} karakter). Anda dapat melihat preview teks atau langsung klik "✨ 2. Analisis dengan AI".`
+        });
+      }
     } catch (err: any) {
       console.error(err);
       setAlertInfo({
@@ -493,7 +500,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
                 ) : (
                   <>
                     <Sparkles size={18} />
-                    <span>2. Analisis dengan AI</span>
+                    <span>2. Analisis dengan AI {extractedData.totalCharacters < 50 ? '(Multimodal Vision)' : ''}</span>
                   </>
                 )}
               </button>
