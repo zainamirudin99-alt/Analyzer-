@@ -3,21 +3,20 @@
 // ============================================================
 
 declare namespace NodeJS {
+  interface ProcessEnv {
+    [key: string]: string | undefined;
+    NEXT_PUBLIC_SUPABASE_URL?: string;
+    NEXT_PUBLIC_SUPABASE_ANON_KEY?: string;
+    SUPABASE_SERVICE_ROLE_KEY?: string;
+    GEMINI_API_KEY?: string;
+    DEFAULT_GEMINI_MODEL?: string;
+  }
   interface Process {
-    env: {
-      [key: string]: string | undefined;
-      NEXT_PUBLIC_SUPABASE_URL?: string;
-      NEXT_PUBLIC_SUPABASE_ANON_KEY?: string;
-      SUPABASE_SERVICE_ROLE_KEY?: string;
-      GEMINI_API_KEY?: string;
-      DEFAULT_GEMINI_MODEL?: string;
-    };
+    env: ProcessEnv;
   }
 }
 
-declare var process: NodeJS.Process;
-
-declare type Buffer = any;
+declare var process: any;
 declare var Buffer: any;
 
 declare module 'next/server' {
@@ -50,17 +49,8 @@ declare module '@supabase/supabase-js' {
 }
 
 declare module 'pdf-parse' {
-  export default function pdf(
-    dataBuffer: any,
-    options?: any
-  ): Promise<{
-    numpages: number;
-    numrender: number;
-    info: any;
-    metadata: any;
-    text: string;
-    version: string;
-  }>;
+  const pdfParse: (dataBuffer: any, options?: any) => Promise<any>;
+  export default pdfParse;
 }
 
 declare module 'clsx' {

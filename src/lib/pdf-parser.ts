@@ -17,8 +17,8 @@ export interface PDFExtractionResult {
 export async function extractTextFromPDF(pdfBuffer: any): Promise<PDFExtractionResult> {
   try {
     // Import pdf-parse dynamically
-    // @ts-ignore
-    const pdfParse = (await import('pdf-parse')).default || (await import('pdf-parse'));
+    const pdfModule = await import('pdf-parse');
+    const pdfParse = (pdfModule as any).default || pdfModule;
 
     const data = await pdfParse(pdfBuffer);
     const rawText = data.text || '';
