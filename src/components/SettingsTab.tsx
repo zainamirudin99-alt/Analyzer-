@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Database, Key, Cpu, CheckCircle2, AlertCircle, Copy, ExternalLink, RefreshCw } from 'lucide-react';
+import { Database, Key, Copy, ExternalLink, RefreshCw } from 'lucide-react';
 import { SUPPORTED_MODEL_CATEGORIES, ALL_SUPPORTED_MODELS } from '@/lib/gemini';
 
 export const SettingsTab: React.FC = () => {
@@ -13,13 +13,12 @@ export const SettingsTab: React.FC = () => {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const [sysStatus, setSysStatus] = useState<any>(null);
-  const [isCheckingSys, setIsCheckingSys] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
 
   useEffect(() => {
     // Load local settings
-    const storedKey = localStorage.getItem('custom_gemini_key') || '';
-    const storedModel = localStorage.getItem('custom_gemini_model') || 'gemini-1.5-flash';
+    const storedKey = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_key') || '' : '';
+    const storedModel = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') || 'gemini-1.5-flash' : 'gemini-1.5-flash';
     
     setApiKey(storedKey);
     if (ALL_SUPPORTED_MODELS.includes(storedModel)) {
@@ -38,7 +37,6 @@ export const SettingsTab: React.FC = () => {
   }, []);
 
   const checkSystemStatus = async () => {
-    setIsCheckingSys(true);
     try {
       const res = await fetch('/api/settings');
       const json = await res.json();
@@ -47,8 +45,6 @@ export const SettingsTab: React.FC = () => {
       }
     } catch (e) {
       console.error(e);
-    } finally {
-      setIsCheckingSys(false);
     }
   };
 
@@ -61,8 +57,10 @@ export const SettingsTab: React.FC = () => {
 
   const handleSaveLocalSettings = () => {
     const effectiveModel = getEffectiveModel();
-    localStorage.setItem('custom_gemini_key', apiKey.trim());
-    localStorage.setItem('custom_gemini_model', effectiveModel);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('custom_gemini_key', apiKey.trim());
+      localStorage.setItem('custom_gemini_model', effectiveModel);
+    }
     setTestResult({
       success: true,
       message: `Pengaturan API Key & Model (${effectiveModel}) berhasil disimpan di browser lokal.`
@@ -148,9 +146,11 @@ ALTER TABLE public.ced_heartbeat ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public Access Heartbeat" ON public.ced_heartbeat;
 CREATE POLICY "Public Access Heartbeat" ON public.ced_heartbeat FOR ALL USING (true) WITH CHECK (true);`;
 
-    navigator.clipboard.writeText(sqlText);
-    setCopiedSql(true);
-    setTimeout(() => setCopiedSql(false), 3000);
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(sqlText);
+      setCopiedSql(true);
+      setTimeout(() => setCopiedSql(false), 3000);
+    }
   };
 
   return (
