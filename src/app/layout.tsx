@@ -1,12 +1,16 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1.0,
+};
 
 export const metadata: Metadata = {
   title: 'Analyzer – Carbon Emission Disclosure (CED)',
   description: 'Aplikasi Analisis Otomatis 18 Indikator Carbon Emission Disclosure pada Laporan Tahunan Perusahaan Menggunakan Google Gemini AI & Supabase.',
   keywords: ['Carbon Emission Disclosure', 'CED Analyzer', 'ESG', 'Gemini AI', 'Supabase', 'Sustainability Report'],
-  authors: [{ name: 'Analyzer AI Team' }],
-  viewport: 'width=device-width, initial-scale=1.0'
+  authors: [{ name: 'Analyzer AI Team' }]
 };
 
 export default function RootLayout({
