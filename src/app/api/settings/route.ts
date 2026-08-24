@@ -5,12 +5,12 @@ import { FALLBACK_MODELS, buildGeminiEndpointAndHeaders } from '@/lib/gemini';
 export const dynamic = 'force-dynamic';
 
 // GET: Cek status koneksi Supabase & Gemini
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   try {
-    const defaultModel = process.env.DEFAULT_GEMINI_MODEL || 'gemini-2.5-flash';
-    const hasServerGeminiKey = Boolean(process.env.GEMINI_API_KEY);
+    const defaultModel = (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-2.5-flash';
+    const hasServerGeminiKey = Boolean(typeof process !== 'undefined' && process.env.GEMINI_API_KEY);
 
-    let supabaseStatus = {
+    const supabaseStatus = {
       configured: isSupabaseConfigured,
       connected: false,
       message: isSupabaseConfigured ? 'Terkoneksi' : 'Belum dikonfigurasi di .env.local / Vercel'
@@ -52,9 +52,11 @@ export async function GET(req: NextRequest) {
 // POST: Uji coba Gemini API Key dari client
 export async function POST(req: NextRequest) {
   try {
-    const { apiKey, model } = await req.json();
-    const testKey = (apiKey || process.env.GEMINI_API_KEY || '').trim();
-    const testModel = model || process.env.DEFAULT_GEMINI_MODEL || 'gemini-2.5-flash';
+    const body = await req.json();
+    const apiKey = body?.apiKey;
+    const model = body?.model;
+    const testKey = (apiKey || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '') || '').trim();
+    const testModel = model || (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-2.5-flash';
 
     if (!testKey) {
       return NextResponse.json({

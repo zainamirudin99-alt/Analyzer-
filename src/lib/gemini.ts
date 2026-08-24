@@ -2,7 +2,7 @@
 // Google Gemini AI Integration for CED Analyzer
 // ============================================================
 
-import { CEDScores, INDICATOR_KEYS, INDICATOR_KEYS_UPPER } from './types';
+import { CEDScores, INDICATOR_KEYS } from './types';
 
 export const FALLBACK_MODELS = [
   'gemini-2.5-flash',
@@ -108,7 +108,7 @@ function extractAndParseJSON(rawText: string): Record<string, number> {
   // Regex parser jika JSON format tidak valid
   const fallbackScores: Record<string, number> = {};
   const regex = /"?(CC[12]|GHG[1-7]|EC[123]|RC[1-4]|ACC[12])"?\s*:\s*([0-5])/gi;
-  let match;
+  let match: RegExpExecArray | null;
   while ((match = regex.exec(rawText)) !== null) {
     const key = match[1].toUpperCase();
     const val = parseInt(match[2], 10);
@@ -130,7 +130,7 @@ function normalizeScores(rawObj: Record<string, any>): CEDScores {
     acc1: 0, acc2: 0
   };
 
-  INDICATOR_KEYS.forEach(k => {
+  INDICATOR_KEYS.forEach((k) => {
     const upper = k.toUpperCase();
     const val = rawObj[upper] ?? rawObj[k] ?? 0;
     const num = parseInt(String(val), 10);
@@ -165,12 +165,12 @@ export function buildGeminiEndpointAndHeaders(model: string, apiKey: string) {
  * Panggil Gemini AI Studio API dengan model queue fallback
  */
 export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise<GeminiAnalysisResult> {
-  const apiKey = (options.apiKey || process.env.GEMINI_API_KEY || '').trim();
+  const apiKey = (options.apiKey || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '') || '').trim();
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY belum dikonfigurasi. Masukkan API Key di tab Pengaturan atau file .env.local.');
   }
 
-  const primaryModel = options.preferredModel || process.env.DEFAULT_GEMINI_MODEL || 'gemini-2.5-flash';
+  const primaryModel = options.preferredModel || (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-2.5-flash';
   const modelQueue = [primaryModel, ...FALLBACK_MODELS.filter(m => m !== primaryModel)];
   const prompt = buildCEDPrompt(options.companyCode, options.fiscalYear);
 
@@ -250,7 +250,7 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
       lastError = `HTTP ${response.status} (${model}): ${errorText.substring(0, 200)}`;
       console.warn(`[Gemini CED] Error: ${lastError}`);
     } catch (err: any) {
-      lastError = `Fetch gagal untuk model ${model}: ${err.message}`;
+      lastError = `Fetch gagal untuk model ${model}: ${err?.message || String(err)}`;
       console.warn(`[Gemini CED] Exception: ${lastError}`);
     }
   }
