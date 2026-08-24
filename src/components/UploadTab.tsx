@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { UploadCloud, FileText, CheckCircle2, AlertTriangle, Sparkles, RefreshCw, ArrowRight } from 'lucide-react';
-import { CEDScores, INDICATOR_KEYS_UPPER, INDICATOR_KEYS } from '@/lib/types';
+import { UploadCloud, FileText, CheckCircle2, AlertTriangle, Sparkles, RefreshCw, ArrowRight, Copy, Check } from 'lucide-react';
+import { CEDScores, INDICATOR_KEYS, CEDResultRecord } from '@/lib/types';
 
 interface UploadTabProps {
   onSuccessAnalysis: () => void;
@@ -20,6 +20,8 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState('');
   const [alertInfo, setAlertInfo] = useState<{ type: 'success' | 'error' | 'warn' | 'info'; message: string } | null>(null);
+
+  const [copiedType, setCopiedType] = useState<'row' | 'scores' | null>(null);
 
   const [scoreResult, setScoreResult] = useState<{
     code: string;
@@ -95,7 +97,6 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
     formData.append('fiscalYear', fiscalYear);
     formData.append('notes', notes);
 
-    // Ambil custom API key atau model dari localStorage jika ada
     const storedKey = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_key') : null;
     let storedModel = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') : null;
     if (storedModel === 'gemini-2.5-flash') {
@@ -124,7 +125,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
       setProgressLabel('Analisis berhasil diselesaikan! 🌿');
 
       const data = json.data;
-      setScoreResult({
+      const resultObj = {
         code: data.company_code,
         year: data.fiscal_year,
         scores: data.scores,
@@ -133,11 +134,40 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
         modelUsed: data.model_used,
         extraction: data.extraction_summary,
         savedInDb: data.saved_in_supabase
-      });
+      };
+
+      setScoreResult(resultObj);
+
+      // Simpan selalu ke LocalStorage agar tidak pernah hilang
+      if (typeof window !== 'undefined') {
+        try {
+          const newRecord: CEDResultRecord = {
+            id: data.id || `local_${Date.now()}`,
+            company_code: data.company_code,
+            fiscal_year: data.fiscal_year,
+            file_name: data.file_name,
+            notes: data.notes,
+            status: 'completed',
+            ...data.scores,
+            total_score: data.total_score,
+            disclosure_level: data.disclosure_level,
+            model_used: data.model_used,
+            created_at: data.created_at || new Date().toISOString()
+          };
+
+          const rawExisting = localStorage.getItem('analyzer_records');
+          const existingList: CEDResultRecord[] = rawExisting ? JSON.parse(rawExisting) : [];
+          // Hapus jika sudah ada kode + tahun yang sama, lalu tambahkan yang paling baru di awal
+          const updatedList = [newRecord, ...existingList.filter(r => !(r.company_code === newRecord.company_code && r.fiscal_year === newRecord.fiscal_year))];
+          localStorage.setItem('analyzer_records', JSON.stringify(updatedList));
+        } catch (storageErr) {
+          console.warn('Gagal menyimpan cache lokal:', storageErr);
+        }
+      }
 
       setAlertInfo({
         type: 'success',
-        message: `Analisis untuk ${code} (${fiscalYear}) selesai! Total skor: ${data.total_score}/90 (${data.disclosure_level}). ${data.saved_in_supabase ? 'Tersimpan otomatis di Supabase.' : 'Mode lokal aktif.'}`
+        message: `Analisis untuk ${code} (${fiscalYear}) selesai! Total skor: ${data.total_score}/90 (${data.disclosure_level}). Data tersimpan dan siap disalin!`
       });
 
       onSuccessAnalysis();
@@ -164,6 +194,31 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
     setProgress(0);
     setProgressLabel('');
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Salin 1 baris lengkap (Code \t Year \t CC1 \t ... \t ACC2 \t TOTAL)
+  const copyRowForSpreadsheet = () => {
+    if (!scoreResult) return;
+    const scoresArray = INDICATOR_KEYS.map(k => scoreResult.scores[k] ?? 0);
+    const rowTsv = [
+      scoreResult.code,
+      scoreResult.year,
+      ...scoresArray,
+      scoreResult.totalScore
+    ].join('\t');
+
+    navigator.clipboard.writeText(rowTsv);
+    setCopiedType('row');
+    setTimeout(() => setCopiedType(null), 3000);
+  };
+
+  // Salin 18 Nilai Skor saja (CC1 \t CC2 \t ... \t ACC2)
+  const copyScoresOnly = () => {
+    if (!scoreResult) return;
+    const scoresTsv = INDICATOR_KEYS.map(k => scoreResult.scores[k] ?? 0).join('\t');
+    navigator.clipboard.writeText(scoresTsv);
+    setCopiedType('scores');
+    setTimeout(() => setCopiedType(null), 3000);
   };
 
   return (
@@ -323,15 +378,37 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
             </div>
           </div>
 
-          {/* Info Ekstraksi TXT */}
-          {scoreResult.extraction && (
-            <div style={{ padding: '10px 14px', background: 'var(--dew)', borderRadius: '10px', fontSize: '12.5px', color: 'var(--moss)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <CheckCircle2 size={16} color="#2e6922" />
-              <span>
-                <strong>Pipeline PDF ➔ TXT Sukses:</strong> Berhasil mengekstrak {scoreResult.extraction.page_count} halaman ({scoreResult.extraction.total_characters.toLocaleString()} karakter) teks bersih untuk analisis AI.
-              </span>
+          {/* Quick Copy Buttons Bar */}
+          <div style={{ background: '#f0f7ea', border: '1.5px solid var(--border)', borderRadius: '12px', padding: '14px', marginBottom: '18px' }}>
+            <div style={{ fontSize: '12.5px', fontWeight: 800, color: 'var(--moss)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>📋</span>
+              <span>Salin Cepat ke Google Sheets / Excel:</span>
             </div>
-          )}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={copyRowForSpreadsheet}
+                style={{ flex: 1, minWidth: '180px' }}
+              >
+                {copiedType === 'row' ? <Check size={15} /> : <Copy size={15} />}
+                <span>{copiedType === 'row' ? 'Baris Lengkap Tersalin! ✅' : 'Salin Baris (Code, FY, 18 Skor, Total)'}</span>
+              </button>
+
+              <button
+                className="btn btn-accent btn-sm"
+                onClick={copyScoresOnly}
+                style={{ flex: 1, minWidth: '150px' }}
+              >
+                {copiedType === 'scores' ? <Check size={15} /> : <Copy size={15} />}
+                <span>{copiedType === 'scores' ? '18 Nilai Tersalin! ✅' : 'Salin 18 Skor Saja'}</span>
+              </button>
+            </div>
+            {copiedType && (
+              <div style={{ fontSize: '11.5px', color: 'var(--fern)', marginTop: '6px', fontWeight: 600 }}>
+                💡 Tips: Tekan <strong>Ctrl + V</strong> pada cell spreadsheet Anda, data akan otomatis terpisah ke kolom masing-masing!
+              </div>
+            )}
+          </div>
 
           <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--stone)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
             Rincian 18 Indikator (Skala 0 – 5):

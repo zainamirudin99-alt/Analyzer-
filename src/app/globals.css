@@ -566,31 +566,30 @@ table.result-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  min-width: 980px;
+  min-width: 1000px;
 }
 
 .result-table th {
   background: var(--moss);
   color: #ffffff;
-  padding: 12px 10px;
+  padding: 12px 8px;
   text-align: center;
   font-weight: 700;
   white-space: nowrap;
   font-size: 12px;
   letter-spacing: 0.4px;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-.result-table th.sticky-col {
+.result-table th:first-child {
   background: var(--bark);
-  position: sticky;
-  left: 0;
-  z-index: 2;
 }
 
 .result-table td {
-  padding: 9px 8px;
+  padding: 9px 7px;
   text-align: center;
   border-bottom: 1px solid var(--border-light);
+  border-right: 1px solid var(--border-light);
   transition: var(--transition);
 }
 
@@ -603,6 +602,7 @@ table.result-table {
   color: var(--fern);
   text-align: left !important;
   font-family: 'DM Mono', monospace;
+  padding-left: 12px !important;
 }
 
 .td-year {

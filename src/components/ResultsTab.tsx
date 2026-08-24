@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Download, Search, Trash2, FileSpreadsheet, Printer } from 'lucide-react';
+import { RefreshCw, Download, Search, Trash2, Printer, Copy, Check, Table } from 'lucide-react';
 import { CEDResultRecord, INDICATOR_KEYS } from '@/lib/types';
 
 interface ResultsTabProps {
@@ -14,23 +14,68 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
   const [filterCode, setFilterCode] = useState('');
   const [filterYear, setFilterYear] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedAll, setCopiedAll] = useState(false);
 
   const fetchResults = async () => {
     setIsLoading(true);
     setMessage(null);
+
+    let supabaseData: CEDResultRecord[] = [];
+    let localData: CEDResultRecord[] = [];
+
+    // 1. Ambil data dari LocalStorage
+    if (typeof window !== 'undefined') {
+      try {
+        const rawLocal = localStorage.getItem('analyzer_records');
+        if (rawLocal) {
+          localData = JSON.parse(rawLocal);
+        }
+      } catch (err) {
+        console.warn('Error reading local cache:', err);
+      }
+    }
+
+    // 2. Ambil data dari Backend / Supabase
     try {
       const res = await fetch('/api/results');
       const json = await res.json();
-      if (json.success) {
-        setResults(json.data || []);
-      } else {
-        setMessage({ type: 'error', text: json.error || 'Gagal mengambil data dari database.' });
+      if (json.success && Array.isArray(json.data)) {
+        supabaseData = json.data;
       }
     } catch (err: any) {
-      setMessage({ type: 'error', text: err?.message || 'Gagal menghubungkan ke server.' });
-    } finally {
-      setIsLoading(false);
+      console.warn('Backend fetch notice:', err);
     }
+
+    // 3. Gabungkan data (prioritaskan Supabase jika ada ID, hilangkan duplikasi kode + tahun)
+    const combinedMap = new Map<string, CEDResultRecord>();
+
+    // Masukkan data lokal terlebih dahulu
+    localData.forEach(item => {
+      const key = `${item.company_code}_${item.fiscal_year}`;
+      combinedMap.set(key, item);
+    });
+
+    // Timpa atau tambahkan dari Supabase
+    supabaseData.forEach(item => {
+      const key = `${item.company_code}_${item.fiscal_year}`;
+      combinedMap.set(key, item);
+    });
+
+    const mergedList = Array.from(combinedMap.values()).sort((a, b) => {
+      const dateA = new Date(a.created_at || 0).getTime();
+      const dateB = new Date(b.created_at || 0).getTime();
+      return dateB - dateA;
+    });
+
+    setResults(mergedList);
+
+    // Update kembali cache lokal agar tetap sinkron
+    if (typeof window !== 'undefined' && mergedList.length > 0) {
+      localStorage.setItem('analyzer_records', JSON.stringify(mergedList));
+    }
+
+    setIsLoading(false);
   };
 
   useEffect(() => {
@@ -42,23 +87,66 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
       return;
     }
 
+    // Hapus dari state dan LocalStorage
+    const updatedLocal = results.filter(
+      r => !(r.company_code === record.company_code && r.fiscal_year === record.fiscal_year)
+    );
+    setResults(updatedLocal);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('analyzer_records', JSON.stringify(updatedLocal));
+    }
+
+    // Hapus dari Supabase jika ada ID / backend aktif
     try {
       const url = record.id
         ? `/api/results?id=${record.id}`
         : `/api/results?code=${record.company_code}&year=${record.fiscal_year}`;
 
-      const res = await fetch(url, { method: 'DELETE' });
-      const json = await res.json();
-
-      if (json.success) {
-        setMessage({ type: 'success', text: `Data ${record.company_code} (${record.fiscal_year}) berhasil dihapus.` });
-        fetchResults();
-      } else {
-        setMessage({ type: 'error', text: json.error || 'Gagal menghapus data.' });
-      }
-    } catch (err: any) {
-      setMessage({ type: 'error', text: err?.message || 'Gagal menghapus data.' });
+      await fetch(url, { method: 'DELETE' });
+    } catch (err) {
+      console.warn('Backend delete sync:', err);
     }
+
+    setMessage({ type: 'success', text: `Data ${record.company_code} (${record.fiscal_year}) berhasil dihapus.` });
+  };
+
+  // Salin 1 baris untuk Spreadsheet
+  const handleCopyRow = (row: CEDResultRecord, idKey: string) => {
+    const scores = INDICATOR_KEYS.map(k => (row as any)[k] ?? 0);
+    const rowTsv = [
+      row.company_code,
+      row.fiscal_year,
+      ...scores,
+      row.total_score ?? 0
+    ].join('\t');
+
+    navigator.clipboard.writeText(rowTsv);
+    setCopiedId(`row_${idKey}`);
+    setTimeout(() => setCopiedId(null), 2500);
+  };
+
+  // Salin 18 Skor saja
+  const handleCopyScoresOnly = (row: CEDResultRecord, idKey: string) => {
+    const scoresTsv = INDICATOR_KEYS.map(k => (row as any)[k] ?? 0).join('\t');
+    navigator.clipboard.writeText(scoresTsv);
+    setCopiedId(`scores_${idKey}`);
+    setTimeout(() => setCopiedId(null), 2500);
+  };
+
+  // Salin Seluruh Tabel ke TSV (Format Paste Spreadsheet)
+  const handleCopyAllTable = () => {
+    if (filteredResults.length === 0) return;
+
+    const headers = ['Code', 'Years', ...INDICATOR_KEYS.map(k => k.toUpperCase()), 'TOTAL'];
+    const rows = filteredResults.map(r => {
+      const scores = INDICATOR_KEYS.map(k => (r as any)[k] ?? 0);
+      return [r.company_code, r.fiscal_year, ...scores, r.total_score ?? 0].join('\t');
+    });
+
+    const fullTsv = [headers.join('\t'), ...rows].join('\n');
+    navigator.clipboard.writeText(fullTsv);
+    setCopiedAll(true);
+    setTimeout(() => setCopiedAll(false), 3000);
   };
 
   const handleExportCSV = () => {
@@ -151,22 +239,22 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
             <span>Database Hasil CED Scoring ({filteredResults.length} Entri)</span>
           </div>
 
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
             <div style={{ position: 'relative' }}>
               <input
                 type="text"
                 className="form-input font-mono"
                 placeholder="Cari emiten..."
-                style={{ width: '150px', paddingLeft: '32px' }}
+                style={{ width: '140px', paddingLeft: '32px' }}
                 value={filterCode}
                 onChange={e => setFilterCode(e.target.value)}
               />
-              <Search size={15} color="#687962" style={{ position: 'absolute', left: '10px', top: '13px' }} />
+              <Search size={14} color="#687962" style={{ position: 'absolute', left: '10px', top: '13px' }} />
             </div>
 
             <select
               className="form-select font-mono"
-              style={{ width: '130px' }}
+              style={{ width: '120px' }}
               value={filterYear}
               onChange={e => setFilterYear(e.target.value)}
             >
@@ -181,17 +269,22 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
             </select>
 
             <button className="btn btn-outline btn-sm" onClick={fetchResults} disabled={isLoading}>
-              <RefreshCw size={14} className={isLoading ? 'spinner' : ''} />
+              <RefreshCw size={13} className={isLoading ? 'spinner' : ''} />
               <span>Refresh</span>
             </button>
 
+            <button className="btn btn-primary btn-sm" onClick={handleCopyAllTable} title="Salin seluruh baris tabel untuk di-paste langsung ke Google Sheets">
+              {copiedAll ? <Check size={14} /> : <Copy size={14} />}
+              <span>{copiedAll ? 'Tabel Tersalin! ✅' : 'Salin Semua (Spreadsheet)'}</span>
+            </button>
+
             <button className="btn btn-accent btn-sm" onClick={handleExportCSV}>
-              <Download size={14} />
-              <span>Ekspor CSV</span>
+              <Download size={13} />
+              <span>CSV</span>
             </button>
 
             <button className="btn btn-outline btn-sm" onClick={() => window.print()}>
-              <Printer size={14} />
+              <Printer size={13} />
               <span>Cetak</span>
             </button>
           </div>
@@ -209,16 +302,16 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
           <table className="result-table">
             <thead>
               <tr>
-                <th className="sticky-col">Code</th>
-                <th className="sticky-col" style={{ left: '80px' }}>FY</th>
+                <th style={{ textAlign: 'left', minWidth: '90px' }}>Code</th>
+                <th style={{ minWidth: '90px' }}>Years</th>
                 <th>CC1</th><th>CC2</th>
                 <th>GHG1</th><th>GHG2</th><th>GHG3</th><th>GHG4</th><th>GHG5</th><th>GHG6</th><th>GHG7</th>
                 <th>EC1</th><th>EC2</th><th>EC3</th>
                 <th>RC1</th><th>RC2</th><th>RC3</th><th>RC4</th>
                 <th>ACC1</th><th>ACC2</th>
-                <th>TOTAL</th>
-                <th>Level</th>
-                <th>Aksi</th>
+                <th style={{ minWidth: '70px' }}>TOTAL</th>
+                <th style={{ minWidth: '100px' }}>Level</th>
+                <th style={{ minWidth: '170px' }}>Salin & Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -227,47 +320,75 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
                   <td colSpan={24} style={{ padding: '36px', color: 'var(--text-muted)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                       <span className="spinner" style={{ borderColor: 'rgba(0,0,0,0.15)', borderTopColor: 'var(--primary)' }} />
-                      <span>Mengambil data dari Supabase...</span>
+                      <span>Memuat data hasil analisis...</span>
                     </div>
                   </td>
                 </tr>
               ) : filteredResults.length === 0 ? (
                 <tr>
                   <td colSpan={24} style={{ padding: '48px 20px', color: 'var(--stone)', fontStyle: 'italic' }}>
-                    🌿 Belum ada data analisis. Silakan upload laporan tahunan pada tab "Upload & Analisis".
+                    🌿 Belum ada data analisis. Silakan upload laporan tahunan pada tab <strong>"Upload & Analisis"</strong>.
                   </td>
                 </tr>
               ) : (
-                filteredResults.map((row, idx) => (
-                  <tr key={row.id || `${row.company_code}-${row.fiscal_year}-${idx}`}>
-                    <td className="td-code sticky-col">{row.company_code}</td>
-                    <td className="td-year sticky-col" style={{ left: '80px' }}>{row.fiscal_year}</td>
-                    
-                    {INDICATOR_KEYS.map(k => {
-                      const score = (row as any)[k] ?? 0;
-                      return (
-                        <td key={k}>
-                          <span className={`score-badge score-${score}`}>{score}</span>
-                        </td>
-                      );
-                    })}
+                filteredResults.map((row, idx) => {
+                  const rowKey = `${row.company_code}_${row.fiscal_year}_${idx}`;
+                  const isCopiedRow = copiedId === `row_${rowKey}`;
+                  const isCopiedScores = copiedId === `scores_${rowKey}`;
 
-                    <td className="td-total">{row.total_score ?? 0}</td>
-                    <td style={{ fontSize: '12px', fontWeight: 700, color: 'var(--moss)', whiteSpace: 'nowrap' }}>
-                      {row.disclosure_level?.split(' ')[0] || 'Rendah'}
-                    </td>
-                    <td>
-                      <button
-                        className="btn btn-danger btn-sm"
-                        style={{ padding: '4px 8px' }}
-                        title="Hapus data ini"
-                        onClick={() => handleDelete(row)}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                  return (
+                    <tr key={row.id || rowKey}>
+                      <td className="td-code">{row.company_code}</td>
+                      <td className="td-year">{row.fiscal_year}</td>
+                      
+                      {INDICATOR_KEYS.map(k => {
+                        const score = (row as any)[k] ?? 0;
+                        return (
+                          <td key={k}>
+                            <span className={`score-badge score-${score}`}>{score}</span>
+                          </td>
+                        );
+                      })}
+
+                      <td className="td-total">{row.total_score ?? 0}</td>
+                      <td style={{ fontSize: '12px', fontWeight: 700, color: 'var(--moss)', whiteSpace: 'nowrap' }}>
+                        {row.disclosure_level?.split(' ')[0] || 'Rendah'}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', alignItems: 'center' }}>
+                          <button
+                            className="btn btn-primary btn-sm"
+                            style={{ padding: '4px 8px', fontSize: '11px' }}
+                            title="Salin Baris Lengkap (Code, Year, 18 Skor, Total) untuk paste ke spreadsheet"
+                            onClick={() => handleCopyRow(row, rowKey)}
+                          >
+                            {isCopiedRow ? <Check size={12} /> : <Copy size={12} />}
+                            <span>{isCopiedRow ? 'Tersalin!' : 'Baris'}</span>
+                          </button>
+
+                          <button
+                            className="btn btn-accent btn-sm"
+                            style={{ padding: '4px 8px', fontSize: '11px' }}
+                            title="Salin 18 Nilai Skor saja (CC1 s/d ACC2) untuk paste ke spreadsheet"
+                            onClick={() => handleCopyScoresOnly(row, rowKey)}
+                          >
+                            {isCopiedScores ? <Check size={12} /> : <Table size={12} />}
+                            <span>{isCopiedScores ? 'Tersalin!' : '18 Skor'}</span>
+                          </button>
+
+                          <button
+                            className="btn btn-danger btn-sm"
+                            style={{ padding: '4px 8px' }}
+                            title="Hapus data ini"
+                            onClick={() => handleDelete(row)}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
