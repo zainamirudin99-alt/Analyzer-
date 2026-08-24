@@ -40,14 +40,17 @@ export async function extractTextFromPDF(pdfBuffer: Buffer): Promise<PDFExtracti
       isScannedOrEmpty
     };
   } catch (err: any) {
-    console.error('Error saat konversi PDF ke TXT:', err);
+    console.error('Error saat ekstraksi PDF:', err);
     return {
       success: false,
       pageCount: 0,
       totalCharacters: 0,
       text: '',
       isScannedOrEmpty: true,
-      error: err?.message || 'Gagal mengekstrak teks dari PDF'
+      error: err?.message || 'Gagal mengekstrak teks dari file PDF.'
     };
   }
 }
+
+// Alias untuk kompatibilitas penamaan
+export const extractTextFromPdf = extractTextFromPDF;
