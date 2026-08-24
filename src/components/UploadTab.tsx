@@ -87,6 +87,63 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
     }
   };
 
+  // Ekstraksi PDF langsung di browser (Bebas limit upload 4.5 MB)
+  const extractPdfInBrowser = async (
+    file: File,
+    onProgressUpdate?: (percent: number, label: string) => void
+  ): Promise<{ text: string; pageCount: number; totalCharacters: number; isScanned: boolean }> => {
+    if (typeof window === 'undefined') {
+      throw new Error('Ekstraksi browser hanya dapat berjalan di client.');
+    }
+
+    if (!(window as any).pdfjsLib) {
+      if (onProgressUpdate) onProgressUpdate(15, 'Menyiapkan modul pembaca PDF di browser...');
+      await new Promise<void>((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        script.onload = () => {
+          (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+          resolve();
+        };
+        script.onerror = () => reject(new Error('Gagal memuat engine PDF browser.'));
+        document.head.appendChild(script);
+      });
+    }
+
+    if (onProgressUpdate) onProgressUpdate(30, 'Membaca dokumen PDF lokal...');
+    const arrayBuffer = await file.arrayBuffer();
+    const loadingTask = (window as any).pdfjsLib.getDocument({ data: arrayBuffer });
+    const pdf = await loadingTask.promise;
+    const numPages = pdf.numPages;
+    let fullText = '';
+
+    for (let i = 1; i <= numPages; i++) {
+      try {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageStrings = textContent.items.map((item: any) => item.str).join(' ');
+        if (pageStrings && pageStrings.trim().length > 0) {
+          fullText += `--- HALAMAN ${i} ---\n${pageStrings.trim()}\n\n`;
+        }
+      } catch (pageErr) {
+        console.warn(`Gagal membaca halaman ${i}:`, pageErr);
+      }
+
+      if (onProgressUpdate) {
+        const pct = Math.min(95, 30 + Math.round((i / numPages) * 65));
+        onProgressUpdate(pct, `Membaca halaman ${i} dari ${numPages}...`);
+      }
+    }
+
+    const cleanText = fullText.trim();
+    return {
+      text: cleanText,
+      pageCount: numPages,
+      totalCharacters: cleanText.length,
+      isScanned: cleanText.length < 50
+    };
+  };
+
   // LANGKAH 1: Ekstraksi PDF ke TXT
   const handleExtractToTxt = async () => {
     if (!selectedFile) {
@@ -96,40 +153,60 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
 
     setIsExtracting(true);
     setAlertInfo(null);
-    setProgress(30);
-    setProgressLabel('Membaca & mengekstrak konten teks dari file PDF...');
-
-    const formData = new FormData();
-    formData.append('file', selectedFile);
+    setProgress(10);
+    setProgressLabel('Mengekstrak teks PDF langsung di browser...');
 
     try {
-      const res = await fetch('/api/extract', {
-        method: 'POST',
-        body: formData
-      });
+      // 1. Coba ekstraksi client-side (Cepat, aman tanpa limit upload 4.5 MB)
+      let extracted: { text: string; pageCount: number; totalCharacters: number; isScanned: boolean };
+      try {
+        extracted = await extractPdfInBrowser(selectedFile, (pct, lbl) => {
+          setProgress(pct);
+          setProgressLabel(lbl);
+        });
+      } catch (clientErr) {
+        console.warn('[Client Extract Error, mencoba server fallback]:', clientErr);
+        // Fallback ke server jika PDF < 4.2 MB
+        if (selectedFile.size > 4.2 * 1024 * 1024) {
+          throw new Error('File PDF terlalu besar (> 4.5 MB) untuk diproses di server. Silakan pastikan koneksi internet stabil.');
+        }
 
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Gagal mengekstrak teks dari PDF.');
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        const res = await fetch('/api/extract', { method: 'POST', body: formData });
+        const raw = await res.text();
+        let json: any;
+        try {
+          json = JSON.parse(raw);
+        } catch {
+          throw new Error(res.status === 413 ? 'Ukuran file melebihi batas 4.5 MB.' : `Server Error: ${raw.slice(0, 100)}`);
+        }
+        if (!res.ok || !json.success) throw new Error(json.error || 'Gagal mengekstrak PDF.');
+        extracted = {
+          text: json.data.text || '',
+          pageCount: json.data.pageCount || 1,
+          totalCharacters: json.data.totalCharacters || 0,
+          isScanned: json.data.isScanned || false
+        };
       }
 
       setExtractedData({
-        text: json.data.text || '',
-        pageCount: json.data.pageCount || 1,
-        totalCharacters: json.data.totalCharacters || 0,
-        isScanned: json.data.isScanned || false,
-        fileName: json.data.fileName || selectedFile.name
+        text: extracted.text,
+        pageCount: extracted.pageCount,
+        totalCharacters: extracted.totalCharacters,
+        isScanned: extracted.isScanned,
+        fileName: selectedFile.name
       });
 
-      if ((json.data.totalCharacters || 0) < 50) {
+      if (extracted.totalCharacters < 50) {
         setAlertInfo({
           type: 'info',
-          message: `📄 PDF ini berisi ${json.data.pageCount} Halaman dengan format visual/vektor layer (InDesign). Mode Google Gemini Multimodal Vision aktif dan siap membaca seluruh halaman secara visual. Silakan klik tombol "✨ 2. Analisis dengan AI" di bawah!`
+          message: `📄 PDF ini berisi ${extracted.pageCount} Halaman dengan format grafis/vektor layer. Mode Google Gemini Multimodal Vision aktif dan siap membaca seluruh halaman secara visual. Silakan klik tombol "✨ 2. Analisis dengan AI" di bawah!`
         });
       } else {
         setAlertInfo({
           type: 'success',
-          message: `Ekstraksi TXT Sukses! Berhasil membaca ${json.data.pageCount} halaman (${(json.data.totalCharacters || 0).toLocaleString()} karakter). Anda dapat melihat preview teks atau langsung klik "✨ 2. Analisis dengan AI".`
+          message: `Ekstraksi TXT Sukses! Berhasil membaca ${extracted.pageCount} halaman (${extracted.totalCharacters.toLocaleString()} karakter). Anda dapat melihat preview teks atau langsung klik "✨ 2. Analisis dengan AI".`
         });
       }
     } catch (err: any) {
@@ -168,12 +245,26 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
     setAlertInfo(null);
 
     const formData = new FormData();
-    if (selectedFile) formData.append('file', selectedFile);
-    if (extractedData?.text) formData.append('pdfText', extractedData.text);
     formData.append('fileName', selectedFile?.name || 'document.pdf');
     formData.append('companyCode', code);
     formData.append('fiscalYear', fiscalYear);
     formData.append('notes', notes);
+
+    // Kirim hanya teks jika teks tersedia (sangat ringan, hanya ~50 KB)
+    if (extractedData?.text && extractedData.text.length >= 50) {
+      formData.append('pdfText', extractedData.text);
+    } else if (selectedFile) {
+      if (selectedFile.size > 4.2 * 1024 * 1024) {
+        setAlertInfo({
+          type: 'error',
+          message: `Ukuran file PDF (${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB) melebihi batas upload 4.5 MB. Silakan klik tombol "1. Ubah PDF ke TXT" terlebih dahulu agar teksnya diekstrak secara lokal.`
+        });
+        setIsAnalyzing(false);
+        setProgress(0);
+        return;
+      }
+      formData.append('file', selectedFile);
+    }
 
     const storedKey = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_key') : null;
     let storedModel = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') : null;
@@ -190,7 +281,16 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
         body: formData
       });
 
-      const json = await res.json();
+      const raw = await res.text();
+      let json: any;
+      try {
+        json = JSON.parse(raw);
+      } catch {
+        if (res.status === 413 || raw.includes('Request Entity Too Large')) {
+          throw new Error('Ukuran payload terlalu besar (Maks 4.5 MB). Pastikan teks sudah diekstrak via Langkah 1 terlebih dahulu.');
+        }
+        throw new Error(`Server Error (${res.status}): ${raw.slice(0, 150)}`);
+      }
 
       if (!res.ok || !json.success) {
         throw new Error(json.error || 'Gagal memproses analisis AI.');
