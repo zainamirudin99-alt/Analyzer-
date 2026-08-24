@@ -5,11 +5,12 @@
 import { CEDScores, INDICATOR_KEYS } from './types';
 
 export const FALLBACK_MODELS = [
-  'gemini-2.5-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
   'gemini-2.0-flash',
   'gemini-1.5-flash',
-  'gemini-2.0-flash-lite',
-  'gemini-2.5-pro'
+  'gemini-flash-latest',
+  'gemini-2.0-flash-lite'
 ];
 
 export interface GeminiAnalysisOptions {
@@ -187,7 +188,7 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
     throw new Error('GEMINI_API_KEY belum dikonfigurasi. Masukkan API Key di tab Pengaturan atau file .env.local.');
   }
 
-  const primaryModel = options.preferredModel || (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-2.5-flash';
+  const primaryModel = options.preferredModel || (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-3.6-flash';
   const modelQueue = [primaryModel, ...FALLBACK_MODELS.filter(m => m !== primaryModel)];
   const prompt = buildCEDPrompt(options.companyCode, options.fiscalYear);
 
@@ -254,6 +255,7 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
 
       if (response.status === 404) {
         lastError = `Model ${model} tidak ditemukan atau deprecated (404).`;
+        console.warn(`[Gemini CED] ${lastError} Beralih ke fallback model berikutnya...`);
         continue;
       }
 

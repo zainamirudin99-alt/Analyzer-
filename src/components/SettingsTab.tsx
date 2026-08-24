@@ -6,7 +6,7 @@ import { FALLBACK_MODELS } from '@/lib/gemini';
 
 export const SettingsTab: React.FC = () => {
   const [apiKey, setApiKey] = useState('');
-  const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash');
+  const [selectedModel, setSelectedModel] = useState('gemini-3.6-flash');
   const [isTestingKey, setIsTestingKey] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -17,7 +17,7 @@ export const SettingsTab: React.FC = () => {
   useEffect(() => {
     // Load local settings
     const storedKey = localStorage.getItem('custom_gemini_key') || '';
-    const storedModel = localStorage.getItem('custom_gemini_model') || 'gemini-2.5-flash';
+    const storedModel = localStorage.getItem('custom_gemini_model') || 'gemini-3.6-flash';
     setApiKey(storedKey);
     setSelectedModel(storedModel);
     checkSystemStatus();
@@ -161,7 +161,7 @@ CREATE POLICY "Public All Access" ON public.ced_results FOR ALL USING (true);`;
             >
               {FALLBACK_MODELS.map(m => (
                 <option key={m} value={m}>
-                  {m} {m.includes('2.5-flash') ? '⭐ (Rekomendasi Utama)' : ''}
+                  {m} {m.includes('3.6-flash') ? '⭐ (Rekomendasi Utama Google)' : ''}
                 </option>
               ))}
             </select>

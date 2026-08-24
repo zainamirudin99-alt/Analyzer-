@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 // GET: Cek status koneksi Supabase & Gemini
 export async function GET(_req: NextRequest) {
   try {
-    const defaultModel = (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-2.5-flash';
+    const defaultModel = (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-3.6-flash';
     const hasServerGeminiKey = Boolean(typeof process !== 'undefined' && process.env.GEMINI_API_KEY);
 
     const supabaseStatus = {
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     const apiKey = body?.apiKey;
     const model = body?.model;
     const testKey = (apiKey || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '') || '').trim();
-    const testModel = model || (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-2.5-flash';
+    const testModel = model || (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-3.6-flash';
 
     if (!testKey) {
       return NextResponse.json({
