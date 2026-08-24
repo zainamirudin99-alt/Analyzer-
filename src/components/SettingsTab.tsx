@@ -2,11 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { Database, Key, Cpu, CheckCircle2, AlertCircle, Copy, ExternalLink, RefreshCw } from 'lucide-react';
-import { FALLBACK_MODELS } from '@/lib/gemini';
+import { SUPPORTED_MODEL_CATEGORIES, ALL_SUPPORTED_MODELS } from '@/lib/gemini';
 
 export const SettingsTab: React.FC = () => {
   const [apiKey, setApiKey] = useState('');
   const [selectedModel, setSelectedModel] = useState('gemini-1.5-flash');
+  const [customModelInput, setCustomModelInput] = useState('');
+  const [isCustomMode, setIsCustomMode] = useState(false);
   const [isTestingKey, setIsTestingKey] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -15,17 +17,23 @@ export const SettingsTab: React.FC = () => {
   const [copiedSql, setCopiedSql] = useState(false);
 
   useEffect(() => {
-    // Load local settings & migrasi otomatis model lama
+    // Load local settings
     const storedKey = localStorage.getItem('custom_gemini_key') || '';
-    let storedModel = localStorage.getItem('custom_gemini_model') || 'gemini-1.5-flash';
+    const storedModel = localStorage.getItem('custom_gemini_model') || 'gemini-1.5-flash';
     
-    if (storedModel.includes('2.5') || storedModel.includes('3.6') || storedModel.includes('3.5') || !FALLBACK_MODELS.includes(storedModel)) {
-      storedModel = 'gemini-1.5-flash';
-      localStorage.setItem('custom_gemini_model', storedModel);
+    setApiKey(storedKey);
+    if (ALL_SUPPORTED_MODELS.includes(storedModel)) {
+      setSelectedModel(storedModel);
+      setIsCustomMode(false);
+    } else if (storedModel) {
+      setSelectedModel('custom');
+      setCustomModelInput(storedModel);
+      setIsCustomMode(true);
+    } else {
+      setSelectedModel('gemini-1.5-flash');
+      setIsCustomMode(false);
     }
 
-    setApiKey(storedKey);
-    setSelectedModel(storedModel);
     checkSystemStatus();
   }, []);
 
@@ -44,26 +52,33 @@ export const SettingsTab: React.FC = () => {
     }
   };
 
+  const getEffectiveModel = (): string => {
+    if (isCustomMode || selectedModel === 'custom') {
+      return customModelInput.trim() || 'gemini-1.5-flash';
+    }
+    return selectedModel || 'gemini-1.5-flash';
+  };
+
   const handleSaveLocalSettings = () => {
-    const chosenModel = selectedModel || 'gemini-1.5-flash';
+    const effectiveModel = getEffectiveModel();
     localStorage.setItem('custom_gemini_key', apiKey.trim());
-    localStorage.setItem('custom_gemini_model', chosenModel);
-    setSelectedModel(chosenModel);
+    localStorage.setItem('custom_gemini_model', effectiveModel);
     setTestResult({
       success: true,
-      message: `Pengaturan API Key & Model (${chosenModel}) berhasil disimpan di browser lokal.`
+      message: `Pengaturan API Key & Model (${effectiveModel}) berhasil disimpan di browser lokal.`
     });
   };
 
   const handleTestConnection = async () => {
     setIsTestingKey(true);
     setTestResult(null);
-    const chosenModel = selectedModel === 'gemini-2.5-flash' ? 'gemini-3.6-flash' : selectedModel;
+    const effectiveModel = getEffectiveModel();
+
     try {
       const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey: apiKey.trim(), model: chosenModel })
+        body: JSON.stringify({ apiKey: apiKey.trim(), model: effectiveModel })
       });
       const json = await res.json();
       setTestResult({
@@ -112,7 +127,7 @@ CREATE TABLE IF NOT EXISTS public.ced_results (
         ec1 + ec2 + ec3 + rc1 + rc2 + rc3 + rc4 + acc1 + acc2
     ) STORED,
     disclosure_level VARCHAR(50) DEFAULT 'Rendah',
-    model_used VARCHAR(100) DEFAULT 'gemini-3.6-flash',
+    model_used VARCHAR(100) DEFAULT 'gemini-1.5-flash',
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
@@ -145,7 +160,7 @@ CREATE POLICY "Public Access Heartbeat" ON public.ced_heartbeat FOR ALL USING (t
         <div className="card">
           <div className="card-title">
             <div className="ct-icon"><Key size={18} color="#2e6922" /></div>
-            <span>Konfigurasi Google Gemini AI</span>
+            <span>Konfigurasi Google Gemini AI (1.5 s/d 3.7 & 3.1 Pro)</span>
           </div>
 
           <div className="alert alert-info" style={{ fontSize: '13px' }}>
@@ -178,17 +193,50 @@ CREATE POLICY "Public Access Heartbeat" ON public.ced_heartbeat FOR ALL USING (t
             <label className="form-label">Pilih Model Utama Gemini AI</label>
             <select
               className="form-select font-mono"
-              value={selectedModel}
-              onChange={e => setSelectedModel(e.target.value)}
+              value={isCustomMode ? 'custom' : selectedModel}
+              onChange={e => {
+                const val = e.target.value;
+                if (val === 'custom') {
+                  setIsCustomMode(true);
+                  setSelectedModel('custom');
+                } else {
+                  setIsCustomMode(false);
+                  setSelectedModel(val);
+                }
+              }}
             >
-              {FALLBACK_MODELS.map(m => (
-                <option key={m} value={m}>
-                  {m} {m === 'gemini-1.5-flash' ? '⭐ (Rekomendasi Utama)' : ''}
-                </option>
+              {SUPPORTED_MODEL_CATEGORIES.map(cat => (
+                <optgroup key={cat.category} label={cat.category}>
+                  {cat.models.map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
+              <optgroup label="✍️ Kustomisasi">
+                <option value="custom">-- Ketik Nama Model Lain Secara Manual --</option>
+              </optgroup>
             </select>
-            <div style={{ fontSize: '12px', color: 'var(--stone)', marginTop: '6px' }}>
-              Jika terjadi limit kuota (HTTP 429), sistem otomatis beralih (*failover*) ke model alternatif di atas.
+
+            {/* Input Manual Kustom Model */}
+            {(isCustomMode || selectedModel === 'custom') && (
+              <div style={{ marginTop: '10px', background: '#f8faf9', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                <label className="form-label" style={{ fontSize: '12px', fontWeight: 700 }}>
+                  Ketik Nama Model Kustom / Preview Google:
+                </label>
+                <input
+                  type="text"
+                  className="form-input font-mono"
+                  placeholder="Contoh: gemini-3.1-pro, gemini-3.7-flash, gemini-3.0-pro"
+                  value={customModelInput}
+                  onChange={e => setCustomModelInput(e.target.value.trim())}
+                />
+              </div>
+            )}
+
+            <div style={{ fontSize: '12px', color: 'var(--stone)', marginTop: '6px', lineHeight: '1.5' }}>
+              💡 Sistem akan memprioritaskan model pilihan Anda (misal: <strong>{getEffectiveModel()}</strong>). Jika model tersebut belum dirilis pada akun Google Anda, sistem otomatis beralih (*failover*) ke model stabil berikutnya tanpa menghentikan analisis.
             </div>
           </div>
 
@@ -205,7 +253,7 @@ CREATE POLICY "Public Access Heartbeat" ON public.ced_heartbeat FOR ALL USING (t
             </button>
             <button className="btn btn-outline" onClick={handleTestConnection} disabled={isTestingKey}>
               {isTestingKey ? <span className="spinner" /> : <RefreshCw size={14} />}
-              <span>Uji Koneksi AI</span>
+              <span>Uji Koneksi ({getEffectiveModel()})</span>
             </button>
           </div>
         </div>
@@ -219,38 +267,34 @@ CREATE POLICY "Public Access Heartbeat" ON public.ced_heartbeat FOR ALL USING (t
             <span>Status Database Supabase (PostgreSQL)</span>
           </div>
 
-          {sysStatus?.supabase ? (
-            <div style={{ marginBottom: '18px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                {sysStatus.supabase.connected ? (
-                  <CheckCircle2 size={18} color="#2e6922" />
-                ) : (
-                  <AlertCircle size={18} color="#b87514" />
-                )}
-                <span style={{ fontWeight: 800, fontSize: '14px', color: sysStatus.supabase.connected ? 'var(--fern)' : 'var(--warn)' }}>
-                  {sysStatus.supabase.connected ? 'Terhubung & Aktif' : 'Perlu Setup'}
-                </span>
-              </div>
-              <p style={{ fontSize: '13px', color: 'var(--stone)', lineHeight: '1.5' }}>
-                {sysStatus.supabase.message}
-              </p>
-            </div>
-          ) : (
-            <p style={{ fontSize: '13px', color: 'var(--stone)' }}>Memeriksa status Supabase...</p>
-          )}
-
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px', marginTop: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <span style={{ fontSize: '12.5px', fontWeight: 800, color: 'var(--stone)', textTransform: 'uppercase' }}>
-                Inisialisasi Tabel Supabase (SQL DDL)
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13.5px', marginBottom: '6px' }}>
+              <span className={`badge ${sysStatus?.supabase?.connected ? 'badge-completed' : 'badge-failed'}`}>
+                {sysStatus?.supabase?.connected ? 'Online & Terkoneksi' : 'Offline / Standalone'}
               </span>
-              <button className="btn btn-outline btn-sm" onClick={handleCopySql}>
-                <Copy size={13} />
-                <span>{copiedSql ? 'Tersalin!' : 'Salin SQL'}</span>
+              <span style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                {sysStatus?.supabase?.message || 'Memeriksa...'}
+              </span>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <label className="form-label" style={{ margin: 0 }}>SQL DDL Setup Table & Keepalive</label>
+              <button
+                className="btn btn-outline btn-sm"
+                onClick={handleCopySql}
+                style={{ padding: '4px 10px', fontSize: '11.5px', background: '#ffffff' }}
+              >
+                <Copy size={12} />
+                <span>{copiedSql ? 'Tersalin! ✅' : 'Salin SQL'}</span>
               </button>
             </div>
-            <pre style={{ background: '#1e293b', color: '#e2e8f0', padding: '14px', borderRadius: '8px', fontSize: '11px', maxHeight: '160px', overflowY: 'auto', fontFamily: "'DM Mono', monospace" }}>
-{`-- Salin dan jalankan di Supabase SQL Editor:
+            <textarea
+              className="form-textarea font-mono"
+              style={{ height: '160px', fontSize: '11px', lineHeight: '1.4' }}
+              readOnly
+              value={`-- Jalankan ini di Supabase SQL Editor:
 CREATE TABLE IF NOT EXISTS public.ced_results (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     company_code VARCHAR(20) NOT NULL,
@@ -281,14 +325,27 @@ CREATE TABLE IF NOT EXISTS public.ced_results (
         ec1 + ec2 + ec3 + rc1 + rc2 + rc3 + rc4 + acc1 + acc2
     ) STORED,
     disclosure_level VARCHAR(50) DEFAULT 'Rendah',
-    model_used VARCHAR(100) DEFAULT 'gemini-3.6-flash',
+    model_used VARCHAR(100) DEFAULT 'gemini-1.5-flash',
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
 ALTER TABLE public.ced_results ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Public All Access" ON public.ced_results FOR ALL USING (true);`}
-            </pre>
+DROP POLICY IF EXISTS "Public All Access" ON public.ced_results;
+CREATE POLICY "Public All Access" ON public.ced_results FOR ALL USING (true) WITH CHECK (true);
+
+-- Tabel Keep-Alive Heartbeat (Mencegah Supabase Pause)
+CREATE TABLE IF NOT EXISTS public.ced_heartbeat (
+    id VARCHAR(50) PRIMARY KEY DEFAULT 'primary',
+    last_ping TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    ping_count BIGINT DEFAULT 1,
+    status TEXT DEFAULT 'active_keepalive'
+);
+
+ALTER TABLE public.ced_heartbeat ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Access Heartbeat" ON public.ced_heartbeat;
+CREATE POLICY "Public Access Heartbeat" ON public.ced_heartbeat FOR ALL USING (true) WITH CHECK (true);`}
+            />
           </div>
         </div>
       </div>
