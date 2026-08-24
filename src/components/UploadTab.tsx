@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { UploadCloud, FileText, CheckCircle2, AlertTriangle, Sparkles, RefreshCw, ArrowRight, Copy, Check } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle2, Sparkles, RefreshCw, ArrowRight, Copy, Check, Eye, Download, X } from 'lucide-react';
 import { CEDScores, INDICATOR_KEYS, CEDResultRecord } from '@/lib/types';
 
 interface UploadTabProps {
@@ -16,12 +16,27 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
 
-  const [isLoading, setIsLoading] = useState(false);
+  // Status Ekstraksi PDF ke TXT
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractedData, setExtractedData] = useState<{
+    text: string;
+    pageCount: number;
+    totalCharacters: number;
+    isScanned: boolean;
+    fileName: string;
+  } | null>(null);
+
+  // Status Modal Preview TXT
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [copiedTxt, setCopiedTxt] = useState(false);
+
+  // Status Analisis AI
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState('');
   const [alertInfo, setAlertInfo] = useState<{ type: 'success' | 'error' | 'warn' | 'info'; message: string } | null>(null);
 
-  const [copiedType, setCopiedType] = useState<'row' | 'scores' | null>(null);
+  const [copiedType, setCopiedType] = useState<'scores_only' | 'scores_total' | 'full_row' | null>(null);
 
   const [scoreResult, setScoreResult] = useState<{
     code: string;
@@ -47,9 +62,11 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
     }
 
     setSelectedFile(file);
+    setExtractedData(null); // Reset hasil ekstraksi sebelumnya
+    setScoreResult(null);
     setAlertInfo({
       type: 'info',
-      message: `File dipilih: ${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB). Sistem akan mengekstraknya otomatis ke format TXT sebelum dianalisis AI.`
+      message: `File dipilih: ${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB). Silakan klik tombol "📄 1. Ubah PDF ke TXT" di bawah.`
     });
   };
 
@@ -70,29 +87,83 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
     }
   };
 
+  // LANGKAH 1: Ekstraksi PDF ke TXT
+  const handleExtractToTxt = async () => {
+    if (!selectedFile) {
+      setAlertInfo({ type: 'warn', message: 'Pilih file PDF terlebih dahulu.' });
+      return;
+    }
+
+    setIsExtracting(true);
+    setAlertInfo(null);
+    setProgress(30);
+    setProgressLabel('Membaca & mengekstrak konten teks dari file PDF...');
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    try {
+      const res = await fetch('/api/extract', {
+        method: 'POST',
+        body: formData
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Gagal mengekstrak teks dari PDF.');
+      }
+
+      setExtractedData({
+        text: json.data.text,
+        pageCount: json.data.pageCount,
+        totalCharacters: json.data.totalCharacters,
+        isScanned: json.data.isScanned,
+        fileName: json.data.fileName
+      });
+
+      setAlertInfo({
+        type: 'success',
+        message: `Ekstraksi TXT Sukses! Berhasil membaca ${json.data.pageCount} halaman (${json.data.totalCharacters.toLocaleString()} karakter). Anda dapat melihat preview teks atau langsung klik "✨ 2. Analisis dengan AI".`
+      });
+    } catch (err: any) {
+      console.error(err);
+      setAlertInfo({
+        type: 'error',
+        message: err?.message || 'Gagal mengubah PDF ke TXT.'
+      });
+    } finally {
+      setIsExtracting(false);
+      setProgress(0);
+      setProgressLabel('');
+    }
+  };
+
+  // LANGKAH 2: Analisis Teks dengan Gemini AI
   const handleStartAnalysis = async () => {
     const code = companyCode.trim().toUpperCase();
     if (!code) {
-      setAlertInfo({ type: 'warn', message: 'Kode emiten / perusahaan wajib diisi (contoh: TINS, ANTM, PTBA).' });
+      setAlertInfo({ type: 'warn', message: 'Kode emiten / perusahaan wajib diisi (contoh: TINS, ANTM, AKRA).' });
       return;
     }
     if (!fiscalYear) {
       setAlertInfo({ type: 'warn', message: 'Tahun fiskal (FY) wajib dipilih.' });
       return;
     }
-    if (!selectedFile) {
-      setAlertInfo({ type: 'warn', message: 'Silakan upload file PDF laporan tahunan terlebih dahulu.' });
+    if (!extractedData?.text && !selectedFile) {
+      setAlertInfo({ type: 'warn', message: 'Silakan ubah PDF ke TXT terlebih dahulu.' });
       return;
     }
 
-    setIsLoading(true);
+    setIsAnalyzing(true);
     setScoreResult(null);
-    setProgress(15);
-    setProgressLabel('Membaca file & mengekstrak PDF ke format TXT...');
+    setProgress(50);
+    setProgressLabel('AI sedang mengidentifikasi 18 indikator CED dari teks laporan...');
     setAlertInfo(null);
 
     const formData = new FormData();
-    formData.append('file', selectedFile);
+    if (selectedFile) formData.append('file', selectedFile);
+    if (extractedData?.text) formData.append('pdfText', extractedData.text);
+    formData.append('fileName', selectedFile?.name || 'document.pdf');
     formData.append('companyCode', code);
     formData.append('fiscalYear', fiscalYear);
     formData.append('notes', notes);
@@ -107,9 +178,6 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
     if (storedModel) formData.append('model', storedModel);
 
     try {
-      setProgress(40);
-      setProgressLabel('AI sedang mengidentifikasi 18 indikator CED dari teks dokumen...');
-
       const res = await fetch('/api/analyze', {
         method: 'POST',
         body: formData
@@ -157,7 +225,6 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
 
           const rawExisting = localStorage.getItem('analyzer_records');
           const existingList: CEDResultRecord[] = rawExisting ? JSON.parse(rawExisting) : [];
-          // Hapus jika sudah ada kode + tahun yang sama, lalu tambahkan yang paling baru di awal
           const updatedList = [newRecord, ...existingList.filter(r => !(r.company_code === newRecord.company_code && r.fiscal_year === newRecord.fiscal_year))];
           localStorage.setItem('analyzer_records', JSON.stringify(updatedList));
         } catch (storageErr) {
@@ -167,7 +234,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
 
       setAlertInfo({
         type: 'success',
-        message: `Analisis untuk ${code} (${fiscalYear}) selesai! Total skor: ${data.total_score}/90 (${data.disclosure_level}). Data tersimpan dan siap disalin!`
+        message: `Analisis untuk ${code} (${fiscalYear}) selesai! Total skor: ${data.total_score}/90. Klik "Salin 18 Nilai Skor Saja" untuk menempelkan nilai ke spreadsheet.`
       });
 
       onSuccessAnalysis();
@@ -180,7 +247,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
         message: err?.message || 'Terjadi kesalahan sistem saat menganalisis dokumen.'
       });
     } finally {
-      setIsLoading(false);
+      setIsAnalyzing(false);
     }
   };
 
@@ -189,6 +256,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
     setFiscalYear('FY 2024');
     setNotes('');
     setSelectedFile(null);
+    setExtractedData(null);
     setScoreResult(null);
     setAlertInfo(null);
     setProgress(0);
@@ -196,8 +264,27 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Salin 1 baris lengkap (Code \t Year \t CC1 \t ... \t ACC2 \t TOTAL)
-  const copyRowForSpreadsheet = () => {
+  // 1. SALIN HANYA 18 SKOR (CC1 s/d ACC2) -> TANPA KODE & TANPA TAHUN
+  const copyScoresOnly = () => {
+    if (!scoreResult) return;
+    const scoresTsv = INDICATOR_KEYS.map(k => scoreResult.scores[k] ?? 0).join('\t');
+    navigator.clipboard.writeText(scoresTsv);
+    setCopiedType('scores_only');
+    setTimeout(() => setCopiedType(null), 3000);
+  };
+
+  // 2. SALIN 18 SKOR + TOTAL -> TANPA KODE & TANPA TAHUN
+  const copyScoresAndTotal = () => {
+    if (!scoreResult) return;
+    const scoresArray = INDICATOR_KEYS.map(k => scoreResult.scores[k] ?? 0);
+    const scoresTsv = [...scoresArray, scoreResult.totalScore].join('\t');
+    navigator.clipboard.writeText(scoresTsv);
+    setCopiedType('scores_total');
+    setTimeout(() => setCopiedType(null), 3000);
+  };
+
+  // 3. SALIN BARIS LENGKAP (Code, Year, 18 Skor, Total)
+  const copyFullRow = () => {
     if (!scoreResult) return;
     const scoresArray = INDICATOR_KEYS.map(k => scoreResult.scores[k] ?? 0);
     const rowTsv = [
@@ -208,17 +295,28 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
     ].join('\t');
 
     navigator.clipboard.writeText(rowTsv);
-    setCopiedType('row');
+    setCopiedType('full_row');
     setTimeout(() => setCopiedType(null), 3000);
   };
 
-  // Salin 18 Nilai Skor saja (CC1 \t CC2 \t ... \t ACC2)
-  const copyScoresOnly = () => {
-    if (!scoreResult) return;
-    const scoresTsv = INDICATOR_KEYS.map(k => scoreResult.scores[k] ?? 0).join('\t');
-    navigator.clipboard.writeText(scoresTsv);
-    setCopiedType('scores');
-    setTimeout(() => setCopiedType(null), 3000);
+  // Download File TXT Hasil Ekstraksi
+  const handleDownloadTxt = () => {
+    if (!extractedData?.text) return;
+    const element = document.createElement('a');
+    const file = new Blob([extractedData.text], { type: 'text/plain;charset=utf-8' });
+    element.href = URL.createObjectURL(file);
+    element.download = `${companyCode || 'extract'}_${fiscalYear || 'CED'}_text.txt`;
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+  };
+
+  // Salin Seluruh Teks TXT
+  const handleCopyFullTxt = () => {
+    if (!extractedData?.text) return;
+    navigator.clipboard.writeText(extractedData.text);
+    setCopiedTxt(true);
+    setTimeout(() => setCopiedTxt(false), 2500);
   };
 
   return (
@@ -227,7 +325,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
       <div className="card">
         <div className="card-title">
           <div className="ct-icon">📝</div>
-          <span>Informasi Dokumen & Laporan</span>
+          <span>1. Dokumen & Ekstraksi Teks (PDF ➔ TXT)</span>
         </div>
 
         <div className="form-group">
@@ -235,11 +333,11 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
           <input
             type="text"
             className="form-input font-mono"
-            placeholder="Contoh: TINS, ANTM, PTBA, ADRO, MEDC"
+            placeholder="Contoh: AKRA, TINS, ANTM, PTBA, ADRO"
             value={companyCode}
             onChange={e => setCompanyCode(e.target.value.toUpperCase())}
             maxLength={12}
-            disabled={isLoading}
+            disabled={isAnalyzing || isExtracting}
           />
         </div>
 
@@ -249,7 +347,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
             className="form-select font-mono"
             value={fiscalYear}
             onChange={e => setFiscalYear(e.target.value)}
-            disabled={isLoading}
+            disabled={isAnalyzing || isExtracting}
           >
             <option value="FY 2026">FY 2026</option>
             <option value="FY 2025">FY 2025</option>
@@ -265,10 +363,10 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
           <label className="form-label">Catatan Tambahan (Opsional)</label>
           <textarea
             className="form-textarea"
-            placeholder="Contoh: Sustainability Report 2024, Mining Division..."
+            placeholder="Contoh: Sustainability Report 2022..."
             value={notes}
             onChange={e => setNotes(e.target.value)}
-            disabled={isLoading}
+            disabled={isAnalyzing || isExtracting}
           />
         </div>
 
@@ -291,7 +389,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
                   handleFileChange(e.target.files[0]);
                 }
               }}
-              disabled={isLoading}
+              disabled={isAnalyzing || isExtracting}
             />
             <div className="dz-icon-wrap">
               {selectedFile ? <FileText size={32} color="#2e6922" /> : <UploadCloud size={32} color="#687962" />}
@@ -301,14 +399,45 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
             </div>
             <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
               {selectedFile
-                ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB · Siap diekstrak ke TXT`
-                : 'Mendukung Laporan Tahunan / Keberlanjutan (Maks 25 MB)'}
+                ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB · Klik "Ubah PDF ke TXT" di bawah`
+                : 'Mendukung Laporan Tahunan / Keberlanjutan PDF (Maks 25 MB)'}
             </div>
           </div>
         </div>
 
-        {/* Progress Bar saat memproses */}
-        {isLoading && (
+        {/* Status Ekstraksi TXT Banner & Actions */}
+        {extractedData && (
+          <div style={{ background: '#f0f7ea', border: '1.5px solid var(--border)', borderRadius: '12px', padding: '14px', margin: '14px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--fern)', fontWeight: 800, fontSize: '13.5px', marginBottom: '6px' }}>
+              <CheckCircle2 size={17} />
+              <span>PDF Berhasil Diubah ke TXT! ✅</span>
+            </div>
+            <div style={{ fontSize: '12.5px', color: 'var(--moss)', marginBottom: '10px' }}>
+              Terbaca <strong>{extractedData.pageCount} Halaman</strong> ({extractedData.totalCharacters.toLocaleString()} Karakter Teks Bersih).
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-outline btn-sm"
+                onClick={() => setShowPreviewModal(true)}
+                style={{ background: '#ffffff', borderColor: 'var(--border)' }}
+              >
+                <Eye size={14} />
+                <span>👁️ Preview Konten TXT</span>
+              </button>
+              <button
+                className="btn btn-outline btn-sm"
+                onClick={handleDownloadTxt}
+                style={{ background: '#ffffff', borderColor: 'var(--border)' }}
+              >
+                <Download size={14} />
+                <span>Unduh File .TXT</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Progress Bar */}
+        {(isExtracting || isAnalyzing) && (
           <div style={{ margin: '18px 0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', fontWeight: 700, color: 'var(--primary)' }}>
               <span>{progressLabel}</span>
@@ -328,27 +457,63 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
           </div>
         )}
 
-        <button
-          className="btn btn-primary btn-full btn-lg"
-          onClick={handleStartAnalysis}
-          disabled={isLoading}
-          style={{ marginTop: '12px' }}
-        >
-          {isLoading ? (
-            <>
-              <span className="spinner" />
-              <span>Memproses dengan AI...</span>
-            </>
+        {/* Action Buttons: 2-Step Workflow */}
+        <div style={{ display: 'flex', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>
+          {!extractedData ? (
+            <button
+              className="btn btn-primary btn-full btn-lg"
+              onClick={handleExtractToTxt}
+              disabled={isExtracting || !selectedFile}
+            >
+              {isExtracting ? (
+                <>
+                  <span className="spinner" />
+                  <span>Mengekstrak PDF ke TXT...</span>
+                </>
+              ) : (
+                <>
+                  <FileText size={18} />
+                  <span>1. Ubah PDF ke TXT</span>
+                </>
+              )}
+            </button>
           ) : (
-            <>
-              <Sparkles size={18} />
-              <span>Mulai Ekstraksi & Analisis AI</span>
-            </>
+            <div style={{ display: 'flex', gap: '10px', width: '100%', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-accent btn-lg"
+                onClick={handleStartAnalysis}
+                disabled={isAnalyzing}
+                style={{ flex: 2, minWidth: '220px' }}
+              >
+                {isAnalyzing ? (
+                  <>
+                    <span className="spinner" />
+                    <span>AI Sedang Menganalisis...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={18} />
+                    <span>2. Analisis dengan AI</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                className="btn btn-outline btn-lg"
+                onClick={handleExtractToTxt}
+                disabled={isExtracting || isAnalyzing}
+                style={{ flex: 1 }}
+                title="Ekstrak ulang dokumen"
+              >
+                <RefreshCw size={16} />
+                <span>Ubah Ulang TXT</span>
+              </button>
+            </div>
           )}
-        </button>
+        </div>
       </div>
 
-      {/* Hasil Skor / Preview Card */}
+      {/* Kolom Kanan: Hasil Skor / Preview Card */}
       {scoreResult ? (
         <div className="card">
           <div className="card-title" style={{ justifyContent: 'space-between' }}>
@@ -378,34 +543,57 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
             </div>
           </div>
 
-          {/* Quick Copy Buttons Bar */}
+          {/* Quick Copy Box */}
           <div style={{ background: '#f0f7ea', border: '1.5px solid var(--border)', borderRadius: '12px', padding: '14px', marginBottom: '18px' }}>
             <div style={{ fontSize: '12.5px', fontWeight: 800, color: 'var(--moss)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span>📋</span>
-              <span>Salin Cepat ke Google Sheets / Excel:</span>
+              <span>Salin Cepat Nilai ke Spreadsheet (Excel / Google Sheets):</span>
             </div>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {/* Tombol Utama: HANYA 18 Skor (Tanpa Nama & Tanpa Tahun) */}
               <button
-                className="btn btn-primary btn-sm"
-                onClick={copyRowForSpreadsheet}
-                style={{ flex: 1, minWidth: '180px' }}
+                className="btn btn-primary"
+                onClick={copyScoresOnly}
+                style={{ justifyContent: 'center', fontSize: '13px', padding: '10px 16px' }}
+                title="Menyalin HANYA 18 angka nilai indikator (CC1 s/d ACC2), tanpa nama perusahaan atau tahun"
               >
-                {copiedType === 'row' ? <Check size={15} /> : <Copy size={15} />}
-                <span>{copiedType === 'row' ? 'Baris Lengkap Tersalin! ✅' : 'Salin Baris (Code, FY, 18 Skor, Total)'}</span>
+                {copiedType === 'scores_only' ? <Check size={16} /> : <Copy size={16} />}
+                <span>
+                  {copiedType === 'scores_only'
+                    ? '18 Nilai Skor Tersalin! Siap Paste (Ctrl+V) ✅'
+                    : '📋 Salin 18 Nilai Skor Saja (CC1 s/d ACC2)'}
+                </span>
               </button>
 
-              <button
-                className="btn btn-accent btn-sm"
-                onClick={copyScoresOnly}
-                style={{ flex: 1, minWidth: '150px' }}
-              >
-                {copiedType === 'scores' ? <Check size={15} /> : <Copy size={15} />}
-                <span>{copiedType === 'scores' ? '18 Nilai Tersalin! ✅' : 'Salin 18 Skor Saja'}</span>
-              </button>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {/* Tombol 18 Skor + Total */}
+                <button
+                  className="btn btn-accent btn-sm"
+                  onClick={copyScoresAndTotal}
+                  style={{ flex: 1, minWidth: '150px' }}
+                  title="Menyalin 18 angka nilai indikator + total skor"
+                >
+                  {copiedType === 'scores_total' ? <Check size={14} /> : <Copy size={14} />}
+                  <span>{copiedType === 'scores_total' ? '18 Nilai + Total Tersalin! ✅' : 'Salin 18 Nilai + Total'}</span>
+                </button>
+
+                {/* Tombol Baris Penuh */}
+                <button
+                  className="btn btn-outline btn-sm"
+                  onClick={copyFullRow}
+                  style={{ flex: 1, minWidth: '150px', background: '#ffffff' }}
+                  title="Menyalin Kode, Tahun, 18 Nilai, dan Total"
+                >
+                  {copiedType === 'full_row' ? <Check size={14} /> : <Copy size={14} />}
+                  <span>{copiedType === 'full_row' ? 'Baris Lengkap Tersalin! ✅' : 'Salin Lengkap (+Kode & Tahun)'}</span>
+                </button>
+              </div>
             </div>
+
             {copiedType && (
-              <div style={{ fontSize: '11.5px', color: 'var(--fern)', marginTop: '6px', fontWeight: 600 }}>
-                💡 Tips: Tekan <strong>Ctrl + V</strong> pada cell spreadsheet Anda, data akan otomatis terpisah ke kolom masing-masing!
+              <div style={{ fontSize: '11.5px', color: 'var(--fern)', marginTop: '8px', fontWeight: 600 }}>
+                💡 Data tersalin dalam format TAB (*TSV*). Tekan <strong>Ctrl + V</strong> di sel Google Sheets / Excel, nilai akan otomatis mengisi 18 kolom secara horizontal!
               </div>
             )}
           </div>
@@ -453,10 +641,118 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
           }}
         >
           <div style={{ fontSize: '52px', marginBottom: '16px', opacity: 0.7 }}>🌲</div>
-          <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text)' }}>Hasil Analisis CED Akan Tampil di Sini</h3>
-          <p style={{ fontSize: '13px', color: 'var(--stone)', maxWidth: '340px', marginTop: '6px' }}>
-            Pilih file PDF laporan tahunan atau keberlanjutan, lalu tekan tombol <strong>"Mulai Ekstraksi & Analisis AI"</strong>.
-          </p>
+          <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text)' }}>Alur Ekstraksi & Analisis</h3>
+          <ol style={{ fontSize: '13px', color: 'var(--stone)', maxWidth: '340px', marginTop: '10px', textAlign: 'left', lineHeight: '1.8', paddingLeft: '20px' }}>
+            <li>Upload file PDF laporan tahunan</li>
+            <li>Klik tombol <strong>"1. Ubah PDF ke TXT"</strong></li>
+            <li>Preview isi teks yang berhasil diekstrak</li>
+            <li>Klik tombol <strong>"2. Analisis dengan AI"</strong></li>
+          </ol>
+        </div>
+      )}
+
+      {/* Modal Preview TXT */}
+      {showPreviewModal && extractedData && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            maxWidth: '850px',
+            width: '100%',
+            maxHeight: '85vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+            border: '1px solid var(--border)'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '18px 22px',
+              borderBottom: '1px solid var(--border)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text)', margin: 0 }}>
+                  📄 Preview Konten Teks Hasil Ekstraksi TXT
+                </h3>
+                <div style={{ fontSize: '12px', color: 'var(--stone)', marginTop: '3px' }}>
+                  {extractedData.fileName} · {extractedData.pageCount} Halaman · {extractedData.totalCharacters.toLocaleString()} Karakter
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPreviewModal(false)}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px', color: 'var(--stone)' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body: Text Area */}
+            <div style={{ padding: '20px', flex: 1, overflowY: 'auto' }}>
+              <textarea
+                readOnly
+                value={extractedData.text}
+                style={{
+                  width: '100%',
+                  height: '420px',
+                  fontFamily: "'DM Mono', monospace",
+                  fontSize: '12px',
+                  lineHeight: '1.6',
+                  padding: '14px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border)',
+                  background: '#f8fafc',
+                  color: '#1e293b',
+                  resize: 'none',
+                  outline: 'none'
+                }}
+              />
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '14px 22px',
+              borderTop: '1px solid var(--border)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              background: '#f8faf9',
+              borderBottomLeftRadius: '16px',
+              borderBottomRightRadius: '16px'
+            }}>
+              <div style={{ fontSize: '12px', color: 'var(--stone)' }}>
+                Teks ini yang akan dibaca dan dinilai oleh Google Gemini AI.
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button className="btn btn-outline btn-sm" onClick={handleCopyFullTxt}>
+                  {copiedTxt ? <Check size={14} /> : <Copy size={14} />}
+                  <span>{copiedTxt ? 'Tersalin! ✅' : 'Salin Seluruh Teks'}</span>
+                </button>
+                <button className="btn btn-accent btn-sm" onClick={handleDownloadTxt}>
+                  <Download size={14} />
+                  <span>Download .TXT</span>
+                </button>
+                <button className="btn btn-primary btn-sm" onClick={() => setShowPreviewModal(false)}>
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

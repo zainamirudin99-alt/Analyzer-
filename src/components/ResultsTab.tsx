@@ -50,13 +50,11 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     // 3. Gabungkan data (prioritaskan Supabase jika ada ID, hilangkan duplikasi kode + tahun)
     const combinedMap = new Map<string, CEDResultRecord>();
 
-    // Masukkan data lokal terlebih dahulu
     localData.forEach(item => {
       const key = `${item.company_code}_${item.fiscal_year}`;
       combinedMap.set(key, item);
     });
 
-    // Timpa atau tambahkan dari Supabase
     supabaseData.forEach(item => {
       const key = `${item.company_code}_${item.fiscal_year}`;
       combinedMap.set(key, item);
@@ -70,7 +68,6 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
 
     setResults(mergedList);
 
-    // Update kembali cache lokal agar tetap sinkron
     if (typeof window !== 'undefined' && mergedList.length > 0) {
       localStorage.setItem('analyzer_records', JSON.stringify(mergedList));
     }
@@ -87,7 +84,6 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
       return;
     }
 
-    // Hapus dari state dan LocalStorage
     const updatedLocal = results.filter(
       r => !(r.company_code === record.company_code && r.fiscal_year === record.fiscal_year)
     );
@@ -96,7 +92,6 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
       localStorage.setItem('analyzer_records', JSON.stringify(updatedLocal));
     }
 
-    // Hapus dari Supabase jika ada ID / backend aktif
     try {
       const url = record.id
         ? `/api/results?id=${record.id}`
@@ -110,7 +105,19 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     setMessage({ type: 'success', text: `Data ${record.company_code} (${record.fiscal_year}) berhasil dihapus.` });
   };
 
-  // Salin 1 baris untuk Spreadsheet
+  // 1. SALIN HANYA 18 NILAI SKOR (CC1 s/d ACC2) -> TANPA KODE & TAHUN
+  const handleCopyScoresOnly = (row: CEDResultRecord, idKey: string) => {
+    const scoresTsv = INDICATOR_KEYS.map(k => (row as any)[k] ?? 0).join('\t');
+    navigator.clipboard.writeText(scoresTsv);
+    setCopiedId(`scores_${idKey}`);
+    setMessage({
+      type: 'success',
+      text: `18 Nilai skor untuk ${row.company_code} (${row.fiscal_year}) tersalin ke clipboard! Siap di-paste (Ctrl+V) ke spreadsheet.`
+    });
+    setTimeout(() => setCopiedId(null), 2500);
+  };
+
+  // 2. SALIN 1 BARIS LENGKAP (+Kode & Tahun)
   const handleCopyRow = (row: CEDResultRecord, idKey: string) => {
     const scores = INDICATOR_KEYS.map(k => (row as any)[k] ?? 0);
     const rowTsv = [
@@ -122,14 +129,10 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
 
     navigator.clipboard.writeText(rowTsv);
     setCopiedId(`row_${idKey}`);
-    setTimeout(() => setCopiedId(null), 2500);
-  };
-
-  // Salin 18 Skor saja
-  const handleCopyScoresOnly = (row: CEDResultRecord, idKey: string) => {
-    const scoresTsv = INDICATOR_KEYS.map(k => (row as any)[k] ?? 0).join('\t');
-    navigator.clipboard.writeText(scoresTsv);
-    setCopiedId(`scores_${idKey}`);
+    setMessage({
+      type: 'success',
+      text: `Baris lengkap ${row.company_code} (${row.fiscal_year}) tersalin ke clipboard!`
+    });
     setTimeout(() => setCopiedId(null), 2500);
   };
 
@@ -146,6 +149,10 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     const fullTsv = [headers.join('\t'), ...rows].join('\n');
     navigator.clipboard.writeText(fullTsv);
     setCopiedAll(true);
+    setMessage({
+      type: 'success',
+      text: `${filteredResults.length} baris data berhasil disalin! Siap di-paste ke Google Sheets / Excel.`
+    });
     setTimeout(() => setCopiedAll(false), 3000);
   };
 
@@ -196,7 +203,6 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     return matchCode && matchYear;
   });
 
-  // Perhitungan statistik
   const totalCount = filteredResults.length;
   const totalScoresArray = filteredResults.map(r => r.total_score || 0);
   const avgScore = totalCount > 0
@@ -275,7 +281,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
 
             <button className="btn btn-primary btn-sm" onClick={handleCopyAllTable} title="Salin seluruh baris tabel untuk di-paste langsung ke Google Sheets">
               {copiedAll ? <Check size={14} /> : <Copy size={14} />}
-              <span>{copiedAll ? 'Tabel Tersalin! ✅' : 'Salin Semua (Spreadsheet)'}</span>
+              <span>{copiedAll ? 'Tersalin! ✅' : 'Salin Semua (Spreadsheet)'}</span>
             </button>
 
             <button className="btn btn-accent btn-sm" onClick={handleExportCSV}>
@@ -311,7 +317,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
                 <th>ACC1</th><th>ACC2</th>
                 <th style={{ minWidth: '70px' }}>TOTAL</th>
                 <th style={{ minWidth: '100px' }}>Level</th>
-                <th style={{ minWidth: '170px' }}>Salin & Aksi</th>
+                <th style={{ minWidth: '190px' }}>Salin & Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -358,22 +364,22 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
                         <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', alignItems: 'center' }}>
                           <button
                             className="btn btn-primary btn-sm"
-                            style={{ padding: '4px 8px', fontSize: '11px' }}
-                            title="Salin Baris Lengkap (Code, Year, 18 Skor, Total) untuk paste ke spreadsheet"
-                            onClick={() => handleCopyRow(row, rowKey)}
-                          >
-                            {isCopiedRow ? <Check size={12} /> : <Copy size={12} />}
-                            <span>{isCopiedRow ? 'Tersalin!' : 'Baris'}</span>
-                          </button>
-
-                          <button
-                            className="btn btn-accent btn-sm"
-                            style={{ padding: '4px 8px', fontSize: '11px' }}
-                            title="Salin 18 Nilai Skor saja (CC1 s/d ACC2) untuk paste ke spreadsheet"
+                            style={{ padding: '4px 8px', fontSize: '11.5px', fontWeight: 700 }}
+                            title="Salin HANYA 18 Nilai Skor (CC1 s/d ACC2) untuk paste ke spreadsheet"
                             onClick={() => handleCopyScoresOnly(row, rowKey)}
                           >
                             {isCopiedScores ? <Check size={12} /> : <Table size={12} />}
-                            <span>{isCopiedScores ? 'Tersalin!' : '18 Skor'}</span>
+                            <span>{isCopiedScores ? 'Tersalin!' : '📋 18 Skor'}</span>
+                          </button>
+
+                          <button
+                            className="btn btn-outline btn-sm"
+                            style={{ padding: '4px 8px', fontSize: '11px', background: '#ffffff' }}
+                            title="Salin Baris Lengkap (+Code & Tahun)"
+                            onClick={() => handleCopyRow(row, rowKey)}
+                          >
+                            {isCopiedRow ? <Check size={12} /> : <Copy size={12} />}
+                            <span>{isCopiedRow ? 'Tersalin!' : 'Lengkap'}</span>
                           </button>
 
                           <button

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { extractTextFromPDF } from '@/lib/pdf-parser';
+import { extractTextFromPdf } from '@/lib/pdf-parser';
 import { analyzeWithGemini } from '@/lib/gemini';
 import { calculateDisclosureLevel, calculateTotalScore } from '@/lib/types';
 import { getSupabaseServerClient } from '@/lib/supabase';
@@ -11,6 +11,7 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
+    const directPdfText = (formData.get('pdfText') as string) || '';
     const companyCode = ((formData.get('companyCode') as string) || '').trim().toUpperCase();
     const fiscalYear = ((formData.get('fiscalYear') as string) || '').trim();
     const notes = ((formData.get('notes') as string) || '').trim();
@@ -23,29 +24,41 @@ export async function POST(req: NextRequest) {
     if (!fiscalYear) {
       return NextResponse.json({ success: false, error: 'Tahun fiskal (FY) wajib dipilih.' }, { status: 400 });
     }
-    if (!file) {
-      return NextResponse.json({ success: false, error: 'File PDF wajib diunggah.' }, { status: 400 });
+
+    let fileName = (formData.get('fileName') as string) || 'document.pdf';
+    let textToAnalyze = directPdfText;
+    let base64Fallback: string | undefined;
+    let pageCount = 0;
+    let totalCharacters = 0;
+
+    if (file) {
+      fileName = file.name;
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      if (!textToAnalyze) {
+        console.log(`[Analyze] Mengekstrak teks dari PDF: ${fileName}...`);
+        const extraction = await extractTextFromPdf(buffer);
+        textToAnalyze = extraction.text;
+        pageCount = extraction.pageCount;
+        totalCharacters = extraction.totalCharacters;
+        if (extraction.isScannedOrEmpty) {
+          base64Fallback = buffer.toString('base64');
+        }
+      }
+    } else if (textToAnalyze) {
+      totalCharacters = textToAnalyze.length;
+    } else {
+      return NextResponse.json({ success: false, error: 'File PDF atau teks dokumen wajib diberikan.' }, { status: 400 });
     }
-
-    const fileName = file.name;
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    // 1. Ekstraksi Otomatis PDF ke Format TXT
-    console.log(`[Analyze] Mengekstrak teks dari PDF: ${fileName} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)...`);
-    const extraction = await extractTextFromPDF(buffer);
-    console.log(`[Analyze] Ekstraksi selesai: ${extraction.pageCount} halaman, ${extraction.totalCharacters} karakter.`);
-
-    // Siapkan base64 sebagai fallback jika PDF berupa scan/gambar
-    const base64 = buffer.toString('base64');
 
     // 2. Analisis 18 Indikator CED dengan Gemini AI
     console.log(`[Analyze] Mengirim ke Gemini AI untuk analisis ${companyCode} ${fiscalYear}...`);
     const aiResult = await analyzeWithGemini({
       companyCode,
       fiscalYear,
-      pdfText: extraction.text,
-      pdfBase64: extraction.isScannedOrEmpty ? base64 : undefined,
+      pdfText: textToAnalyze,
+      pdfBase64: base64Fallback,
       apiKey: customApiKey || undefined,
       preferredModel: customModel || undefined
     });
@@ -73,7 +86,6 @@ export async function POST(req: NextRequest) {
           updated_at: new Date().toISOString()
         };
 
-        // Simpan (Upsert jika kode dan tahun sama, atau insert baru)
         const { data, error } = await supabase
           .from('ced_results')
           .insert([recordData])
@@ -92,8 +104,6 @@ export async function POST(req: NextRequest) {
         console.warn('[Analyze] Exception Supabase:', dbEx?.message);
         dbError = dbEx?.message;
       }
-    } else {
-      console.log('[Analyze] Supabase belum dikonfigurasi, hasil disimpan secara lokal di respon browser.');
     }
 
     return NextResponse.json({
@@ -110,20 +120,19 @@ export async function POST(req: NextRequest) {
         model_used: aiResult.modelUsed,
         created_at: new Date().toISOString(),
         extraction_summary: {
-          page_count: extraction.pageCount,
-          total_characters: extraction.totalCharacters,
-          is_scanned: extraction.isScannedOrEmpty
+          page_count: pageCount,
+          total_characters: totalCharacters || textToAnalyze.length,
+          is_scanned: Boolean(base64Fallback)
         },
         saved_in_supabase: savedInDb,
-        supabase_note: dbError ? `Gagal simpan ke DB: ${dbError}` : (savedInDb ? 'Tersimpan di Supabase' : 'Supabase belum diset')
+        supabase_note: dbError ? `Gagal simpan ke DB: ${dbError}` : (savedInDb ? 'Tersimpan di Supabase' : 'Mode lokal aktif')
       }
     });
-
   } catch (err: any) {
-    console.error('[Analyze API Error]', err);
+    console.error('[Analyze API Error]:', err);
     return NextResponse.json({
       success: false,
-      error: err?.message || 'Terjadi kesalahan saat memproses dokumen.'
+      error: err?.message || 'Terjadi kesalahan sistem saat menganalisis dokumen.'
     }, { status: 500 });
   }
 }
