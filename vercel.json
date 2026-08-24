@@ -1,4 +1,14 @@
 {
   "framework": "nextjs",
-  "buildCommand": "next build"
+  "buildCommand": "next build",
+  "crons": [
+    {
+      "path": "/api/cron/keepalive",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/keepalive",
+      "schedule": "0 12 * * *"
+    }
+  ]
 }

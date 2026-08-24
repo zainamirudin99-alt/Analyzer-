@@ -119,7 +119,19 @@ CREATE TABLE IF NOT EXISTS public.ced_results (
 
 ALTER TABLE public.ced_results ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public All Access" ON public.ced_results;
-CREATE POLICY "Public All Access" ON public.ced_results FOR ALL USING (true);`;
+CREATE POLICY "Public All Access" ON public.ced_results FOR ALL USING (true) WITH CHECK (true);
+
+-- Tabel Keep-Alive Heartbeat (Mencegah Supabase Pause)
+CREATE TABLE IF NOT EXISTS public.ced_heartbeat (
+    id VARCHAR(50) PRIMARY KEY DEFAULT 'primary',
+    last_ping TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    ping_count BIGINT DEFAULT 1,
+    status TEXT DEFAULT 'active_keepalive'
+);
+
+ALTER TABLE public.ced_heartbeat ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Access Heartbeat" ON public.ced_heartbeat;
+CREATE POLICY "Public Access Heartbeat" ON public.ced_heartbeat FOR ALL USING (true) WITH CHECK (true);`;
 
     navigator.clipboard.writeText(sqlText);
     setCopiedSql(true);

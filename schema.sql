@@ -1,6 +1,7 @@
 -- ============================================================
 -- SQL SCHEMA FOR ANALYZER (Carbon Emission Disclosure)
 -- Database: Supabase (PostgreSQL)
+-- Update: Support 18 Indikator CED, Model 3.6-Flash, & Auto Keep-Alive Heartbeat
 -- ============================================================
 
 -- 1. Buat Tabel Utama: ced_results
@@ -47,9 +48,9 @@ CREATE TABLE IF NOT EXISTS public.ced_results (
         ec1 + ec2 + ec3 + rc1 + rc2 + rc3 + rc4 + acc1 + acc2
     ) STORED,
     
-    -- Klasifikasi Tingkat Pengungkapan
+    -- Klasifikasi Tingkat Pengungkapan & Model AI
     disclosure_level VARCHAR(50) DEFAULT 'Rendah',
-    model_used VARCHAR(100) DEFAULT 'gemini-2.5-flash',
+    model_used VARCHAR(100) DEFAULT 'gemini-3.6-flash',
     
     -- Timestamp Audit
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
@@ -60,27 +61,36 @@ CREATE TABLE IF NOT EXISTS public.ced_results (
 CREATE INDEX IF NOT EXISTS idx_ced_company_year ON public.ced_results(company_code, fiscal_year);
 CREATE INDEX IF NOT EXISTS idx_ced_created_at ON public.ced_results(created_at DESC);
 
--- 2. Aktifkan Row Level Security (RLS)
+-- 2. Aktifkan Row Level Security (RLS) pada ced_results
 ALTER TABLE public.ced_results ENABLE ROW LEVEL SECURITY;
 
--- 3. Kebijakan Akses (Public Read/Write untuk aplikasi Web Analyzer)
+DROP POLICY IF EXISTS "Public All Access" ON public.ced_results;
 DROP POLICY IF EXISTS "Public Select CED Results" ON public.ced_results;
-CREATE POLICY "Public Select CED Results" ON public.ced_results
-    FOR SELECT USING (true);
-
 DROP POLICY IF EXISTS "Public Insert CED Results" ON public.ced_results;
-CREATE POLICY "Public Insert CED Results" ON public.ced_results
-    FOR INSERT WITH CHECK (true);
-
 DROP POLICY IF EXISTS "Public Update CED Results" ON public.ced_results;
-CREATE POLICY "Public Update CED Results" ON public.ced_results
-    FOR UPDATE USING (true);
-
 DROP POLICY IF EXISTS "Public Delete CED Results" ON public.ced_results;
-CREATE POLICY "Public Delete CED Results" ON public.ced_results
-    FOR DELETE USING (true);
 
--- 4. Tabel Konfigurasi Opsi Aplikasi (Opsional)
+CREATE POLICY "Public All Access" ON public.ced_results FOR ALL USING (true) WITH CHECK (true);
+
+-- 3. Buat Tabel Keep-Alive Heartbeat (Mencegah Supabase Free Tier Pause / Hibernasi)
+CREATE TABLE IF NOT EXISTS public.ced_heartbeat (
+    id VARCHAR(50) PRIMARY KEY DEFAULT 'primary',
+    last_ping TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    ping_count BIGINT DEFAULT 1,
+    status TEXT DEFAULT 'active_keepalive'
+);
+
+ALTER TABLE public.ced_heartbeat ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Access Heartbeat" ON public.ced_heartbeat;
+CREATE POLICY "Public Access Heartbeat" ON public.ced_heartbeat FOR ALL USING (true) WITH CHECK (true);
+
+-- Insert record awal heartbeat jika belum ada
+INSERT INTO public.ced_heartbeat (id, last_ping, ping_count, status)
+VALUES ('primary', NOW(), 1, 'active_keepalive')
+ON CONFLICT (id) DO UPDATE 
+SET last_ping = NOW(), ping_count = public.ced_heartbeat.ping_count + 1;
+
+-- 4. Tabel Konfigurasi Opsi Aplikasi (app_settings)
 CREATE TABLE IF NOT EXISTS public.app_settings (
     key VARCHAR(100) PRIMARY KEY,
     value TEXT NOT NULL,
@@ -88,10 +98,9 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
 );
 
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
-
 DROP POLICY IF EXISTS "Public Access App Settings" ON public.app_settings;
-CREATE POLICY "Public Access App Settings" ON public.app_settings FOR ALL USING (true);
+CREATE POLICY "Public Access App Settings" ON public.app_settings FOR ALL USING (true) WITH CHECK (true);
 
 INSERT INTO public.app_settings (key, value)
-VALUES ('active_gemini_model', 'gemini-2.5-flash')
+VALUES ('active_gemini_model', 'gemini-3.6-flash')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
