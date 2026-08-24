@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase';
-import { FALLBACK_MODELS, buildGeminiEndpointAndHeaders } from '@/lib/gemini';
+import { FALLBACK_MODELS, executeGeminiRequest } from '@/lib/gemini';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,16 +65,12 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    const { endpoint, headers } = buildGeminiEndpointAndHeaders(testModel, testKey);
+    const testPayload = {
+      contents: [{ parts: [{ text: 'Halo Gemini, konfirmasi koneksi OK.' }] }],
+      generationConfig: { maxOutputTokens: 10 }
+    };
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: 'Halo Gemini, konfirmasi koneksi OK.' }] }],
-        generationConfig: { maxOutputTokens: 10 }
-      })
-    });
+    const response = await executeGeminiRequest(testModel, testKey, testPayload);
 
     if (response.ok) {
       return NextResponse.json({
@@ -86,7 +82,7 @@ export async function POST(req: NextRequest) {
     const errText = await response.text();
     return NextResponse.json({
       success: false,
-      error: `Gemini API Error (HTTP ${response.status}): ${errText.substring(0, 200)}`
+      error: `Gemini API Error (HTTP ${response.status}): ${errText.substring(0, 250)}`
     }, { status: 400 });
   } catch (err: any) {
     return NextResponse.json({

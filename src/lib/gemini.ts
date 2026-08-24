@@ -78,7 +78,6 @@ function extractAndParseJSON(rawText: string): Record<string, number> {
     .replace(/```\s*/gi, '')
     .trim();
 
-  // Cari index kurung kurawal
   const startIdx = cleaned.indexOf('{');
   if (startIdx !== -1) {
     let depth = 0;
@@ -94,7 +93,7 @@ function extractAndParseJSON(rawText: string): Record<string, number> {
       }
     }
 
-    let jsonSubstring = endIdx !== -1
+    const jsonSubstring = endIdx !== -1
       ? cleaned.substring(startIdx, endIdx + 1)
       : cleaned.substring(startIdx) + '}';
 
@@ -105,7 +104,6 @@ function extractAndParseJSON(rawText: string): Record<string, number> {
     }
   }
 
-  // Regex parser jika JSON format tidak valid
   const fallbackScores: Record<string, number> = {};
   const regex = /"?(CC[12]|GHG[1-7]|EC[123]|RC[1-4]|ACC[12])"?\s*:\s*([0-5])/gi;
   let match: RegExpExecArray | null;
@@ -118,9 +116,6 @@ function extractAndParseJSON(rawText: string): Record<string, number> {
   return fallbackScores;
 }
 
-/**
- * Normalisasi skor ke format CEDScores lowercase (cc1..acc2)
- */
 function normalizeScores(rawObj: Record<string, any>): CEDScores {
   const result: CEDScores = {
     cc1: 0, cc2: 0,
@@ -141,24 +136,46 @@ function normalizeScores(rawObj: Record<string, any>): CEDScores {
 }
 
 /**
- * Helper: Bangun endpoint URL dan Headers yang mendukung format key AIza... maupun AQ...
+ * Panggil Gemini AI dengan dual strategy (Header x-goog-api-key dan URL Query Key)
  */
-export function buildGeminiEndpointAndHeaders(model: string, apiKey: string) {
-  const isOAuthKey = apiKey.startsWith('AQ.') || apiKey.startsWith('ya29.');
-  const endpoint = isOAuthKey
-    ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
-    : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+export async function executeGeminiRequest(model: string, apiKey: string, requestBody: any): Promise<Response> {
+  const cleanKey = apiKey.trim();
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'x-goog-api-key': apiKey
-  };
+  // Strategi 1: Header x-goog-api-key (standar resmi Google AI Studio untuk format AQ... & AIza...)
+  const urlHeader = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  try {
+    const res1 = await fetch(urlHeader, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': cleanKey
+      },
+      body: JSON.stringify(requestBody)
+    });
 
-  if (isOAuthKey) {
-    headers['Authorization'] = `Bearer ${apiKey}`;
+    if (res1.status === 200) return res1;
+
+    // Jika strategi 1 gagal bukan karena model 404/429, coba strategi 2 (URL Query ?key=)
+    if (res1.status === 400 || res1.status === 401 || res1.status === 403) {
+      const urlQuery = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(cleanKey)}`;
+      const res2 = await fetch(urlQuery, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+      if (res2.status === 200) return res2;
+      return res2;
+    }
+
+    return res1;
+  } catch (err: any) {
+    const urlQuery = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(cleanKey)}`;
+    return fetch(urlQuery, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody)
+    });
   }
-
-  return { endpoint, headers };
 }
 
 /**
@@ -178,9 +195,7 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
 
   for (const model of modelQueue) {
     console.log(`[Gemini CED] Mencoba model: ${model}...`);
-    const { endpoint, headers } = buildGeminiEndpointAndHeaders(model, apiKey);
 
-    // Siapkan parts konten (Utamakan TXT jika ada, fallback ke PDF Base64 jika scanned)
     const parts: any[] = [];
     if (options.pdfText && options.pdfText.trim().length > 50) {
       parts.push({
@@ -209,11 +224,7 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
     };
 
     try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(requestBody)
-      });
+      const response = await executeGeminiRequest(model, apiKey, requestBody);
 
       if (response.status === 200) {
         const data = await response.json();
