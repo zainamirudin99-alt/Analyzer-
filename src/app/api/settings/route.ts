@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase';
-import { PROVEN_GEMINI_MODELS, executeGeminiRequest, getAvailableModelsFromApi } from '@/lib/gemini';
+import { ALL_SUPPORTED_MODELS, executeGeminiRequest, getAvailableModelsFromApi } from '@/lib/gemini';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +37,7 @@ export async function GET(_req: NextRequest) {
         gemini: {
           hasKey: hasServerGeminiKey,
           defaultModel,
-          availableModels: PROVEN_GEMINI_MODELS
+          availableModels: ALL_SUPPORTED_MODELS
         }
       }
     });
@@ -49,7 +49,7 @@ export async function GET(_req: NextRequest) {
   }
 }
 
-// POST: Uji coba Gemini API Key dari client
+// POST: Uji coba Gemini API Key dari client dengan Automatic Failover Queue
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -60,36 +60,61 @@ export async function POST(req: NextRequest) {
     if (!testKey) {
       return NextResponse.json({
         success: false,
-        error: 'API Key belum diisi.'
+        error: 'API Key belum diisi. Masukkan API Key dari Google AI Studio.'
       }, { status: 400 });
     }
 
-    // 1. Temukan model yang aktif untuk API Key ini
+    const preferredModel = (model || 'gemini-1.5-flash').trim();
+
+    // 1. Temukan daftar model yang aktif untuk API Key ini
     const discovered = await getAvailableModelsFromApi(testKey);
-    let testModel = (model || discovered[0] || 'gemini-1.5-flash').trim();
-    if (testModel.includes('3.6') || testModel.includes('3.5') || testModel.includes('2.5')) {
-      testModel = discovered[0] || 'gemini-1.5-flash';
-    }
+
+    // 2. Susun antrian uji coba (model pilihan user diuji paling pertama)
+    const testQueue = Array.from(new Set([
+      preferredModel,
+      ...discovered,
+      'gemini-1.5-flash',
+      'gemini-2.0-flash',
+      'gemini-1.5-pro',
+      'gemini-1.5-flash-8b'
+    ]));
 
     const testPayload = {
-      contents: [{ parts: [{ text: 'Halo Gemini, konfirmasi koneksi OK.' }] }],
+      contents: [{ parts: [{ text: 'Halo Gemini, konfirmasi status koneksi.' }] }],
       generationConfig: { maxOutputTokens: 10 }
     };
 
-    const response = await executeGeminiRequest(testModel, testKey, testPayload);
+    let lastError = '';
 
-    if (response.ok) {
-      return NextResponse.json({
-        success: true,
-        message: `Koneksi ke Google Gemini AI (${testModel}) BERHASIL! 🚀`,
-        availableModels: discovered
-      });
+    for (const m of testQueue) {
+      try {
+        console.log(`[Test Key] Mencoba koneksi dengan model: ${m}...`);
+        const response = await executeGeminiRequest(m, testKey, testPayload);
+
+        if (response.ok) {
+          const isDirectMatch = m === preferredModel;
+          const msg = isDirectMatch
+            ? `Koneksi ke Google Gemini AI (${m}) BERHASIL 100%! 🚀`
+            : `Koneksi ke Google Gemini AI BERHASIL! Model aktif terverifikasi: ${m} 🚀 (Model ${preferredModel} otomatis dialihkan ke ${m}).`;
+
+          return NextResponse.json({
+            success: true,
+            message: msg,
+            activeModel: m,
+            availableModels: discovered
+          });
+        }
+
+        const errText = await response.text();
+        lastError = `HTTP ${response.status} (${m}): ${errText.substring(0, 200)}`;
+      } catch (err: any) {
+        lastError = err?.message || String(err);
+      }
     }
 
-    const errText = await response.text();
     return NextResponse.json({
       success: false,
-      error: `Gemini API Error (HTTP ${response.status}): ${errText.substring(0, 250)}`,
+      error: `Uji koneksi gagal pada semua model. Respon terakhir dari Google: ${lastError}`,
       availableModels: discovered
     }, { status: 400 });
   } catch (err: any) {
