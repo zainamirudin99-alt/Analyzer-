@@ -19,6 +19,24 @@ declare namespace NodeJS {
 declare var process: any;
 declare var Buffer: any;
 
+declare namespace React {
+  type FC<P = {}> = (props: P) => any;
+  type ReactNode = any;
+  type ReactElement = any;
+  interface ChangeEvent<T = any> {
+    target: T;
+  }
+  interface DragEvent<T = any> {
+    preventDefault: () => void;
+    dataTransfer: {
+      files: FileList;
+    };
+  }
+  function useState<T>(initialState: T | (() => T)): [T, (newState: T | ((prevState: T) => T)) => void];
+  function useEffect(effect: () => void | (() => void), deps?: any[]): void;
+  function useRef<T>(initialValue?: T): { current: T };
+}
+
 declare module 'next/server' {
   export class NextRequest extends Request {
     readonly nextUrl: URL;
@@ -58,44 +76,32 @@ declare module 'clsx' {
 }
 
 declare module 'lucide-react' {
-  export interface LucideProps {
-    size?: string | number;
-    color?: string;
-    strokeWidth?: string | number;
-    className?: string;
-    style?: any;
-    onClick?: (e?: any) => void;
-    title?: string;
-    disabled?: boolean;
-  }
-  export type LucideIcon = (props: LucideProps) => any;
+  export const UploadCloud: any;
+  export const FileText: any;
+  export const CheckCircle2: any;
+  export const AlertTriangle: any;
+  export const Sparkles: any;
+  export const RefreshCw: any;
+  export const ArrowRight: any;
+  export const Copy: any;
+  export const Check: any;
+  export const Eye: any;
+  export const Download: any;
+  export const X: any;
+  export const Trash2: any;
+  export const Printer: any;
+  export const Search: any;
+  export const Table: any;
+  export const Database: any;
+  export const Key: any;
+  export const Cpu: any;
+  export const AlertCircle: any;
+  export const ExternalLink: any;
+  export const FileSpreadsheet: any;
+  export const ChevronDown: any;
+  export const ChevronUp: any;
+  export const Info: any;
 
-  export const UploadCloud: LucideIcon;
-  export const FileText: LucideIcon;
-  export const CheckCircle2: LucideIcon;
-  export const AlertTriangle: LucideIcon;
-  export const Sparkles: LucideIcon;
-  export const RefreshCw: LucideIcon;
-  export const ArrowRight: LucideIcon;
-  export const Copy: LucideIcon;
-  export const Check: LucideIcon;
-  export const Eye: LucideIcon;
-  export const Download: LucideIcon;
-  export const X: LucideIcon;
-  export const Trash2: LucideIcon;
-  export const Printer: LucideIcon;
-  export const Search: LucideIcon;
-  export const Table: LucideIcon;
-  export const Database: LucideIcon;
-  export const Key: LucideIcon;
-  export const Cpu: LucideIcon;
-  export const AlertCircle: LucideIcon;
-  export const ExternalLink: LucideIcon;
-  export const FileSpreadsheet: LucideIcon;
-  export const ChevronDown: LucideIcon;
-  export const ChevronUp: LucideIcon;
-  export const Info: LucideIcon;
-
-  const icons: { [key: string]: LucideIcon };
+  const icons: any;
   export default icons;
 }
