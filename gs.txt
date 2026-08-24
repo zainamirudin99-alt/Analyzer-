@@ -1,0 +1,647 @@
+// ============================================================
+// Google Apps Script - Carbon Emission Disclosure (CED) Analyzer
+// Spreadsheet: https://docs.google.com/spreadsheets/d/1uG_aHz0RcRvzDobvYc2d3mS1Y-BzVKNjEUqJR3nVNXY/edit
+// Sheet Input  : "Data"
+// Sheet Output : "Hasil"
+// AI Backend   : Google Gemini AI Studio API (GRATIS, tanpa billing)
+// ============================================================
+
+const SPREADSHEET_ID = '1uG_aHz0RcRvzDobvYc2d3mS1Y-BzVKNjEUqJR3nVNXY';
+const SHEET_DATA     = 'Data';
+const SHEET_HASIL    = 'Hasil';
+const GEMINI_MODEL_DEFAULT = 'gemini-2.0-flash';  // fallback jika belum diset
+
+const INDICATORS = [
+  'CC1','CC2',
+  'GHG1','GHG2','GHG3','GHG4','GHG5','GHG6','GHG7',
+  'EC1','EC2','EC3',
+  'RC1','RC2','RC3','RC4',
+  'ACC1','ACC2'
+];
+
+// ─── Entry Point: Web App ────────────────────────────────────
+function doGet() {
+  return HtmlService
+    .createHtmlOutputFromFile('index')
+    .setTitle('CED Analyzer')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+// ─── Inisialisasi Header Spreadsheet ────────────────────────
+function initSheets() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+
+  let dataSheet = ss.getSheetByName(SHEET_DATA);
+  if (!dataSheet) dataSheet = ss.insertSheet(SHEET_DATA);
+  if (dataSheet.getLastRow() === 0) {
+    const dataHeaders = ['No','Code Perusahaan','Tahun (FY)','Nama File PDF','Status','Tanggal Upload','Catatan'];
+    dataSheet.getRange(1, 1, 1, dataHeaders.length).setValues([dataHeaders]);
+    _styleHeaderRow(dataSheet, dataHeaders.length, '#1565C0');
+    dataSheet.setFrozenRows(1);
+  }
+
+  let hasilSheet = ss.getSheetByName(SHEET_HASIL);
+  if (!hasilSheet) hasilSheet = ss.insertSheet(SHEET_HASIL);
+  if (hasilSheet.getLastRow() === 0) _buildHasilHeader(hasilSheet);
+
+  return { status: 'ok', message: 'Sheet berhasil diinisialisasi.' };
+}
+
+function _buildHasilHeader(sheet) {
+  const totalCols = 2 + INDICATORS.length + 1;
+  sheet.getRange(1, 1, 1, totalCols).merge().setValue('CED SCORING RESULT');
+  _styleHeaderRow(sheet, totalCols, '#E65100');
+  const header2 = ['Code', 'Years', ...INDICATORS, 'TOTAL'];
+  sheet.getRange(2, 1, 1, header2.length).setValues([header2]);
+  _styleHeaderRow(sheet, header2.length, '#F57C00', 2);
+  sheet.setFrozenRows(2);
+  sheet.setFrozenColumns(2);
+  sheet.autoResizeColumns(1, totalCols);
+}
+
+function _styleHeaderRow(sheet, numCols, bgColor, row = 1) {
+  const range = sheet.getRange(row, 1, 1, numCols);
+  range.setBackground(bgColor)
+       .setFontColor('#FFFFFF')
+       .setFontWeight('bold')
+       .setHorizontalAlignment('center')
+       .setVerticalAlignment('middle');
+  sheet.setRowHeight(row, 32);
+}
+
+// ─── Simpan Data Inputan ke Sheet "Data" ─────────────────────
+function saveInputData(payload) {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    let sheet = ss.getSheetByName(SHEET_DATA);
+    if (!sheet) { initSheets(); sheet = ss.getSheetByName(SHEET_DATA); }
+
+    const lastRow = sheet.getLastRow();
+    const newRow  = lastRow + 1;
+
+    sheet.getRange(newRow, 1, 1, 7).setValues([[
+      lastRow,
+      payload.companyCode,
+      payload.fiscalYear,
+      payload.fileName,
+      'Pending',
+      new Date().toLocaleString('id-ID'),
+      payload.notes || ''
+    ]]);
+
+    if (newRow % 2 === 0) sheet.getRange(newRow, 1, 1, 7).setBackground('#FFF8E1');
+    return { status: 'ok', rowNumber: newRow };
+  } catch (e) {
+    return { status: 'error', message: e.message };
+  }
+}
+
+// ─── Analisis PDF dengan Gemini AI Studio ────────────────────
+function analyzePDF(payload) {
+  try {
+    const { companyCode, fiscalYear, fileName, pdfBase64, rowNumber } = payload;
+    if (!pdfBase64) throw new Error('PDF base64 tidak boleh kosong.');
+
+    const scores = _callGeminiAIStudio(pdfBase64, companyCode, fiscalYear);
+    _saveToHasilSheet(companyCode, fiscalYear, scores);
+    _updateDataStatus(rowNumber, 'Selesai ✅', scores);
+
+    return { status: 'ok', message: `Analisis ${companyCode} ${fiscalYear} berhasil.`, scores };
+  } catch (e) {
+    if (payload.rowNumber) _updateDataStatus(payload.rowNumber, 'Error ❌', null, e.message);
+    return { status: 'error', message: e.message };
+  }
+}
+
+// ─── Daftar model fallback jika 429 (urutan: ringan → berat) ─
+// Hanya model yang terbukti support generateContent di v1beta
+const FALLBACK_MODELS = [
+  'gemini-2.0-flash-lite',      // paling ringan, cocok untuk quota rendah
+  'gemini-2.5-flash-lite',      // alternatif lite terbaru
+  'gemini-2.0-flash',           // mid-tier
+  'gemini-2.5-flash',           // default terbaru
+  'gemini-flash-latest',        // alias latest flash
+  'gemini-2.0-flash-001',       // versi stabil 2.0
+];
+
+// ─── Panggil Gemini AI Studio API (support key format AIza... maupun AQ...) ─
+// Fitur: retry otomatis 503, retry dengan delay panjang 429, fallback model 429
+function _callGeminiAIStudio(pdfBase64, companyCode, fiscalYear) {
+  const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!apiKey) throw new Error('GEMINI_API_KEY belum diset. Buka tab ⚙️ Pengaturan dan masukkan API Key dari https://aistudio.google.com/app/apikey');
+
+  const prompt = `Anda adalah analis ahli Carbon Emission Disclosure (CED) yang berpengalaman.
+Tugas Anda: menganalisis laporan tahunan perusahaan "${companyCode}" tahun fiskal "${fiscalYear}" dan memberikan skor untuk 18 indikator CED.
+
+KRITERIA SKOR (0–5):
+0 = Tidak ada pengungkapan sama sekali.
+1 = Diungkapkan dalam kurang dari tiga kalimat.
+2 = Diungkapkan dalam tiga kalimat atau satu paragraf (tidak lebih dari setengah halaman).
+3 = Diungkapkan minimal setengah halaman tetapi kurang dari satu halaman A4.
+4 = Diungkapkan pada satu halaman A4 penuh.
+5 = Diungkapkan lebih dari satu halaman A4.
+
+DEFINISI 18 INDIKATOR:
+CC1  – Penilaian/deskripsi risiko (peraturan/regulasi) terkait perubahan iklim & aksi penanggulangannya.
+CC2  – Penilaian implikasi keuangan, bisnis, dan peluang dari perubahan iklim (saat ini dan masa depan).
+GHG1 – Deskripsi metodologi penghitungan emisi GRK (gas rumah kaca / ISO).
+GHG2 – Verifikasi pihak eksternal atas pengukuran emisi GRK (siapa & dasar apa).
+GHG3 – Total emisi GRK yang dihasilkan.
+GHG4 – Lingkup 1 & 2, atau lingkup 3 emisi GRK langsung.
+GHG5 – Emisi GRK berdasarkan asal/sumber (batu bara, listrik, dll.).
+GHG6 – Emisi GRK berdasarkan fasilitas atau level segmen.
+GHG7 – Perbandingan emisi GRK dengan tahun sebelumnya.
+EC1  – Total energi yang dikonsumsi (liter, tera joule, peta joule, dll.).
+EC2  – Kuantifikasi energi dari sumber daya terbarukan.
+EC3  – Pengungkapan energi menurut tipe/jenis, fasilitas, atau segmen.
+RC1  – Rencana/strategi detail untuk mengurangi emisi GRK.
+RC2  – Target tingkat/level dan tahun pengurangan emisi GRK.
+RC3  – Pengurangan emisi dan biaya/tabungan yang dicapai dari rencana pengurangan emisi.
+RC4  – Biaya emisi masa depan dalam perencanaan belanja modal (capex planning).
+ACC1 – Indikasi dewan/komite yang bertanggung jawab atas aksi perubahan iklim.
+ACC2 – Mekanisme dewan meninjau kemajuan perusahaan terkait perubahan iklim.
+
+INSTRUKSI OUTPUT:
+Berikan HANYA objek JSON tanpa teks tambahan, tanpa backtick, tanpa penjelasan:
+{"CC1":X,"CC2":X,"GHG1":X,"GHG2":X,"GHG3":X,"GHG4":X,"GHG5":X,"GHG6":X,"GHG7":X,"EC1":X,"EC2":X,"EC3":X,"RC1":X,"RC2":X,"RC3":X,"RC4":X,"ACC1":X,"ACC2":X}
+Ganti X dengan angka 0–5.`;
+
+  // Baca model dari Script Properties, fallback ke default
+  const primaryModel = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL') || GEMINI_MODEL_DEFAULT;
+  const isOAuthKey   = apiKey.startsWith('AQ.');
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (isOAuthKey) headers['x-goog-api-key'] = apiKey;
+
+  const requestBody = {
+    contents: [{
+      parts: [
+        { inline_data: { mime_type: 'application/pdf', data: pdfBase64 } },
+        { text: prompt }
+      ]
+    }],
+    generationConfig: { temperature: 0.1, maxOutputTokens: 512 }
+  };
+
+  const options = {
+    method            : 'post',
+    contentType       : 'application/json',
+    headers           : headers,
+    payload           : JSON.stringify(requestBody),
+    muteHttpExceptions: true
+  };
+
+  // ── Helper: build URL untuk model tertentu ──
+  function _buildUrl(model) {
+    return isOAuthKey
+      ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
+      : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  }
+
+  // ── Helper: satu percobaan ke model tertentu ──
+  // Mengembalikan { responseCode, responseText } atau throw jika error fatal
+  function _fetchModel(model) {
+    const url = _buildUrl(model);
+    const res = UrlFetchApp.fetch(url, options);
+    return { responseCode: res.getResponseCode(), responseText: res.getContentText() };
+  }
+
+  // ── Strategi retry & fallback ──
+  // Urutan model yang akan dicoba: [primaryModel, ...FALLBACK_MODELS (kecuali yg sama)]
+  const modelQueue = [primaryModel, ...FALLBACK_MODELS.filter(m => m !== primaryModel)];
+
+  let lastError = '';
+  let response, responseCode, responseText;
+
+  for (let mi = 0; mi < modelQueue.length; mi++) {
+    const model         = modelQueue[mi];
+    const isFallback    = mi > 0;
+    const maxRetry      = 3;
+    let   modelSuccess  = false;
+
+    Logger.log(`[CED] Mencoba model: ${model}${isFallback ? ' (fallback)' : ''}`);
+
+    for (let attempt = 1; attempt <= maxRetry; attempt++) {
+      try {
+        ({ responseCode, responseText } = _fetchModel(model));
+      } catch (fetchErr) {
+        lastError = `Fetch error: ${fetchErr.message}`;
+        break;
+      }
+
+      // ── 200 OK → berhasil ──
+      if (responseCode === 200) {
+        modelSuccess = true;
+        if (isFallback) Logger.log(`[CED] Berhasil dengan fallback model: ${model}`);
+        break;
+      }
+
+      // ── 503 Service Unavailable → retry dengan delay 8 detik ──
+      if (responseCode === 503) {
+        if (attempt < maxRetry) {
+          Logger.log(`[CED] 503 pada ${model}, attempt ${attempt}. Menunggu 8 detik…`);
+          Utilities.sleep(8000);
+          continue;
+        }
+        // Habis retry 503 → skip ke model berikutnya
+        lastError = `503 Service Unavailable pada model "${model}".`;
+        Logger.log(`[CED] ${lastError} Beralih ke model berikutnya…`);
+        break;
+      }
+
+      // ── 429 Rate Limit / Quota Exceeded ──
+      if (responseCode === 429) {
+        Logger.log(`[CED] 429 Quota exceeded pada ${model}, attempt ${attempt}.`);
+        if (attempt < maxRetry) {
+          // Exponential backoff: 15s → 30s → 60s
+          const waitMs = 15000 * Math.pow(2, attempt - 1);
+          Logger.log(`[CED] Menunggu ${waitMs / 1000} detik sebelum retry…`);
+          Utilities.sleep(waitMs);
+          continue;
+        }
+        // Habis retry di model ini → skip ke model berikutnya (fallback)
+        lastError = `429 Quota exceeded pada model "${model}".`;
+        if (mi + 1 < modelQueue.length) {
+          Logger.log(`[CED] ${lastError} Beralih ke: ${modelQueue[mi + 1]}…`);
+        }
+        break;
+      }
+
+      // ── 404 Model Not Found → skip ke model berikutnya, jangan fatal ──
+      if (responseCode === 404) {
+        lastError = `404 Model "${model}" tidak tersedia di API ini.`;
+        Logger.log(`[CED] ${lastError} Beralih ke model berikutnya…`);
+        break; // keluar dari retry loop, lanjut ke model berikutnya
+      }
+
+      // ── 400 Bad Request → kemungkinan PDF rusak/tidak didukung, fatal ──
+      if (responseCode === 400) {
+        throw new Error(`Gemini API error 400 (Bad Request) pada model "${model}": ${responseText.substring(0, 300)}. Kemungkinan format PDF tidak didukung atau konten bermasalah.`);
+      }
+
+      // ── Error lain yang tidak dikenal → skip ke model berikutnya ──
+      Logger.log(`[CED] Error ${responseCode} pada ${model}: ${responseText.substring(0, 200)}. Beralih ke model berikutnya…`);
+      lastError = `Error ${responseCode} pada model "${model}".`;
+      break;
+    }
+
+    if (modelSuccess) {
+      response = { responseCode, responseText };
+      // Simpan model yang berhasil agar user tahu
+      if (isFallback) {
+        PropertiesService.getScriptProperties().setProperty('GEMINI_LAST_USED_MODEL', model);
+      }
+      break;
+    }
+  }
+
+  // Jika semua model habis dicoba dan tidak ada yang berhasil
+  if (!response || responseCode !== 200) {
+    throw new Error(
+      'Semua model Gemini gagal diakses. ' +
+      'Solusi: (1) Buka ⚙️ Pengaturan → "Muat Daftar Model" lalu pilih model yang tersedia, ' +
+      '(2) Jika error 429: tunggu beberapa menit atau gunakan PDF lebih kecil (< 5 MB), ' +
+      '(3) Jika error 404: model sudah deprecated — pilih model baru di tab Pengaturan. ' +
+      'Error terakhir: ' + lastError
+    );
+  }
+
+  const data = JSON.parse(response.responseText);
+
+  // Cek apakah ada candidates
+  if (!data.candidates || !data.candidates[0]) {
+    // Cek finish reason — jika MAX_TOKENS, coba parse dari respons parsial
+    const blockReason = data.promptFeedback && data.promptFeedback.blockReason;
+    if (blockReason) throw new Error('Gemini memblokir respons: ' + blockReason);
+    throw new Error('Gemini tidak mengembalikan kandidat. Response: ' + response.responseText.substring(0, 200));
+  }
+
+  const candidate   = data.candidates[0];
+  const finishReason = candidate.finishReason || '';
+
+  const rawText = (candidate.content && candidate.content.parts || [])
+    .filter(p => p.text)
+    .map(p => p.text)
+    .join('');
+
+  Logger.log('[CED] finishReason: ' + finishReason + ' | rawText length: ' + rawText.length);
+
+  // ── Ekstraksi JSON yang robust ──
+  // Strategi 1: cari blok JSON valid terlengkap di dalam teks
+  function _extractJson(text) {
+    // Hilangkan markdown code fences
+    let t = text
+      .replace(/```json\s*/gi, '')
+      .replace(/```\s*/gi, '')
+      .trim();
+
+    // Cari { pertama dan } terakhir
+    const start = t.indexOf('{');
+    if (start === -1) return null;
+
+    // Temukan pasangan kurung kurawal yang benar
+    let depth   = 0;
+    let end     = -1;
+    for (let i = start; i < t.length; i++) {
+      if (t[i] === '{') depth++;
+      else if (t[i] === '}') {
+        depth--;
+        if (depth === 0) { end = i; break; }
+      }
+    }
+
+    // Jika JSON tidak tertutup (terpotong), coba tutup secara manual
+    if (end === -1) {
+      Logger.log('[CED] JSON terpotong, mencoba menutup secara manual…');
+      // Hitung berapa kurung yang belum ditutup
+      let open = 0;
+      for (let c of t.substring(start)) {
+        if (c === '{') open++;
+        else if (c === '}') open--;
+      }
+      t = t.substring(start) + '}'.repeat(Math.max(0, open));
+      end = t.length - 1;
+      return t.substring(0, end + 1);
+    }
+
+    return t.substring(start, end + 1);
+  }
+
+  const jsonStr = _extractJson(rawText);
+
+  if (!jsonStr) {
+    // Strategi fallback: coba parse key:value satu per satu dari teks mentah
+    Logger.log('[CED] JSON tidak ditemukan, mencoba parse manual dari teks: ' + rawText.substring(0, 200));
+    const fallbackScores = {};
+    const keyPattern = /"?(CC[12]|GHG[1-7]|EC[123]|RC[1-4]|ACC[12])"?\s*:\s*([0-5])/g;
+    let match;
+    while ((match = keyPattern.exec(rawText)) !== null) {
+      fallbackScores[match[1]] = parseInt(match[2], 10);
+    }
+    const found = Object.keys(fallbackScores).length;
+    if (found === 0) {
+      throw new Error('Tidak ada JSON valid. Respons AI: ' + rawText.substring(0, 300));
+    }
+    Logger.log('[CED] Fallback parse berhasil: ' + found + '/18 indikator ditemukan.');
+    INDICATORS.forEach(ind => {
+      if (fallbackScores[ind] === undefined) fallbackScores[ind] = 0;
+    });
+    return fallbackScores;
+  }
+
+  let scores;
+  try {
+    scores = JSON.parse(jsonStr);
+  } catch (parseErr) {
+    // Strategi fallback jika JSON masih tidak bisa diparsing
+    Logger.log('[CED] JSON.parse gagal: ' + parseErr.message + '. JSON string: ' + jsonStr.substring(0, 200));
+    const fallbackScores = {};
+    const keyPattern = /"?(CC[12]|GHG[1-7]|EC[123]|RC[1-4]|ACC[12])"?\s*:\s*([0-5])/g;
+    let match;
+    while ((match = keyPattern.exec(rawText)) !== null) {
+      fallbackScores[match[1]] = parseInt(match[2], 10);
+    }
+    if (Object.keys(fallbackScores).length === 0) {
+      throw new Error('Parse JSON gagal: ' + jsonStr.substring(0, 200));
+    }
+    INDICATORS.forEach(ind => { if (fallbackScores[ind] === undefined) fallbackScores[ind] = 0; });
+    return fallbackScores;
+  }
+
+  // Validasi dan normalisasi semua skor
+  INDICATORS.forEach(ind => {
+    if (scores[ind] === undefined || scores[ind] === null) {
+      scores[ind] = 0;
+      Logger.log('[CED] Indikator ' + ind + ' tidak ada dalam respons, diset ke 0.');
+    }
+    scores[ind] = Math.max(0, Math.min(5, parseInt(scores[ind], 10) || 0));
+  });
+
+  Logger.log('[CED] Skor berhasil diparse: ' + JSON.stringify(scores));
+  return scores;
+}
+
+// ─── Simpan ke Sheet "Hasil" ─────────────────────────────────
+function _saveToHasilSheet(companyCode, fiscalYear, scores) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  let sheet = ss.getSheetByName(SHEET_HASIL);
+  if (!sheet) { initSheets(); sheet = ss.getSheetByName(SHEET_HASIL); }
+
+  const lastRow = sheet.getLastRow();
+  let targetRow = -1;
+
+  if (lastRow > 2) {
+    const codeCol = sheet.getRange(3, 1, lastRow - 2, 1).getValues();
+    const yearCol = sheet.getRange(3, 2, lastRow - 2, 1).getValues();
+    for (let i = 0; i < codeCol.length; i++) {
+      if (String(codeCol[i][0]).toUpperCase() === companyCode.toUpperCase() &&
+          String(yearCol[i][0]) === String(fiscalYear)) {
+        targetRow = i + 3; break;
+      }
+    }
+  }
+
+  const total   = INDICATORS.reduce((s, ind) => s + (scores[ind] || 0), 0);
+  const rowData = [companyCode.toUpperCase(), fiscalYear, ...INDICATORS.map(ind => scores[ind] || 0), total];
+
+  if (targetRow > 0) {
+    sheet.getRange(targetRow, 1, 1, rowData.length).setValues([rowData]);
+    _applyRowStyle(sheet, targetRow, rowData.length);
+  } else {
+    const newRow = Math.max(3, lastRow + 1);
+    sheet.getRange(newRow, 1, 1, rowData.length).setValues([rowData]);
+    _applyRowStyle(sheet, newRow, rowData.length);
+  }
+
+  sheet.autoResizeColumns(1, 2 + INDICATORS.length + 1);
+}
+
+function _applyRowStyle(sheet, row, numCols) {
+  const bg = row % 2 === 0 ? '#FFF3E0' : '#FFFFFF';
+  sheet.getRange(row, 1, 1, numCols).setBackground(bg).setHorizontalAlignment('center');
+
+  sheet.getRange(row, 1, 1, 2)
+       .setFontWeight('bold')
+       .setBackground(row % 2 === 0 ? '#FF8F00' : '#FFA000')
+       .setFontColor('#FFFFFF');
+
+  INDICATORS.forEach((_, i) => {
+    const colIdx = 3 + i;
+    const val    = sheet.getRange(row, colIdx).getValue();
+    sheet.getRange(row, colIdx).setBackground(_scoreColor(val));
+  });
+
+  const totalCol = 3 + INDICATORS.length;
+  sheet.getRange(row, totalCol).setFontWeight('bold').setBackground('#1565C0').setFontColor('#FFFFFF');
+}
+
+function _scoreColor(score) {
+  const colors = ['#FFCDD2','#FFE0B2','#FFF9C4','#DCEDC8','#C8E6C9','#A5D6A7'];
+  return colors[score] || '#FFFFFF';
+}
+
+// ─── Update Status Sheet Data ─────────────────────────────────
+function _updateDataStatus(rowNumber, status, scores, errorMsg) {
+  const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(SHEET_DATA);
+  if (!sheet) return;
+  sheet.getRange(rowNumber, 5).setValue(status);
+  if (errorMsg) {
+    sheet.getRange(rowNumber, 7).setValue('Error: ' + errorMsg);
+  } else if (scores) {
+    const total = INDICATORS.reduce((s, ind) => s + (scores[ind] || 0), 0);
+    sheet.getRange(rowNumber, 7).setValue('Total Skor: ' + total + '/90');
+  }
+}
+
+// ─── Ambil Daftar Hasil ───────────────────────────────────────
+function getResultsList() {
+  try {
+    const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEET_HASIL);
+    if (!sheet || sheet.getLastRow() < 3) return { status: 'ok', data: [] };
+
+    const lastRow = sheet.getLastRow();
+    const lastCol = 2 + INDICATORS.length + 1;
+    const rows    = sheet.getRange(3, 1, lastRow - 2, lastCol).getValues();
+
+    const data = rows.filter(r => r[0]).map(r => {
+      const obj = { code: r[0], year: r[1] };
+      INDICATORS.forEach((ind, i) => { obj[ind] = r[2 + i]; });
+      obj.total = r[2 + INDICATORS.length];
+      return obj;
+    });
+
+    return { status: 'ok', data };
+  } catch (e) {
+    return { status: 'error', message: e.message };
+  }
+}
+
+// ─── Hapus Baris Hasil ────────────────────────────────────────
+function deleteResultRow(companyCode, fiscalYear) {
+  try {
+    const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEET_HASIL);
+    if (!sheet) return { status: 'error', message: 'Sheet Hasil tidak ditemukan.' };
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 3) return { status: 'error', message: 'Tidak ada data.' };
+
+    const codeCol = sheet.getRange(3, 1, lastRow - 2, 1).getValues();
+    const yearCol = sheet.getRange(3, 2, lastRow - 2, 1).getValues();
+
+    for (let i = codeCol.length - 1; i >= 0; i--) {
+      if (String(codeCol[i][0]).toUpperCase() === companyCode.toUpperCase() &&
+          String(yearCol[i][0]) === String(fiscalYear)) {
+        sheet.deleteRow(i + 3);
+        return { status: 'ok', message: `${companyCode} ${fiscalYear} berhasil dihapus.` };
+      }
+    }
+    return { status: 'error', message: 'Data tidak ditemukan.' };
+  } catch (e) {
+    return { status: 'error', message: e.message };
+  }
+}
+
+// ─── Set & Check API Key ──────────────────────────────────────
+function setApiKey(apiKey) {
+  try {
+    PropertiesService.getScriptProperties().setProperty('GEMINI_API_KEY', apiKey);
+    return { status: 'ok', message: 'Gemini API Key berhasil disimpan!' };
+  } catch (e) {
+    return { status: 'error', message: e.message };
+  }
+}
+
+function checkApiKey() {
+  const key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  return { status: 'ok', hasKey: !!key };
+}
+
+// ─── Set & Get Model ─────────────────────────────────────────
+function setModel(modelName) {
+  try {
+    PropertiesService.getScriptProperties().setProperty('GEMINI_MODEL', modelName);
+    return { status: 'ok', message: 'Model berhasil diubah ke: ' + modelName };
+  } catch (e) {
+    return { status: 'error', message: e.message };
+  }
+}
+
+function getModel() {
+  const model = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL') || GEMINI_MODEL_DEFAULT;
+  return { status: 'ok', model: model };
+}
+
+// ─── Ambil model yang terakhir digunakan (bisa berbeda jika ada fallback) ─
+function getLastUsedModel() {
+  const last    = PropertiesService.getScriptProperties().getProperty('GEMINI_LAST_USED_MODEL');
+  const current = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL') || GEMINI_MODEL_DEFAULT;
+  return { status: 'ok', lastUsed: last || null, configured: current };
+}
+
+// ─── Ambil Daftar Model Gemini yang Tersedia ─────────────────
+function getAvailableModels() {
+  try {
+    const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+    if (!apiKey) return { status: 'error', message: 'API Key belum diset. Simpan API Key terlebih dahulu.' };
+
+    const isOAuthKey = apiKey.startsWith('AQ.');
+    const url = isOAuthKey
+      ? 'https://generativelanguage.googleapis.com/v1beta/models'
+      : 'https://generativelanguage.googleapis.com/v1beta/models?key=' + apiKey;
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (isOAuthKey) headers['x-goog-api-key'] = apiKey;
+
+    const res  = UrlFetchApp.fetch(url, { headers, muteHttpExceptions: true });
+    const code = res.getResponseCode();
+
+    if (code !== 200) {
+      const errText = res.getContentText();
+      return { status: 'error', message: 'Gagal mengambil daftar model (HTTP ' + code + '): ' + errText.substring(0, 200) };
+    }
+
+    const data   = JSON.parse(res.getContentText());
+    const models = (data.models || [])
+      .filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
+      .map(m => m.name.replace('models/', ''))
+      .sort();
+
+    const currentModel = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL') || GEMINI_MODEL_DEFAULT;
+    return { status: 'ok', models, currentModel };
+  } catch (e) {
+    return { status: 'error', message: e.message };
+  }
+}
+
+// ─── Test: Cek model tersedia & test koneksi API ─────────────
+function testGeminiConnection() {
+  const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!apiKey) { Logger.log('API KEY TIDAK ADA!'); return; }
+
+  const isOAuthKey = apiKey.startsWith('AQ.');
+  const url = isOAuthKey
+    ? 'https://generativelanguage.googleapis.com/v1beta/models'
+    : 'https://generativelanguage.googleapis.com/v1beta/models?key=' + apiKey;
+
+  const headers = {};
+  if (isOAuthKey) headers['x-goog-api-key'] = apiKey;
+
+  const res  = UrlFetchApp.fetch(url, { headers, muteHttpExceptions: true });
+  const code = res.getResponseCode();
+  const text = res.getContentText();
+
+  Logger.log('Response code: ' + code);
+
+  if (code === 200) {
+    const data   = JSON.parse(text);
+    const models = data.models
+      .filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
+      .map(m => m.name);
+    Logger.log('Model tersedia: ' + models.join(', '));
+  } else {
+    Logger.log('Error: ' + text.substring(0, 500));
+  }
+}

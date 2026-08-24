@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CED Analyzer – Carbon Emission Disclosure</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <style>
+    /* ── Design Tokens: Hutan Pegunungan × Zero Waste ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      /* Palette */
+      --moss       : #2D5016;   /* dark forest canopy */
+      --fern       : #3D7A2A;   /* mid fern green */
+      --leaf       : #5A9E3F;   /* fresh leaf */
+      --sage       : #8ABF6E;   /* light sage */
+      --mist       : #C8E6B8;   /* morning mist */
+      --dew        : #EAF4E1;   /* dewdrop bg */
+      --earth      : #6B4C32;   /* forest floor */
+      --bark       : #3E2A1A;   /* dark bark text */
+      --stone      : #7A8C6E;   /* granite gray-green */
+      --cream      : #F7F9F4;   /* clean paper white */
+      --white      : #FFFFFF;
+
+      /* Semantic */
+      --primary    : var(--fern);
+      --primary-d  : var(--moss);
+      --accent     : #1F7A5C;   /* deep teal-green */
+      --accent-d   : #145445;
+      --success    : var(--fern);
+      --warn       : #C07E1A;
+      --danger     : #B83232;
+      --bg         : var(--cream);
+      --card       : var(--white);
+      --border     : #CBDBBF;
+      --text       : var(--bark);
+      --text-s     : var(--stone);
+      --radius     : 14px;
+      --radius-sm  : 8px;
+      --shadow     : 0 2px 16px rgba(45,80,22,.10);
+      --shadow-md  : 0 6px 28px rgba(45,80,22,.15);
+      --transition : .22s ease;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* ── Forest Background Texture ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: -1;
+      background:
+        radial-gradient(ellipse 70% 40% at 10% 0%, rgba(90,158,63,.06) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 60% at 90% 100%, rgba(45,80,22,.08) 0%, transparent 60%),
+        radial-gradient(ellipse 80% 50% at 50% 50%, rgba(200,230,184,.04) 0%, transparent 80%);
+      pointer-events: none;
+    }
+
+    /* ── Header ── */
+    .app-header {
+      background: linear-gradient(135deg, var(--moss) 0%, var(--fern) 60%, var(--accent) 100%);
+      color: #fff;
+      padding: 0 28px;
+      height: 68px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 2px 20px rgba(45,80,22,.35);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    /* Leaf pattern overlay */
+    .app-header::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 5 Q45 20 30 35 Q15 20 30 5Z' fill='rgba(255,255,255,0.03)'/%3E%3C/svg%3E") repeat;
+      pointer-events: none;
+    }
+    .header-logo {
+      width: 42px; height: 42px;
+      background: rgba(255,255,255,.15);
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+    .header-title { flex: 1; }
+    .header-title h1 {
+      font-size: 18px; font-weight: 800; letter-spacing: -.2px; line-height: 1.2;
+    }
+    .header-title p {
+      font-size: 11.5px; opacity: .75; margin-top: 1px; font-weight: 500;
+    }
+    .header-right { display: flex; gap: 10px; align-items: center; }
+    .btn-header {
+      background: rgba(255,255,255,.15);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,.3);
+      padding: 7px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: var(--transition);
+      font-family: inherit;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .btn-header:hover { background: rgba(255,255,255,.28); }
+
+    /* ── Nav Tabs ── */
+    .nav-tabs {
+      display: flex;
+      background: var(--white);
+      border-bottom: 1.5px solid var(--border);
+      padding: 0 28px;
+      gap: 4px;
+      overflow-x: auto;
+    }
+    .nav-tab {
+      padding: 14px 18px;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text-s);
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -1.5px;
+      transition: var(--transition);
+      white-space: nowrap;
+      display: flex; align-items: center; gap: 7px;
+    }
+    .nav-tab:hover   { color: var(--primary); }
+    .nav-tab.active  { color: var(--primary); border-bottom-color: var(--fern); }
+
+    /* ── Layout ── */
+    .main { max-width: 1300px; margin: 0 auto; padding: 28px 24px; }
+    .tab-content { display: none; animation: fadeIn .2s ease; }
+    .tab-content.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    .card-title {
+      font-size: 15px; font-weight: 700; color: var(--text);
+      margin-bottom: 18px; padding-bottom: 12px;
+      border-bottom: 1.5px solid var(--border);
+      display: flex; align-items: center; gap: 9px;
+    }
+    .card-title .ct-icon {
+      width: 32px; height: 32px; border-radius: 9px;
+      background: var(--dew);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; flex-shrink: 0;
+    }
+
+    /* ── Grid ── */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; }
+    @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+    @media (max-width: 768px) { .grid-3 { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 480px) { .grid-3 { grid-template-columns: 1fr; } }
+
+    /* ── Form ── */
+    .form-group { margin-bottom: 15px; }
+    .form-label {
+      font-size: 12.5px; font-weight: 700; color: var(--stone);
+      margin-bottom: 6px; display: block; letter-spacing: .3px; text-transform: uppercase;
+    }
+    .form-input, .form-select, .form-textarea {
+      width: 100%; padding: 10px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: 14px; color: var(--text);
+      background: #FAFCF8;
+      transition: var(--transition);
+      font-family: inherit;
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      outline: none; border-color: var(--fern);
+      background: #fff;
+      box-shadow: 0 0 0 3px rgba(61,122,42,.12);
+    }
+    .form-textarea { resize: vertical; min-height: 70px; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 10px 20px; border-radius: var(--radius-sm);
+      font-size: 13.5px; font-weight: 700; cursor: pointer;
+      border: none; transition: var(--transition);
+      font-family: inherit; letter-spacing: .1px;
+    }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--fern), var(--moss));
+      color: #fff;
+      box-shadow: 0 3px 12px rgba(45,80,22,.25);
+    }
+    .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 5px 18px rgba(45,80,22,.35); }
+    .btn-accent  { background: linear-gradient(135deg, var(--accent), var(--accent-d)); color: #fff; }
+    .btn-accent:hover:not(:disabled)  { transform: translateY(-1px); }
+    .btn-success { background: var(--fern); color: #fff; }
+    .btn-danger  { background: var(--danger); color: #fff; }
+    .btn-outline { background: transparent; color: var(--text-s); border: 1.5px solid var(--border); }
+    .btn-outline:hover:not(:disabled) { background: var(--dew); border-color: var(--sage); color: var(--primary); }
+    .btn-full    { width: 100%; justify-content: center; }
+    .btn-sm      { padding: 6px 12px; font-size: 12.5px; }
+    .btn-lg      { padding: 13px 28px; font-size: 15px; }
+
+    /* ── Drop Zone ── */
+    .drop-zone {
+      border: 2px dashed var(--mist);
+      border-radius: var(--radius);
+      padding: 38px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: var(--transition);
+      position: relative;
+      background: linear-gradient(180deg, #FAFCF8 0%, var(--dew) 100%);
+    }
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: var(--leaf);
+      background: linear-gradient(180deg, #F0F7EA 0%, #E4F2D8 100%);
+    }
+    .drop-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%;
+    }
+    .dz-icon-wrap {
+      width: 64px; height: 64px; margin: 0 auto 12px;
+      background: var(--dew); border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 30px; border: 2px solid var(--mist);
+      transition: var(--transition);
+    }
+    .drop-zone:hover .dz-icon-wrap, .drop-zone.drag-over .dz-icon-wrap {
+      background: var(--mist); border-color: var(--sage); transform: scale(1.05);
+    }
+    .drop-zone .dz-text { font-size: 14.5px; font-weight: 700; color: var(--stone); }
+    .drop-zone .dz-sub  { font-size: 12px; color: var(--stone); margin-top: 5px; opacity: .8; }
+    .drop-zone.has-file { border-color: var(--leaf); border-style: solid; background: linear-gradient(180deg, #EEF7E6 0%, #E4F2D8 100%); }
+
+    /* ── Progress Bar ── */
+    .progress-wrap { margin: 14px 0; }
+    .progress-label { font-size: 12px; color: var(--stone); margin-bottom: 6px; font-weight: 600; }
+    .progress-bar   { height: 8px; background: var(--mist); border-radius: 99px; overflow: hidden; }
+    .progress-fill  {
+      height: 100%;
+      background: linear-gradient(90deg, var(--leaf), var(--sage));
+      border-radius: 99px; width: 0; transition: width .4s cubic-bezier(.4,0,.2,1);
+    }
+    .progress-fill.done { background: linear-gradient(90deg, var(--fern), var(--leaf)); }
+
+    /* ── Alert ── */
+    .alert {
+      padding: 11px 15px; border-radius: var(--radius-sm);
+      font-size: 13.5px; margin: 10px 0;
+      display: flex; align-items: flex-start; gap: 10px;
+    }
+    .alert-icon { font-size: 17px; flex-shrink: 0; margin-top: 1px; }
+    .alert-success { background: #EBF6E4; color: #234C0F; border: 1px solid #A8D890; }
+    .alert-error   { background: #FDF0F0; color: #7B1B1B; border: 1px solid #ECA8A8; }
+    .alert-warn    { background: #FEF8EC; color: #7A4D0A; border: 1px solid #F0CC7A; }
+    .alert-info    { background: #EBF5F0; color: #1A5C42; border: 1px solid #8ACBB4; }
+
+    /* ── Score Badges ── */
+    .score-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 30px; height: 30px; border-radius: 7px;
+      font-size: 13px; font-weight: 800; font-family: 'DM Mono', monospace;
+    }
+    .score-0 { background: #FFE5E5; color: #991B1B; }
+    .score-1 { background: #FEF0DC; color: #92400E; }
+    .score-2 { background: #FEFCE8; color: #78580A; }
+    .score-3 { background: #DCFCE7; color: #14532D; }
+    .score-4 { background: #BBF7D0; color: #0F4028; }
+    .score-5 { background: #86EFAC; color: #064E3B; }
+
+    /* ── Stat Boxes ── */
+    .stats-bar { display: flex; gap: 14px; flex-wrap: wrap; }
+    .stat-box {
+      flex: 1; min-width: 120px;
+      padding: 16px 18px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      position: relative; overflow: hidden;
+    }
+    .stat-box::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: var(--gradient, linear-gradient(90deg, var(--fern), var(--leaf)));
+    }
+    .stat-box.s-green  { --gradient: linear-gradient(90deg, var(--moss), var(--fern)); }
+    .stat-box.s-teal   { --gradient: linear-gradient(90deg, var(--accent-d), var(--accent)); }
+    .stat-box.s-sage   { --gradient: linear-gradient(90deg, var(--leaf), var(--sage)); }
+    .stat-box.s-earth  { --gradient: linear-gradient(90deg, var(--earth), #9A6E4A); }
+    .stat-val { font-size: 28px; font-weight: 800; color: var(--text); margin-bottom: 2px; font-family: 'DM Mono', monospace; }
+    .stat-lbl { font-size: 11.5px; color: var(--stone); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+
+    /* ── Result Table ── */
+    .result-table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+    table.result-table {
+      width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 940px;
+    }
+    .result-table th {
+      background: var(--moss); color: #fff;
+      padding: 10px 10px; text-align: center;
+      font-weight: 700; white-space: nowrap;
+      font-size: 11.5px; letter-spacing: .3px;
+    }
+    .result-table th:nth-child(1),
+    .result-table th:nth-child(2) {
+      background: var(--bark); position: sticky; left: 0; z-index: 2;
+    }
+    .result-table td {
+      padding: 7px 8px; text-align: center;
+      border-bottom: 1px solid #EDF3E8;
+    }
+    .result-table tr:hover td { background: var(--dew); }
+    .td-code { font-weight: 700; color: var(--fern); text-align: left !important; font-family: 'DM Mono', monospace; }
+    .td-year { color: var(--stone); font-family: 'DM Mono', monospace; }
+    .td-total { font-weight: 800; color: var(--moss); font-size: 14px; font-family: 'DM Mono', monospace; }
+
+    /* ── Indicator Preview Grid ── */
+    .ind-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+      gap: 9px;
+      margin-top: 14px;
+    }
+    .ind-item {
+      background: var(--dew); border-radius: 10px;
+      padding: 10px 6px; text-align: center;
+      border: 1px solid var(--border);
+      transition: var(--transition);
+    }
+    .ind-item:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+    .ind-code { font-size: 10px; font-weight: 700; color: var(--stone); margin-bottom: 5px; letter-spacing: .5px; }
+    .ind-score { font-size: 20px; font-weight: 800; font-family: 'DM Mono', monospace; }
+
+    /* ── Spinner ── */
+    .spinner {
+      display: inline-block; width: 18px; height: 18px;
+      border: 2.5px solid rgba(255,255,255,.3);
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    .spinner-dark {
+      border-color: rgba(0,0,0,.12); border-top-color: var(--stone);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Loading Overlay ── */
+    #loadingOverlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(20,40,10,.6);
+      backdrop-filter: blur(3px);
+      z-index: 9999;
+      flex-direction: column; align-items: center; justify-content: center; gap: 0;
+    }
+    #loadingOverlay.show { display: flex; }
+    .ld-box {
+      background: #fff; border-radius: 20px;
+      padding: 36px 44px; text-align: center;
+      box-shadow: 0 16px 60px rgba(0,0,0,.3);
+      max-width: 380px; width: 90%;
+    }
+    .ld-leaf { font-size: 42px; animation: breathe 2.5s ease-in-out infinite; }
+    @keyframes breathe {
+      0%, 100% { transform: scale(1) rotate(-3deg); }
+      50%       { transform: scale(1.12) rotate(3deg); }
+    }
+    .ld-title { font-size: 17px; font-weight: 800; color: var(--text); margin: 14px 0 6px; }
+    .ld-sub   { font-size: 13px; color: var(--stone); line-height: 1.5; }
+    .ld-dots  { margin-top: 18px; display: flex; gap: 7px; justify-content: center; }
+    .ld-dot {
+      width: 9px; height: 9px; border-radius: 50%; background: var(--mist);
+      animation: dotPulse 1.4s ease-in-out infinite;
+    }
+    .ld-dot:nth-child(2) { animation-delay: .2s; }
+    .ld-dot:nth-child(3) { animation-delay: .4s; }
+    @keyframes dotPulse {
+      0%, 80%, 100% { background: var(--mist); transform: scale(1); }
+      40%           { background: var(--fern); transform: scale(1.4); }
+    }
+
+    /* ── Guide Cards ── */
+    .guide-group { border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; margin-bottom: 14px; }
+    .guide-group-hd {
+      padding: 12px 18px; font-size: 13px; font-weight: 700;
+      background: var(--dew); color: var(--moss);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .guide-item {
+      display: flex; gap: 12px; align-items: flex-start;
+      padding: 11px 18px; border-top: 1px solid var(--border);
+      background: var(--white);
+    }
+    .guide-key {
+      background: var(--fern); color: #fff;
+      font-size: 11px; font-weight: 700;
+      padding: 3px 8px; border-radius: 5px;
+      flex-shrink: 0; font-family: 'DM Mono', monospace;
+      margin-top: 1px; min-width: 44px; text-align: center;
+    }
+    .guide-desc { font-size: 13.5px; color: var(--text); line-height: 1.55; }
+
+    /* ── Score Scale ── */
+    .score-scale { display: flex; gap: 8px; flex-wrap: wrap; }
+    .scale-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
+
+    /* ── Settings ── */
+    .apikey-wrap { display: flex; gap: 10px; align-items: flex-end; }
+    .apikey-wrap .form-group { flex: 1; margin: 0; }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      .app-header { padding: 0 16px; }
+      .main { padding: 16px 12px; }
+      .card { padding: 16px; }
+      .nav-tabs { padding: 0 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Loading Overlay ── -->
+<div id="loadingOverlay">
+  <div class="ld-box">
+    <div class="ld-leaf">🌿</div>
+    <div class="ld-title" id="ld-text">Menganalisis dokumen…</div>
+    <div class="ld-sub" id="ld-sub">AI sedang membaca setiap halaman PDF Anda</div>
+    <div class="ld-dots">
+      <div class="ld-dot"></div>
+      <div class="ld-dot"></div>
+      <div class="ld-dot"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Header ── -->
+<header class="app-header">
+  <div class="header-logo">🌲</div>
+  <div class="header-title">
+    <h1>CED Analyzer</h1>
+    <p>Carbon Emission Disclosure — Penilaian Otomatis dengan Gemini AI</p>
+  </div>
+  <div class="header-right">
+    <a class="btn-header" href="https://docs.google.com/spreadsheets/d/1uG_aHz0RcRvzDobvYc2d3mS1Y-BzVKNjEUqJR3nVNXY/edit" target="_blank">
+      📊 Buka Spreadsheet
+    </a>
+  </div>
+</header>
+
+<!-- ── Nav Tabs ── -->
+<nav class="nav-tabs">
+  <div class="nav-tab active" onclick="switchTab('upload')">🌿 Upload & Analisis</div>
+  <div class="nav-tab"       onclick="switchTab('results')">📋 Hasil Analisis</div>
+  <div class="nav-tab"       onclick="switchTab('guide')">🌱 Panduan Indikator</div>
+  <div class="nav-tab"       onclick="switchTab('settings')">⚙️ Pengaturan</div>
+</nav>
+
+<!-- ── Main ── -->
+<main class="main">
+
+  <!-- ══ Tab: Upload & Analisis ══ -->
+  <div class="tab-content active" id="tab-upload">
+    <div class="grid-2">
+
+      <!-- Form Input -->
+      <div class="card">
+        <div class="card-title">
+          <div class="ct-icon">📝</div>
+          Informasi Dokumen
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Kode Perusahaan (Ticker)</label>
+          <input type="text" id="companyCode" class="form-input" placeholder="Contoh: TINS, TOBE, TCPI" maxlength="10"/>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Tahun Fiskal (FY)</label>
+          <select id="fiscalYear" class="form-select">
+            <option value="">— Pilih Tahun —</option>
+            <option>FY 2020</option><option>FY 2021</option><option>FY 2022</option>
+            <option>FY 2023</option><option selected>FY 2024</option><option>FY 2025</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Catatan</label>
+          <textarea id="notes" class="form-textarea" placeholder="Opsional — catatan untuk dokumen ini…"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Upload File PDF</label>
+          <div class="drop-zone" id="dropZone">
+            <input type="file" id="pdfInput" accept="application/pdf" onchange="handleFileSelect(this)"/>
+            <div class="dz-icon-wrap" id="dzIconWrap"><span id="dzIcon">🌲</span></div>
+            <div class="dz-text" id="dzText">Klik atau seret PDF ke sini</div>
+            <div class="dz-sub" id="dzSub">PDF · Maks 20 MB · Terbaik &lt; 5 MB</div>
+          </div>
+          <div id="pdfSizeWarn"></div>
+        </div>
+
+        <div id="progressWrap" class="progress-wrap" style="display:none;">
+          <div class="progress-label" id="progressLabel">Memproses…</div>
+          <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        </div>
+
+        <div id="uploadMsg"></div>
+
+        <button class="btn btn-primary btn-full btn-lg" id="btnAnalyze" onclick="startAnalysis()" style="margin-top:10px;">
+          🔍 Mulai Analisis AI
+        </button>
+      </div>
+
+      <!-- Preview Skor -->
+      <div class="card" id="scorePreviewCard" style="display:none;">
+        <div class="card-title">
+          <div class="ct-icon">🌿</div>
+          Hasil Skor — <span id="previewTitle" style="color:var(--fern);">–</span>
+        </div>
+
+        <div class="stats-bar" style="margin-bottom:18px;">
+          <div class="stat-box s-green">
+            <div class="stat-val" id="previewTotal">–</div>
+            <div class="stat-lbl">Total Skor</div>
+          </div>
+          <div class="stat-box s-teal">
+            <div class="stat-val" id="previewPct">–</div>
+            <div class="stat-lbl">Persentase / 90</div>
+          </div>
+          <div class="stat-box s-sage">
+            <div class="stat-val" id="previewLevel" style="font-size:16px;">–</div>
+            <div class="stat-lbl">Level Pengungkapan</div>
+          </div>
+        </div>
+
+        <div class="ind-grid" id="previewGrid"></div>
+
+        <div style="margin-top:16px; display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-accent btn-sm" onclick="switchTab('results'); loadResults();">📋 Lihat Semua Hasil</button>
+          <button class="btn btn-outline btn-sm" onclick="resetForm()">🔄 Analisis Baru</button>
+        </div>
+      </div>
+
+      <!-- Placeholder when no score yet -->
+      <div class="card" id="emptyPreviewCard" style="background:var(--dew); border:1.5px dashed var(--mist); display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:300px; text-align:center;">
+        <div style="font-size:48px; margin-bottom:14px; opacity:.5;">🌿</div>
+        <p style="font-size:14px; font-weight:700; color:var(--stone);">Hasil analisis akan muncul di sini</p>
+        <p style="font-size:12.5px; color:var(--stone); opacity:.8; margin-top:6px;">Upload PDF dan klik "Mulai Analisis AI"</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Tab: Hasil Analisis ══ -->
+  <div class="tab-content" id="tab-results">
+    <div class="card">
+      <div class="card-title" style="justify-content:space-between; flex-wrap:wrap; gap:10px;">
+        <div style="display:flex; align-items:center; gap:9px;">
+          <div class="ct-icon">📋</div>
+          Tabel Hasil CED Scoring
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <input type="text" id="filterCode" class="form-input" placeholder="Filter kode…" style="width:140px;" oninput="filterTable()"/>
+          <select id="filterYear" class="form-select" style="width:130px;" onchange="filterTable()">
+            <option value="">Semua Tahun</option>
+            <option>FY 2020</option><option>FY 2021</option><option>FY 2022</option>
+            <option>FY 2023</option><option>FY 2024</option><option>FY 2025</option>
+          </select>
+          <button class="btn btn-outline btn-sm" onclick="loadResults()">🔄 Refresh</button>
+        </div>
+      </div>
+      <div id="resultMsg"></div>
+      <div class="result-table-wrap">
+        <table class="result-table">
+          <thead>
+            <tr>
+              <th>Code</th><th>Years</th>
+              <th>CC1</th><th>CC2</th>
+              <th>GHG1</th><th>GHG2</th><th>GHG3</th><th>GHG4</th><th>GHG5</th><th>GHG6</th><th>GHG7</th>
+              <th>EC1</th><th>EC2</th><th>EC3</th>
+              <th>RC1</th><th>RC2</th><th>RC3</th><th>RC4</th>
+              <th>ACC1</th><th>ACC2</th>
+              <th>TOTAL</th><th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="resultBody">
+            <tr><td colspan="22" style="padding:28px; color:var(--stone); font-style:italic;">Klik "Refresh" untuk memuat data.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="summaryCard" style="display:none;">
+      <div class="card-title"><div class="ct-icon">📊</div> Ringkasan Statistik</div>
+      <div class="stats-bar" id="summaryStats"></div>
+    </div>
+  </div>
+
+  <!-- ══ Tab: Panduan Indikator ══ -->
+  <div class="tab-content" id="tab-guide">
+    <div class="card">
+      <div class="card-title"><div class="ct-icon">🌱</div> 18 Indikator CED & Panduan Skor</div>
+
+      <div class="alert alert-info" style="margin-bottom:20px;">
+        <span class="alert-icon">🌲</span>
+        <span>Setiap indikator dinilai skala <strong>0–5</strong> berdasarkan keluasan pengungkapan dalam laporan tahunan perusahaan.</span>
+      </div>
+
+      <div class="card" style="background:var(--dew); border:1px solid var(--mist); margin-bottom:20px;">
+        <div class="card-title" style="font-size:13px; border:none; padding:0; margin-bottom:14px;">🎯 Skala Penilaian</div>
+        <div class="score-scale">
+          <div class="scale-item"><span class="score-badge score-0">0</span><span>Tidak ada pengungkapan</span></div>
+          <div class="scale-item"><span class="score-badge score-1">1</span><span>Kurang dari 3 kalimat</span></div>
+          <div class="scale-item"><span class="score-badge score-2">2</span><span>1 paragraf / ≤ ½ halaman</span></div>
+          <div class="scale-item"><span class="score-badge score-3">3</span><span>½ — 1 halaman A4</span></div>
+          <div class="scale-item"><span class="score-badge score-4">4</span><span>1 halaman A4 penuh</span></div>
+          <div class="scale-item"><span class="score-badge score-5">5</span><span>Lebih dari 1 halaman A4</span></div>
+        </div>
+      </div>
+
+      <div id="indicatorGuideList"></div>
+    </div>
+  </div>
+
+  <!-- ══ Tab: Pengaturan ══ -->
+  <div class="tab-content" id="tab-settings">
+
+    <div class="card">
+      <div class="card-title"><div class="ct-icon">🔑</div> Konfigurasi Gemini API Key</div>
+      <div class="alert alert-info" style="margin-bottom:14px;">
+        <span class="alert-icon">🌿</span>
+        <span>API Key <strong>gratis</strong> dari Google AI Studio. Dapatkan di: <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--accent); font-weight:600;">aistudio.google.com/app/apikey →</a><br/>Format key: <code style="font-family:'DM Mono',monospace; background:var(--dew); padding:1px 5px; border-radius:4px;">AIzaSy…</code></span>
+      </div>
+      <div class="apikey-wrap">
+        <div class="form-group">
+          <label class="form-label">Gemini API Key</label>
+          <input type="password" id="apiKeyInput" class="form-input" placeholder="AIzaSy… (dari Google AI Studio)"/>
+        </div>
+        <button class="btn btn-primary" onclick="saveApiKey()" style="flex-shrink:0; height:42px;">💾 Simpan</button>
+      </div>
+      <div id="apiKeyMsg"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><div class="ct-icon">🤖</div> Pilih Model Gemini AI</div>
+      <div class="alert alert-info" style="margin-bottom:14px;">
+        <span class="alert-icon">🌲</span>
+        <span>Klik <strong>"Muat Model"</strong> untuk mengambil model yang tersedia. Direkomendasikan: <code style="font-family:'DM Mono',monospace; background:var(--dew); padding:1px 5px; border-radius:4px;">gemini-2.5-flash</code> atau <code style="font-family:'DM Mono',monospace; background:var(--dew); padding:1px 5px; border-radius:4px;">gemini-2.0-flash</code>.</span>
+      </div>
+      <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:12px;">
+        <div class="form-group" style="flex:1; min-width:200px; margin:0;">
+          <label class="form-label">Model Tersedia</label>
+          <select id="modelSelect" class="form-select" disabled>
+            <option value="">— Klik "Muat Model" terlebih dahulu —</option>
+          </select>
+        </div>
+        <button class="btn btn-outline" onclick="loadAvailableModels()" id="btnLoadModels" style="height:42px; flex-shrink:0;">
+          🔄 Muat Model
+        </button>
+        <button class="btn btn-primary" onclick="saveSelectedModel()" id="btnSaveModel" disabled style="height:42px; flex-shrink:0;">
+          💾 Simpan
+        </button>
+      </div>
+      <div id="modelMsg"></div>
+      <div id="currentModelInfo" style="display:none; margin-top:10px; padding:10px 14px; background:var(--dew); border-radius:var(--radius-sm); border:1px solid var(--mist); font-size:13px; color:var(--stone);">
+        🤖 <strong>Model aktif:</strong> <span id="currentModelName" style="color:var(--fern); font-weight:700; font-family:'DM Mono',monospace;"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><div class="ct-icon">🗂️</div> Inisialisasi Spreadsheet</div>
+      <p style="font-size:13.5px; color:var(--stone); margin-bottom:14px;">
+        Buat/periksa sheet <strong>Data</strong> dan <strong>Hasil</strong> beserta header kolom sesuai format CED.
+      </p>
+      <button class="btn btn-accent" onclick="initSheets()">🚀 Inisialisasi Sheet</button>
+      <div id="initMsg" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="card" style="background:var(--dew); border-color:var(--mist);">
+      <div class="card-title" style="border-color:var(--mist);"><div class="ct-icon">ℹ️</div> Informasi Sistem</div>
+      <div style="font-size:13.5px; display:grid; gap:9px; color:var(--stone);">
+        <div>📊 <strong>Spreadsheet:</strong> <a href="https://docs.google.com/spreadsheets/d/1uG_aHz0RcRvzDobvYc2d3mS1Y-BzVKNjEUqJR3nVNXY/edit" target="_blank" style="color:var(--accent);">Buka di Google Sheets</a></div>
+        <div>🤖 <strong>Model AI:</strong> <span id="sysModelName">Google Gemini via AI Studio (Gratis)</span></div>
+        <div>📑 <strong>Jumlah Indikator:</strong> 18 (CC1-CC2, GHG1-GHG7, EC1-EC3, RC1-RC4, ACC1-ACC2)</div>
+        <div>📏 <strong>Rentang Skor:</strong> 0–5 per indikator · Total maks: <strong>90</strong></div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+// ── Indicator Definitions ───────────────────────────────────
+const INDICATORS = ['CC1','CC2','GHG1','GHG2','GHG3','GHG4','GHG5','GHG6','GHG7','EC1','EC2','EC3','RC1','RC2','RC3','RC4','ACC1','ACC2'];
+const IND_LABELS = {
+  CC1 :'Risiko regulasi & aksi perubahan iklim',
+  CC2 :'Implikasi keuangan & peluang perubahan iklim',
+  GHG1:'Metodologi penghitungan emisi GRK',
+  GHG2:'Verifikasi eksternal emisi GRK',
+  GHG3:'Total emisi GRK',
+  GHG4:'Lingkup 1 & 2 atau Lingkup 3 emisi GRK',
+  GHG5:'Emisi GRK berdasarkan asal/sumber',
+  GHG6:'Emisi GRK berdasarkan fasilitas/segmen',
+  GHG7:'Perbandingan emisi GRK dengan tahun sebelumnya',
+  EC1 :'Total energi yang dikonsumsi',
+  EC2 :'Energi dari sumber daya terbarukan',
+  EC3 :'Pengungkapan energi per jenis/fasilitas/segmen',
+  RC1 :'Rencana/strategi pengurangan emisi GRK',
+  RC2 :'Target level & tahun pengurangan emisi',
+  RC3 :'Pengurangan emisi & penghematan biaya yang dicapai',
+  RC4 :'Biaya emisi masa depan dalam capex planning',
+  ACC1:'Dewan/komite bertanggung jawab atas aksi iklim',
+  ACC2:'Mekanisme dewan meninjau kemajuan perubahan iklim'
+};
+const IND_GROUPS = [
+  { label:'🌡️ Climate Change (CC)',      emoji:'🌡️', keys:['CC1','CC2'] },
+  { label:'💨 Greenhouse Gas (GHG)',      emoji:'💨', keys:['GHG1','GHG2','GHG3','GHG4','GHG5','GHG6','GHG7'] },
+  { label:'⚡ Energy Consumption (EC)',   emoji:'⚡', keys:['EC1','EC2','EC3'] },
+  { label:'🎯 Reduction Commitment (RC)', emoji:'🎯', keys:['RC1','RC2','RC3','RC4'] },
+  { label:'🏛️ Accountability (ACC)',      emoji:'🏛️', keys:['ACC1','ACC2'] }
+];
+
+// ── Global State ────────────────────────────────────────────
+let currentFile    = null;
+let allResultsData = [];
+
+// ── Tab Switching ───────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.nav-tab').forEach((t, i) => {
+    const tabs = ['upload','results','guide','settings'];
+    t.classList.toggle('active', tabs[i] === name);
+  });
+  document.querySelectorAll('.tab-content').forEach(tc => {
+    tc.classList.toggle('active', tc.id === 'tab-' + name);
+  });
+  if (name === 'results') loadResults();
+  if (name === 'guide')   buildGuide();
+  if (name === 'settings') { checkApiKeyStatus(); _loadCurrentModelInfo(); }
+}
+
+// ── Drop Zone ───────────────────────────────────────────────
+const dropZone = document.getElementById('dropZone');
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file);
+});
+function handleFileSelect(input) {
+  if (input.files[0]) processFile(input.files[0]);
+}
+
+function processFile(file) {
+  if (file.type !== 'application/pdf') {
+    showMsg('uploadMsg', 'error', '❌ Hanya file PDF yang diterima.'); return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    showMsg('uploadMsg', 'error', '❌ Ukuran file melebihi 20 MB.'); return;
+  }
+  currentFile = file;
+  dropZone.classList.add('has-file');
+  document.getElementById('dzIcon').textContent = '✅';
+  document.getElementById('dzText').textContent = file.name;
+  const sizeMB = file.size / 1024 / 1024;
+  document.getElementById('dzSub').textContent  = `${sizeMB.toFixed(2)} MB`;
+
+  const warn = document.getElementById('pdfSizeWarn');
+  if (sizeMB > 10) {
+    warn.innerHTML = `<div class="alert alert-error" style="margin-top:9px;"><span class="alert-icon">⚠️</span><span><strong>File besar (${sizeMB.toFixed(1)} MB):</strong> Risiko quota limit (429). Sistem akan retry & beralih model otomatis, namun proses lebih lama. Disarankan kompres PDF ke &lt; 5 MB.</span></div>`;
+  } else if (sizeMB > 5) {
+    warn.innerHTML = `<div class="alert alert-warn" style="margin-top:9px;"><span class="alert-icon">⚠️</span><span><strong>File cukup besar (${sizeMB.toFixed(1)} MB).</strong> Jika 429, sistem akan otomatis beralih ke model alternatif.</span></div>`;
+  } else {
+    warn.innerHTML = `<div class="alert alert-success" style="margin-top:9px;"><span class="alert-icon">🌿</span><span>Ukuran file aman (${sizeMB.toFixed(1)} MB) — risiko quota limit kecil.</span></div>`;
+  }
+  showMsg('uploadMsg', 'success', `📄 File dipilih: ${file.name}`);
+}
+
+// ── Main Analysis Flow ──────────────────────────────────────
+function startAnalysis() {
+  const code  = document.getElementById('companyCode').value.trim().toUpperCase();
+  const year  = document.getElementById('fiscalYear').value;
+  const notes = document.getElementById('notes').value.trim();
+
+  if (!code)        { showMsg('uploadMsg', 'warn', '⚠️ Kode perusahaan wajib diisi.'); return; }
+  if (!year)        { showMsg('uploadMsg', 'warn', '⚠️ Tahun fiskal wajib dipilih.');  return; }
+  if (!currentFile) { showMsg('uploadMsg', 'warn', '⚠️ Pilih file PDF terlebih dahulu.'); return; }
+
+  const btn = document.getElementById('btnAnalyze');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Menganalisis…';
+
+  // Hide empty placeholder, prepare score card
+  document.getElementById('emptyPreviewCard').style.display = 'none';
+  document.getElementById('scorePreviewCard').style.display = 'none';
+
+  setProgress(10, 'Membaca file PDF…');
+  showLoading('Membaca PDF…', 'Mengonversi dokumen ke format AI…');
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    const base64 = e.target.result.split(',')[1];
+
+    setProgress(25, 'Menyimpan data input…');
+    setLoading('Menyimpan ke Spreadsheet…', '');
+
+    google.script.run
+      .withSuccessHandler(res => {
+        if (res.status !== 'ok') { handleError(res.message, btn); return; }
+
+        const rowNumber = res.rowNumber;
+        setProgress(45, 'Mengirim PDF ke Gemini AI…');
+        setLoading('AI sedang membaca laporan…', 'Jika terkena quota limit, sistem akan retry & beralih model otomatis. Mohon tunggu…');
+
+        google.script.run
+          .withSuccessHandler(aRes => {
+            hideLoading();
+            btn.disabled = false;
+            btn.innerHTML = '🔍 Mulai Analisis AI';
+
+            if (aRes.status !== 'ok') {
+              setProgress(100, '❌ Gagal');
+              document.getElementById('progressFill').style.background = '#ECA8A8';
+              const msg = aRes.message || '';
+              const is429 = msg.includes('429') || msg.toLowerCase().includes('quota');
+              if (is429) {
+                showMsg('uploadMsg', 'error',
+                  '❌ <strong>Quota Limit (429):</strong> Semua model sudah dicoba. Tunggu beberapa menit lalu coba lagi, atau gunakan PDF yang lebih kecil (&lt; 5 MB).<br><small style="opacity:.75;">' + msg.substring(0, 250) + '</small>'
+                );
+              } else {
+                showMsg('uploadMsg', 'error', '❌ ' + msg);
+              }
+              document.getElementById('emptyPreviewCard').style.display = '';
+              return;
+            }
+
+            setProgress(100, '✅ Selesai!', true);
+
+            // Cek fallback model
+            google.script.run
+              .withSuccessHandler(mRes => {
+                let successMsg = `✅ Analisis <strong>${code} ${year}</strong> berhasil disimpan.`;
+                if (mRes && mRes.lastUsed && mRes.lastUsed !== mRes.configured) {
+                  successMsg += `<br><small style="opacity:.85;">⚠️ Fallback model digunakan: <strong>${mRes.lastUsed}</strong> (${mRes.configured} terkena quota limit).</small>`;
+                }
+                showMsg('uploadMsg', 'success', successMsg);
+              })
+              .withFailureHandler(() => {
+                showMsg('uploadMsg', 'success', `✅ Analisis <strong>${code} ${year}</strong> berhasil disimpan.`);
+              })
+              .getLastUsedModel();
+
+            showScorePreview(code, year, aRes.scores);
+          })
+          .withFailureHandler(err => { hideLoading(); handleError(err.message || String(err), btn); })
+          .analyzePDF({ companyCode: code, fiscalYear: year, fileName: currentFile.name, pdfBase64: base64, rowNumber });
+      })
+      .withFailureHandler(err => { hideLoading(); handleError(err.message || String(err), btn); })
+      .saveInputData({ companyCode: code, fiscalYear: year, fileName: currentFile.name, notes });
+  };
+  reader.onerror = () => { hideLoading(); handleError('Gagal membaca file.', btn); };
+  reader.readAsDataURL(currentFile);
+}
+
+function handleError(msg, btn) {
+  setProgress(100, '❌ Terjadi Kesalahan');
+  document.getElementById('progressFill').style.background = '#ECA8A8';
+  showMsg('uploadMsg', 'error', '❌ ' + (msg || 'Terjadi kesalahan.'));
+  if (btn) { btn.disabled = false; btn.innerHTML = '🔍 Mulai Analisis AI'; }
+  document.getElementById('emptyPreviewCard').style.display = '';
+}
+
+// ── Score Preview ───────────────────────────────────────────
+function showScorePreview(code, year, scores) {
+  document.getElementById('emptyPreviewCard').style.display = 'none';
+  document.getElementById('scorePreviewCard').style.display = 'block';
+  document.getElementById('previewTitle').textContent = `${code} — ${year}`;
+
+  const total = INDICATORS.reduce((s, k) => s + (scores[k] || 0), 0);
+  const pct   = ((total / 90) * 100).toFixed(1);
+  const level = total >= 72 ? 'Sangat Tinggi' : total >= 54 ? 'Tinggi' : total >= 36 ? 'Sedang' : total >= 18 ? 'Rendah' : 'Sangat Rendah';
+
+  document.getElementById('previewTotal').textContent = total;
+  document.getElementById('previewPct').textContent   = pct + '%';
+  document.getElementById('previewLevel').textContent = level;
+
+  document.getElementById('previewGrid').innerHTML = INDICATORS.map(k => {
+    const v = scores[k] || 0;
+    return `<div class="ind-item"><div class="ind-code">${k}</div><div class="ind-score score-badge score-${v}">${v}</div></div>`;
+  }).join('');
+}
+
+// ── Reset Form ──────────────────────────────────────────────
+function resetForm() {
+  currentFile = null;
+  ['companyCode','fiscalYear','notes'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('pdfInput').value    = '';
+  dropZone.classList.remove('has-file');
+  document.getElementById('dzIcon').textContent = '🌲';
+  document.getElementById('dzText').textContent = 'Klik atau seret PDF ke sini';
+  document.getElementById('dzSub').textContent  = 'PDF · Maks 20 MB · Terbaik < 5 MB';
+  document.getElementById('pdfSizeWarn').innerHTML = '';
+  document.getElementById('uploadMsg').innerHTML   = '';
+  document.getElementById('progressWrap').style.display = 'none';
+  document.getElementById('scorePreviewCard').style.display = 'none';
+  document.getElementById('emptyPreviewCard').style.display = '';
+}
+
+// ── Results ─────────────────────────────────────────────────
+function loadResults() {
+  const body = document.getElementById('resultBody');
+  body.innerHTML = `<tr><td colspan="22" style="padding:24px; color:var(--stone);">⏳ Memuat data…</td></tr>`;
+  showMsg('resultMsg', 'info', '⏳ Mengambil data dari Spreadsheet…');
+
+  google.script.run
+    .withSuccessHandler(res => {
+      document.getElementById('resultMsg').innerHTML = '';
+      if (res.status !== 'ok' || !res.data.length) {
+        body.innerHTML = `<tr><td colspan="22" style="padding:28px; color:var(--stone); font-style:italic;">🌿 Belum ada data hasil analisis.</td></tr>`;
+        return;
+      }
+      allResultsData = res.data;
+      renderTable(allResultsData);
+      renderSummary(allResultsData);
+    })
+    .withFailureHandler(err => { showMsg('resultMsg', 'error', '❌ ' + (err.message || 'Gagal memuat.')); })
+    .getResultsList();
+}
+
+function renderTable(data) {
+  const body = document.getElementById('resultBody');
+  if (!data.length) {
+    body.innerHTML = `<tr><td colspan="22" style="padding:28px; color:var(--stone); font-style:italic;">📭 Tidak ada data ditemukan.</td></tr>`;
+    return;
+  }
+  body.innerHTML = data.map(row => `
+    <tr>
+      <td class="td-code">${row.code}</td>
+      <td class="td-year">${row.year}</td>
+      ${INDICATORS.map(k => `<td><span class="score-badge score-${row[k]||0}">${row[k]||0}</span></td>`).join('')}
+      <td class="td-total">${row.total}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteRow('${row.code}','${row.year}')">🗑️</button></td>
+    </tr>
+  `).join('');
+}
+
+function filterTable() {
+  const code = document.getElementById('filterCode').value.trim().toUpperCase();
+  const year = document.getElementById('filterYear').value;
+  renderTable(allResultsData.filter(r =>
+    (!code || r.code.includes(code)) && (!year || r.year === year)
+  ));
+}
+
+function deleteRow(code, year) {
+  if (!confirm(`Hapus data ${code} ${year}?`)) return;
+  google.script.run
+    .withSuccessHandler(res => { if (res.status === 'ok') loadResults(); else showMsg('resultMsg','error','❌ '+res.message); })
+    .withFailureHandler(err => showMsg('resultMsg','error','❌ '+(err.message||'Gagal')))
+    .deleteResultRow(code, year);
+}
+
+function renderSummary(data) {
+  const card = document.getElementById('summaryCard');
+  if (!data.length) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  const totals = data.map(r => Number(r.total) || 0);
+  const avg    = (totals.reduce((s,v) => s+v, 0) / totals.length).toFixed(1);
+  const maxV   = Math.max(...totals); const maxRow = data.find(r => Number(r.total) === maxV);
+  const minV   = Math.min(...totals); const minRow = data.find(r => Number(r.total) === minV);
+  document.getElementById('summaryStats').innerHTML = `
+    <div class="stat-box s-green"><div class="stat-val">${data.length}</div><div class="stat-lbl">Jumlah Entri</div></div>
+    <div class="stat-box s-teal"><div class="stat-val">${avg}</div><div class="stat-lbl">Rata-rata Skor</div></div>
+    <div class="stat-box s-sage"><div class="stat-val">${maxV}</div><div class="stat-lbl">Skor Tertinggi — ${maxRow?.code} ${maxRow?.year}</div></div>
+    <div class="stat-box s-earth"><div class="stat-val">${minV}</div><div class="stat-lbl">Skor Terendah — ${minRow?.code} ${minRow?.year}</div></div>
+  `;
+}
+
+// ── Guide ───────────────────────────────────────────────────
+function buildGuide() {
+  const list = document.getElementById('indicatorGuideList');
+  if (list.innerHTML) return;
+  list.innerHTML = IND_GROUPS.map(g => `
+    <div class="guide-group">
+      <div class="guide-group-hd">${g.label}</div>
+      ${g.keys.map(k => `
+        <div class="guide-item">
+          <div class="guide-key">${k}</div>
+          <div class="guide-desc">${IND_LABELS[k]}</div>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
+
+// ── Settings ────────────────────────────────────────────────
+function saveApiKey() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  if (!key) { showMsg('apiKeyMsg','warn','⚠️ Masukkan API Key terlebih dahulu.'); return; }
+  google.script.run
+    .withSuccessHandler(res => showMsg('apiKeyMsg', res.status==='ok'?'success':'error', (res.status==='ok'?'✅ ':'❌ ')+res.message))
+    .withFailureHandler(err => showMsg('apiKeyMsg','error','❌ '+(err.message||'Gagal')))
+    .setApiKey(key);
+}
+
+function loadAvailableModels() {
+  const btn = document.getElementById('btnLoadModels');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Memuat…';
+  showMsg('modelMsg','info','⏳ Mengambil daftar model dari Gemini API…');
+
+  google.script.run
+    .withSuccessHandler(res => {
+      btn.disabled = false; btn.innerHTML = '🔄 Muat Model';
+      if (res.status !== 'ok') { showMsg('modelMsg','error','❌ '+res.message); return; }
+
+      const select = document.getElementById('modelSelect');
+      select.innerHTML = ''; select.disabled = false;
+
+      const preferred = ['gemini-2.5-flash','gemini-2.0-flash','gemini-2.5-pro','gemini-2.0-flash-lite'];
+      const prefGroup = document.createElement('optgroup');
+      prefGroup.label = '⭐ Direkomendasikan';
+      let pc = 0;
+      preferred.forEach(m => {
+        if (res.models.includes(m)) {
+          const o = document.createElement('option');
+          o.value = m; o.textContent = m;
+          if (m === res.currentModel) o.selected = true;
+          prefGroup.appendChild(o); pc++;
+        }
+      });
+      if (pc) select.appendChild(prefGroup);
+
+      const otherGroup = document.createElement('optgroup');
+      otherGroup.label = '📋 Semua Model';
+      res.models.forEach(m => {
+        if (!preferred.includes(m)) {
+          const o = document.createElement('option');
+          o.value = m; o.textContent = m;
+          if (m === res.currentModel) o.selected = true;
+          otherGroup.appendChild(o);
+        }
+      });
+      if (otherGroup.children.length) select.appendChild(otherGroup);
+
+      if (res.currentModel && !res.models.includes(res.currentModel)) {
+        const o = document.createElement('option');
+        o.value = res.currentModel; o.textContent = res.currentModel + ' (aktif)'; o.selected = true;
+        select.insertBefore(o, select.firstChild);
+      }
+
+      document.getElementById('btnSaveModel').disabled = false;
+      _showCurrentModel(res.currentModel);
+      showMsg('modelMsg','success',`✅ ${res.models.length} model tersedia. Aktif: <strong>${res.currentModel}</strong>`);
+    })
+    .withFailureHandler(err => {
+      btn.disabled = false; btn.innerHTML = '🔄 Muat Model';
+      showMsg('modelMsg','error','❌ '+(err.message||'Gagal.'));
+    })
+    .getAvailableModels();
+}
+
+function saveSelectedModel() {
+  const chosen = document.getElementById('modelSelect').value;
+  if (!chosen) { showMsg('modelMsg','warn','⚠️ Pilih model terlebih dahulu.'); return; }
+  const btn = document.getElementById('btnSaveModel');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Menyimpan…';
+  google.script.run
+    .withSuccessHandler(res => {
+      btn.disabled = false; btn.innerHTML = '💾 Simpan';
+      if (res.status === 'ok') { _showCurrentModel(chosen); showMsg('modelMsg','success','✅ '+res.message); }
+      else showMsg('modelMsg','error','❌ '+res.message);
+    })
+    .withFailureHandler(err => { btn.disabled = false; btn.innerHTML = '💾 Simpan'; showMsg('modelMsg','error','❌ '+(err.message||'Gagal.')); })
+    .setModel(chosen);
+}
+
+function _showCurrentModel(m) {
+  if (!m) return;
+  document.getElementById('currentModelInfo').style.display = 'block';
+  document.getElementById('currentModelName').textContent = m;
+  const el = document.getElementById('sysModelName');
+  if (el) el.textContent = m + ' via AI Studio (Gratis)';
+}
+function _loadCurrentModelInfo() {
+  google.script.run.withSuccessHandler(res => { if (res.status==='ok') _showCurrentModel(res.model); }).getModel();
+}
+function checkApiKeyStatus() {
+  google.script.run.withSuccessHandler(res => {
+    if (res.hasKey) showMsg('apiKeyMsg','success','✅ API Key sudah terpasang.');
+    else showMsg('apiKeyMsg','warn','⚠️ API Key belum diset.');
+  }).checkApiKey();
+}
+function initSheets() {
+  google.script.run
+    .withSuccessHandler(res => showMsg('initMsg', res.status==='ok'?'success':'error', (res.status==='ok'?'✅ ':'❌ ')+res.message))
+    .withFailureHandler(err => showMsg('initMsg','error','❌ '+(err.message||'Gagal')))
+    .initSheets();
+}
+
+// ── Helpers ─────────────────────────────────────────────────
+function showMsg(id, type, text) {
+  const icons = { success:'🌿', error:'❌', warn:'⚠️', info:'🌲' };
+  document.getElementById(id).innerHTML =
+    `<div class="alert alert-${type}"><span class="alert-icon">${icons[type]}</span><span>${text}</span></div>`;
+}
+function setProgress(pct, label, done=false) {
+  document.getElementById('progressWrap').style.display = 'block';
+  document.getElementById('progressLabel').textContent = label;
+  const fill = document.getElementById('progressFill');
+  fill.style.width = pct + '%';
+  fill.classList.toggle('done', done);
+}
+function showLoading(text, sub) {
+  document.getElementById('ld-text').textContent = text;
+  document.getElementById('ld-sub').textContent  = sub;
+  document.getElementById('loadingOverlay').classList.add('show');
+}
+function setLoading(text, sub) {
+  document.getElementById('ld-text').textContent = text;
+  document.getElementById('ld-sub').textContent  = sub;
+}
+function hideLoading() {
+  document.getElementById('loadingOverlay').classList.remove('show');
+}
+
+// ── Init ────────────────────────────────────────────────────
+window.addEventListener('load', buildGuide);
+</script>
+</body>
+</html>
