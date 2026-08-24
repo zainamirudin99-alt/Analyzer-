@@ -268,9 +268,9 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
 
     const storedKey = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_key') : null;
     let storedModel = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') : null;
-    if (storedModel === 'gemini-2.5-flash') {
-      storedModel = 'gemini-3.6-flash';
-      localStorage.setItem('custom_gemini_model', 'gemini-3.6-flash');
+    if (!storedModel || storedModel.includes('2.5') || storedModel.includes('3.6') || storedModel.includes('3.5')) {
+      storedModel = 'gemini-1.5-flash';
+      localStorage.setItem('custom_gemini_model', 'gemini-1.5-flash');
     }
     if (storedKey) formData.append('apiKey', storedKey);
     if (storedModel) formData.append('model', storedModel);

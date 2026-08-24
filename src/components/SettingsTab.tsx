@@ -6,7 +6,7 @@ import { FALLBACK_MODELS } from '@/lib/gemini';
 
 export const SettingsTab: React.FC = () => {
   const [apiKey, setApiKey] = useState('');
-  const [selectedModel, setSelectedModel] = useState('gemini-3.6-flash');
+  const [selectedModel, setSelectedModel] = useState('gemini-1.5-flash');
   const [isTestingKey, setIsTestingKey] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -17,10 +17,10 @@ export const SettingsTab: React.FC = () => {
   useEffect(() => {
     // Load local settings & migrasi otomatis model lama
     const storedKey = localStorage.getItem('custom_gemini_key') || '';
-    let storedModel = localStorage.getItem('custom_gemini_model') || 'gemini-3.6-flash';
+    let storedModel = localStorage.getItem('custom_gemini_model') || 'gemini-1.5-flash';
     
-    if (storedModel === 'gemini-2.5-flash' || !FALLBACK_MODELS.includes(storedModel)) {
-      storedModel = 'gemini-3.6-flash';
+    if (storedModel.includes('2.5') || storedModel.includes('3.6') || storedModel.includes('3.5') || !FALLBACK_MODELS.includes(storedModel)) {
+      storedModel = 'gemini-1.5-flash';
       localStorage.setItem('custom_gemini_model', storedModel);
     }
 
@@ -45,7 +45,7 @@ export const SettingsTab: React.FC = () => {
   };
 
   const handleSaveLocalSettings = () => {
-    const chosenModel = selectedModel === 'gemini-2.5-flash' ? 'gemini-3.6-flash' : selectedModel;
+    const chosenModel = selectedModel || 'gemini-1.5-flash';
     localStorage.setItem('custom_gemini_key', apiKey.trim());
     localStorage.setItem('custom_gemini_model', chosenModel);
     setSelectedModel(chosenModel);
@@ -183,7 +183,7 @@ CREATE POLICY "Public Access Heartbeat" ON public.ced_heartbeat FOR ALL USING (t
             >
               {FALLBACK_MODELS.map(m => (
                 <option key={m} value={m}>
-                  {m} {m.includes('3.6-flash') ? '⭐ (Rekomendasi Resmi Google)' : ''}
+                  {m} {m === 'gemini-1.5-flash' ? '⭐ (Rekomendasi Utama)' : ''}
                 </option>
               ))}
             </select>

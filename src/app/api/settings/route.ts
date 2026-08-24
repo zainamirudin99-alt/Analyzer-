@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase';
-import { FALLBACK_MODELS, executeGeminiRequest } from '@/lib/gemini';
+import { PROVEN_GEMINI_MODELS, executeGeminiRequest, getAvailableModelsFromApi } from '@/lib/gemini';
 
 export const dynamic = 'force-dynamic';
 
 // GET: Cek status koneksi Supabase & Gemini
 export async function GET(_req: NextRequest) {
   try {
-    const defaultModel = (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-3.6-flash';
+    const defaultModel = (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-1.5-flash';
     const hasServerGeminiKey = Boolean(typeof process !== 'undefined' && process.env.GEMINI_API_KEY);
 
     const supabaseStatus = {
@@ -37,7 +37,7 @@ export async function GET(_req: NextRequest) {
         gemini: {
           hasKey: hasServerGeminiKey,
           defaultModel,
-          availableModels: FALLBACK_MODELS
+          availableModels: PROVEN_GEMINI_MODELS
         }
       }
     });
@@ -56,16 +56,19 @@ export async function POST(req: NextRequest) {
     const apiKey = body?.apiKey;
     const model = body?.model;
     const testKey = (apiKey || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '') || '').trim();
-    let testModel = (model || (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-3.6-flash').trim();
-    if (testModel === 'gemini-2.5-flash' || !testModel) {
-      testModel = 'gemini-3.6-flash';
-    }
 
     if (!testKey) {
       return NextResponse.json({
         success: false,
         error: 'API Key belum diisi.'
       }, { status: 400 });
+    }
+
+    // 1. Temukan model yang aktif untuk API Key ini
+    const discovered = await getAvailableModelsFromApi(testKey);
+    let testModel = (model || discovered[0] || 'gemini-1.5-flash').trim();
+    if (testModel.includes('3.6') || testModel.includes('3.5') || testModel.includes('2.5')) {
+      testModel = discovered[0] || 'gemini-1.5-flash';
     }
 
     const testPayload = {
@@ -78,14 +81,16 @@ export async function POST(req: NextRequest) {
     if (response.ok) {
       return NextResponse.json({
         success: true,
-        message: `Koneksi ke Gemini AI (${testModel}) BERHASIL! 🚀`
+        message: `Koneksi ke Google Gemini AI (${testModel}) BERHASIL! 🚀`,
+        availableModels: discovered
       });
     }
 
     const errText = await response.text();
     return NextResponse.json({
       success: false,
-      error: `Gemini API Error (HTTP ${response.status}): ${errText.substring(0, 250)}`
+      error: `Gemini API Error (HTTP ${response.status}): ${errText.substring(0, 250)}`,
+      availableModels: discovered
     }, { status: 400 });
   } catch (err: any) {
     return NextResponse.json({

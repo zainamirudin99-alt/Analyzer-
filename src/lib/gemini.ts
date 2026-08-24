@@ -1,16 +1,18 @@
 // ============================================================
 // Google Gemini AI Integration for CED Analyzer
+// Multi-Model Auto-Discovery & Resilient Fallback Engine
 // ============================================================
 
 import { CEDScores, INDICATOR_KEYS } from './types';
 
-export const FALLBACK_MODELS = [
-  'gemini-3.6-flash',
-  'gemini-3.5-flash',
-  'gemini-2.0-flash',
+export const PROVEN_GEMINI_MODELS = [
   'gemini-1.5-flash',
-  'gemini-flash-latest',
-  'gemini-2.0-flash-lite'
+  'gemini-2.0-flash',
+  'gemini-1.5-pro',
+  'gemini-1.5-flash-8b',
+  'gemini-2.0-flash-exp',
+  'gemini-2.5-flash',
+  'gemini-flash-latest'
 ];
 
 export interface GeminiAnalysisOptions {
@@ -137,50 +139,99 @@ function normalizeScores(rawObj: Record<string, any>): CEDScores {
 }
 
 /**
- * Panggil Gemini AI dengan dual strategy (Header x-goog-api-key dan URL Query Key)
+ * Deteksi otomatis model yang aktif dan tersedia untuk API Key pengguna
  */
-export async function executeGeminiRequest(model: string, apiKey: string, requestBody: any): Promise<Response> {
+export async function getAvailableModelsFromApi(apiKey: string): Promise<string[]> {
   const cleanKey = apiKey.trim();
+  const endpoints = [
+    `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(cleanKey)}`,
+    `https://generativelanguage.googleapis.com/v1/models?key=${encodeURIComponent(cleanKey)}`
+  ];
 
-  // Strategi 1: Header x-goog-api-key (standar resmi Google AI Studio untuk format AQ... & AIza...)
-  const urlHeader = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-  try {
-    const res1 = await fetch(urlHeader, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': cleanKey
-      },
-      body: JSON.stringify(requestBody)
-    });
-
-    if (res1.status === 200) return res1;
-
-    // Jika strategi 1 gagal bukan karena model 404/429, coba strategi 2 (URL Query ?key=)
-    if (res1.status === 400 || res1.status === 401 || res1.status === 403) {
-      const urlQuery = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(cleanKey)}`;
-      const res2 = await fetch(urlQuery, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
+  for (const ep of endpoints) {
+    try {
+      const res = await fetch(ep, {
+        method: 'GET',
+        headers: { 'x-goog-api-key': cleanKey }
       });
-      if (res2.status === 200) return res2;
-      return res2;
-    }
 
-    return res1;
-  } catch (err: any) {
-    const urlQuery = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(cleanKey)}`;
-    return fetch(urlQuery, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody)
-    });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.models && Array.isArray(data.models)) {
+          const validModels: string[] = data.models
+            .filter((m: any) => {
+              const methods: string[] = m.supportedGenerationMethods || [];
+              return methods.includes('generateContent');
+            })
+            .map((m: any) => {
+              const name: string = m.name || '';
+              return name.replace(/^models\//, '');
+            });
+
+          if (validModels.length > 0) {
+            // Urutkan: model flash dan stabil ditaruh di depan
+            const sorted = [
+              ...validModels.filter(m => m.includes('flash') && !m.includes('lite') && !m.includes('8b')),
+              ...validModels.filter(m => m.includes('pro')),
+              ...validModels.filter(m => !m.includes('flash') && !m.includes('pro')),
+              ...validModels.filter(m => m.includes('8b') || m.includes('lite'))
+            ];
+            console.log(`[Gemini API] Berhasil menemukan ${sorted.length} model aktif dari Google AI Studio:`, sorted);
+            return Array.from(new Set(sorted));
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Gemini Model Discovery Error]:', e);
+    }
   }
+
+  return PROVEN_GEMINI_MODELS;
 }
 
 /**
- * Panggil Gemini AI Studio API dengan model queue fallback
+ * Panggil Gemini AI dengan dual endpoint (v1beta dan v1) serta dual auth
+ */
+export async function executeGeminiRequest(model: string, apiKey: string, requestBody: any): Promise<Response> {
+  const cleanKey = apiKey.trim();
+  const cleanModel = model.replace(/^models\//, '');
+
+  const urls = [
+    `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${encodeURIComponent(cleanKey)}`,
+    `https://generativelanguage.googleapis.com/v1/models/${cleanModel}:generateContent?key=${encodeURIComponent(cleanKey)}`
+  ];
+
+  let lastResponse: Response | null = null;
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': cleanKey
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (res.ok) return res;
+      lastResponse = res;
+
+      // Jika error 404 (model tidak ada di endpoint ini), coba endpoint berikutnya
+      if (res.status === 404) continue;
+      
+      // Jika 429 atau 400, kembalikan langsung untuk diproses fallback
+      return res;
+    } catch (err: any) {
+      console.warn(`[Gemini Request Failed on ${url}]:`, err?.message);
+    }
+  }
+
+  return lastResponse || new Response(JSON.stringify({ error: { message: 'Semua endpoint Google AI gagal dihubungi.' } }), { status: 500 });
+}
+
+/**
+ * Analisis CED dengan Gemini AI & Automatic Model Discovery
  */
 export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise<GeminiAnalysisResult> {
   const apiKey = (options.apiKey || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '') || '').trim();
@@ -188,13 +239,21 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
     throw new Error('GEMINI_API_KEY belum dikonfigurasi. Masukkan API Key di tab Pengaturan atau file .env.local.');
   }
 
-  let primaryModel = (options.preferredModel || (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-3.6-flash').trim();
-  if (primaryModel === 'gemini-2.5-flash' || !primaryModel) {
-    primaryModel = 'gemini-3.6-flash';
+  // 1. Temukan model yang aktif secara otomatis untuk API Key pengguna
+  const discoveredModels = await getAvailableModelsFromApi(apiKey);
+  
+  let primaryModel = (options.preferredModel || (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-1.5-flash').trim();
+  if (!primaryModel || primaryModel.includes('3.6') || primaryModel.includes('3.5') || primaryModel.includes('2.5')) {
+    primaryModel = 'gemini-1.5-flash';
   }
-  const modelQueue = [primaryModel, ...FALLBACK_MODELS.filter(m => m !== primaryModel)];
-  const prompt = buildCEDPrompt(options.companyCode, options.fiscalYear);
 
+  const modelQueue = Array.from(new Set([
+    primaryModel,
+    ...discoveredModels,
+    ...PROVEN_GEMINI_MODELS
+  ]));
+
+  const prompt = buildCEDPrompt(options.companyCode, options.fiscalYear);
   let lastError = '';
 
   for (const model of modelQueue) {
@@ -252,13 +311,13 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
 
       if (response.status === 429) {
         lastError = `Model ${model} terkena limit kuota (429 Rate Limit).`;
-        console.warn(`[Gemini CED] ${lastError} Beralih ke fallback model berikutnya...`);
+        console.warn(`[Gemini CED] ${lastError} Beralih ke model berikutnya...`);
         continue;
       }
 
       if (response.status === 404) {
-        lastError = `Model ${model} tidak ditemukan atau deprecated (404).`;
-        console.warn(`[Gemini CED] ${lastError} Beralih ke fallback model berikutnya...`);
+        lastError = `Model ${model} tidak ditemukan di Google AI Studio (404).`;
+        console.warn(`[Gemini CED] ${lastError} Beralih ke model berikutnya...`);
         continue;
       }
 
@@ -273,3 +332,5 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
 
   throw new Error(`Semua model Gemini AI gagal diakses. Error terakhir: ${lastError}`);
 }
+
+export const FALLBACK_MODELS = PROVEN_GEMINI_MODELS;
