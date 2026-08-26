@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Database, Sparkles, Trees } from 'lucide-react';
+import { Trees } from 'lucide-react';
 
 interface HeaderProps {
   supabaseStatus: {

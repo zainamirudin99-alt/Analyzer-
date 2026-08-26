@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { FileText, Sparkles, RefreshCw, Copy, Check, Eye, Download, X } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle2, Sparkles, RefreshCw, ArrowRight, Copy, Check, Eye, Download, X } from 'lucide-react';
 import { CEDScores, INDICATOR_KEYS } from '@/lib/types';
 
 interface UploadTabProps {
