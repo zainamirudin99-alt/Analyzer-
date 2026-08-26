@@ -101,6 +101,7 @@ declare module 'lucide-react' {
   export const ChevronDown: any;
   export const ChevronUp: any;
   export const Info: any;
+  export const Trees: any;
 
   const icons: any;
   export default icons;

@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
-import { UploadCloud, FileText, CheckCircle2, Sparkles, RefreshCw, ArrowRight, Copy, Check, Eye, Download, X } from 'lucide-react';
-import { CEDScores, INDICATOR_KEYS, CEDResultRecord } from '@/lib/types';
+import React, { useState, useRef, useEffect } from 'react';
+import { FileText, Sparkles, RefreshCw, Copy, Check, Eye, Download, X } from 'lucide-react';
+import { CEDScores, INDICATOR_KEYS } from '@/lib/types';
 
 interface UploadTabProps {
   onSuccessAnalysis: () => void;
@@ -51,7 +51,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
 
   const [activeModel, setActiveModel] = useState<string>('gemini-3.7-flash');
 
-  React.useEffect(() => {
+  useEffect(() => {
     const syncModel = () => {
       const stored = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') || 'gemini-3.7-flash' : 'gemini-3.7-flash';
       setActiveModel(stored);
