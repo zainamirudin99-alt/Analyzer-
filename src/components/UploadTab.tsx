@@ -1,4 +1,6 @@
 'use client';
+/* eslint-disable react/no-unescaped-entities */
+/* eslint-disable @next/next/no-img-element */
 
 import React, { useState, useRef, useEffect, FC, DragEvent } from 'react';
 import { UploadCloud, FileText, CheckCircle2, Sparkles, RefreshCw, ArrowRight, Copy, Check, Eye, Download, X } from 'lucide-react';
