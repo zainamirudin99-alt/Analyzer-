@@ -49,6 +49,20 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
     savedInDb: boolean;
   } | null>(null);
 
+  const [activeModel, setActiveModel] = useState<string>('gemini-3.7-flash');
+
+  React.useEffect(() => {
+    const syncModel = () => {
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') || 'gemini-3.7-flash' : 'gemini-3.7-flash';
+      setActiveModel(stored);
+    };
+    syncModel();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', syncModel);
+      return () => window.removeEventListener('storage', syncModel);
+    }
+  }, []);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (file: File) => {
@@ -267,13 +281,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
     }
 
     const storedKey = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_key') : null;
-    let storedModel = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') : null;
-    if (!storedModel || storedModel.includes('3.') || storedModel.includes('2.5') || storedModel.includes('8b') || storedModel.includes('-exp')) {
-      storedModel = 'gemini-2.0-flash';
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('custom_gemini_model', 'gemini-2.0-flash');
-      }
-    }
+    const storedModel = (typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') : null) || activeModel || 'gemini-3.7-flash';
     if (storedKey) formData.append('apiKey', storedKey.trim());
     if (storedModel) formData.append('model', storedModel.trim());
 
@@ -623,11 +631,11 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
 
         {/* Model Info Badge */}
         <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--stone)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-          <span>🤖 Model AI Aktif:</span>
+          <span>🤖 Model AI Terpilih:</span>
           <span className="badge badge-primary font-mono" style={{ fontSize: '11px', padding: '2px 8px' }}>
-            {typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') || 'gemini-2.0-flash' : 'gemini-2.0-flash'}
+            {activeModel}
           </span>
-          <span style={{ fontSize: '11.5px', color: 'var(--stone)' }}>(Atur di tab Pengaturan)</span>
+          <span style={{ fontSize: '11.5px', color: 'var(--stone)' }}>(Tersinkronisasi dengan tab Pengaturan)</span>
         </div>
       </div>
 

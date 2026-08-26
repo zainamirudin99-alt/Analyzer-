@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 // GET: Cek status koneksi Supabase & Gemini
 export async function GET(_req: NextRequest) {
   try {
-    const defaultModel = (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-2.0-flash';
+    const defaultModel = (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-3.7-flash';
     const hasServerGeminiKey = Boolean(typeof process !== 'undefined' && process.env.GEMINI_API_KEY);
 
     const supabaseStatus = {
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    const preferredModel = (model || 'gemini-2.0-flash').trim();
+    const preferredModel = (model || 'gemini-3.7-flash').trim();
 
     // 1. Temukan daftar model yang aktif untuk API Key ini
     const discovered = await getAvailableModelsFromApi(testKey);
@@ -72,6 +72,10 @@ export async function POST(req: NextRequest) {
     // 2. Susun antrian uji coba (model pilihan user diuji paling pertama)
     const testQueue = Array.from(new Set([
       preferredModel,
+      'gemini-3.7-flash',
+      'gemini-3.7-pro',
+      'gemini-3.5-flash',
+      'gemini-3.1-pro',
       'gemini-2.0-flash',
       'gemini-1.5-flash',
       'gemini-2.0-flash-lite',

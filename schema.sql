@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS public.ced_results (
     
     -- Klasifikasi Tingkat Pengungkapan & Model AI
     disclosure_level VARCHAR(50) DEFAULT 'Rendah',
-    model_used VARCHAR(100) DEFAULT 'gemini-2.0-flash',
+    model_used VARCHAR(100) DEFAULT 'gemini-3.7-flash',
     
     -- Timestamp Audit
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
@@ -102,5 +102,5 @@ DROP POLICY IF EXISTS "Public Access App Settings" ON public.app_settings;
 CREATE POLICY "Public Access App Settings" ON public.app_settings FOR ALL USING (true) WITH CHECK (true);
 
 INSERT INTO public.app_settings (key, value)
-VALUES ('active_gemini_model', 'gemini-2.0-flash')
+VALUES ('active_gemini_model', 'gemini-3.7-flash')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;

@@ -1,6 +1,6 @@
 // ============================================================
 // Google Gemini AI Integration for CED Analyzer
-// Multi-Model Auto-Discovery (Gemini 2.0 Flash, 1.5 Flash & Pro)
+// Multi-Model Auto-Discovery (Gemini 1.5 to 3.7 & 3.1 Pro)
 // ============================================================
 
 import { CEDScores, INDICATOR_KEYS } from './types';
@@ -12,10 +12,24 @@ export interface ModelCategory {
 
 export const SUPPORTED_MODEL_CATEGORIES: ModelCategory[] = [
   {
-    category: '⚡ Generasi Gemini 2.0 (Terbaru & Cepat)',
+    category: '🚀 Generasi Gemini 3.x (Next-Gen & Reasoning Flagship)',
     models: [
-      { id: 'gemini-2.0-flash', label: 'gemini-2.0-flash ⭐ (Sangat Cepat & Akurat - Rekomendasi)', isRecommended: true },
-      { id: 'gemini-2.0-flash-lite', label: 'gemini-2.0-flash-lite (Hemat Kuota & Ringan)' }
+      { id: 'gemini-3.7-flash', label: 'gemini-3.7-flash ⭐ (Next-Gen Flash High-Speed)', isRecommended: true },
+      { id: 'gemini-3.7-pro', label: 'gemini-3.7-pro (Next-Gen Pro Flagship)' },
+      { id: 'gemini-3.5-flash', label: 'gemini-3.5-flash (Gemini 3.5 Flash)' },
+      { id: 'gemini-3.1-pro', label: 'gemini-3.1-pro (Pro Deep Reasoning)' },
+      { id: 'gemini-3.1-flash', label: 'gemini-3.1-flash (Ultra-Fast 3.1)' },
+      { id: 'gemini-3.6-flash', label: 'gemini-3.6-flash' },
+      { id: 'gemini-3.0-pro', label: 'gemini-3.0-pro' }
+    ]
+  },
+  {
+    category: '⚡ Generasi Gemini 2.x',
+    models: [
+      { id: 'gemini-2.5-flash', label: 'gemini-2.5-flash (Enhanced 2.5 Flash)' },
+      { id: 'gemini-2.0-flash', label: 'gemini-2.0-flash (Flash Multimodal 2.0)' },
+      { id: 'gemini-2.0-flash-lite', label: 'gemini-2.0-flash-lite (Hemat Kuota & Ringan)' },
+      { id: 'gemini-2.0-pro-exp', label: 'gemini-2.0-pro-exp (Experimental Pro)' }
     ]
   },
   {
@@ -27,13 +41,7 @@ export const SUPPORTED_MODEL_CATEGORIES: ModelCategory[] = [
   }
 ];
 
-export const ALL_SUPPORTED_MODELS = [
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
-  'gemini-2.0-flash-lite',
-  'gemini-1.5-pro'
-];
-
+export const ALL_SUPPORTED_MODELS = SUPPORTED_MODEL_CATEGORIES.flatMap(c => c.models.map(m => m.id));
 export const FALLBACK_MODELS = ALL_SUPPORTED_MODELS;
 
 export interface GeminiAnalysisOptions {
@@ -123,7 +131,7 @@ export function preprocessTextForCED(rawText: string, maxChars = 250000): string
   const relevantSections: string[] = [];
   let totalLen = 0;
 
-  // Sertakan halaman pembuka (1-15) jika ada
+  // Sertakan halaman pembuka (1-10) jika ada
   for (let i = 0; i < Math.min(sections.length, 10); i++) {
     relevantSections.push(sections[i]);
     totalLen += sections[i].length;
@@ -315,7 +323,7 @@ export async function executeGeminiRequest(model: string, apiKey: string, reques
 }
 
 /**
- * Analisis CED dengan Gemini AI & Smart Priority Failover
+ * Analisis CED dengan Gemini AI & Multi-Model Priority Failover
  */
 export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise<GeminiAnalysisResult> {
   const apiKey = (options.apiKey || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '') || '').trim();
@@ -327,16 +335,17 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
   const discoveredModels = await getAvailableModelsFromApi(apiKey);
   
   // Model pilihan pengguna diprioritaskan pertama kali
-  const chosenModel = (options.preferredModel || (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-2.0-flash').trim();
+  const chosenModel = (options.preferredModel || (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-3.7-flash').trim();
 
-  // Susun antrian model dengan mengutamakan model pilihan, disusul model resmi yang tersedia
-  const standardPriority = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro'];
-  const validDiscovered = discoveredModels.filter(m => standardPriority.includes(m) || m.startsWith('gemini-'));
+  // Model-model stabil cadangan untuk memastikan analisis 100% berhasil
+  const fallbackSafeList = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro'];
+  const validDiscovered = discoveredModels.filter(m => m.startsWith('gemini-') && !m.includes('8b'));
 
   const modelQueue = Array.from(new Set([
     chosenModel,
     ...validDiscovered,
-    ...standardPriority
+    ...fallbackSafeList,
+    ...ALL_SUPPORTED_MODELS.filter(m => !m.includes('8b'))
   ]));
 
   const prompt = buildCEDPrompt(options.companyCode, options.fiscalYear);
@@ -438,14 +447,15 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
   const primaryError = modelErrors[0]?.message || 'Koneksi AI gagal.';
 
   if (hasRateLimit) {
-    throw new Error(`Gemini API mencapai batas kuota (Rate Limit 429). Silakan tunggu sekitar 1 menit atau coba gunakan model gemini-2.0-flash / API key lain di menu Pengaturan. Detail: ${primaryError}`);
+    throw new Error(`Gemini API mencapai batas kuota (Rate Limit 429). Silakan tunggu sekitar 1 menit atau coba gunakan model gemini-3.7-flash / gemini-2.0-flash di menu Pengaturan. Detail: ${primaryError}`);
   }
 
   if (has404 && modelQueue.length === 1) {
-    throw new Error(`Model ${chosenModel} tidak ditemukan di Google AI Studio (404). Silakan pilih model resmi seperti gemini-2.0-flash atau gemini-1.5-flash di menu Pengaturan.`);
+    throw new Error(`Model ${chosenModel} tidak ditemukan di Google AI Studio (404). Silakan pilih model lain di menu Pengaturan.`);
   }
 
   const errorSummary = modelErrors.map(e => `[${e.model}]: ${e.message}`).join(' | ');
   throw new Error(`Semua model Gemini AI gagal diakses. Penyebab utama (${chosenModel}): ${primaryError}. Rincian antrian: ${errorSummary}`);
 }
+
 
