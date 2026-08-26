@@ -16,12 +16,12 @@ export const Header: React.FC<HeaderProps> = ({ supabaseStatus, activeTab, onTab
   return (
     <>
       <header className="app-header">
-        <div className="header-brand">
+        <div className="header-brand" style={{ cursor: 'pointer' }} onClick={() => onTabChange('upload')}>
           <div className="header-logo-badge">
-            <Trees size={26} color="#ffffff" />
+            <img src="/logo.png" alt="PDF Analyzer Logo" className="header-logo-img" />
           </div>
           <div className="header-title-box">
-            <h1>Analyzer</h1>
+            <h1>PDF Analyzer</h1>
             <p>Carbon Emission Disclosure (CED) — Analisis AI & Database Supabase</p>
           </div>
         </div>

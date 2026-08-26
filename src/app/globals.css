@@ -704,3 +704,125 @@ table.result-table {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ============================================================
+   MASCOT & LOGO ANIMATIONS
+   ============================================================ */
+
+.header-logo-img {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.2));
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.header-brand:hover .header-logo-img {
+  transform: scale(1.12) rotate(-4deg);
+}
+
+.mascot-idle-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 8px;
+  animation: mascotFloat 3.5s ease-in-out infinite;
+}
+
+.mascot-idle-img {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 16px rgba(46, 105, 34, 0.2));
+}
+
+.mascot-pulse-wrap {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  animation: mascotPulse 2s ease-in-out infinite;
+}
+
+.mascot-pulse-wrap::after {
+  content: '';
+  position: absolute;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(74, 222, 128, 0.35) 0%, rgba(46, 105, 34, 0) 70%);
+  animation: pulseGlow 1.8s ease-out infinite;
+  z-index: -1;
+}
+
+.mascot-bounce-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  animation: mascotBounce 1.2s ease-in-out infinite;
+}
+
+.mascot-loading-img {
+  width: 130px;
+  height: 130px;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 24px rgba(46, 105, 34, 0.25));
+}
+
+.mascot-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 6px 16px;
+  background: #ffffff;
+  border: 1.5px solid var(--border);
+  border-radius: 30px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fern);
+  box-shadow: 0 4px 12px rgba(46, 105, 34, 0.08);
+}
+
+.mascot-status-pill .spinner {
+  border-color: rgba(46, 105, 34, 0.2);
+  border-top-color: var(--fern);
+}
+
+@keyframes mascotFloat {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes mascotBounce {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-10px) scale(1.03);
+  }
+}
+
+@keyframes mascotPulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes pulseGlow {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}

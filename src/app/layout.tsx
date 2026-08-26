@@ -7,10 +7,15 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'Analyzer – Carbon Emission Disclosure (CED)',
+  title: 'PDF Analyzer – Carbon Emission Disclosure (CED)',
   description: 'Aplikasi Analisis Otomatis 18 Indikator Carbon Emission Disclosure pada Laporan Tahunan Perusahaan Menggunakan Google Gemini AI & Supabase.',
-  keywords: ['Carbon Emission Disclosure', 'CED Analyzer', 'ESG', 'Gemini AI', 'Supabase', 'Sustainability Report'],
-  authors: [{ name: 'Analyzer AI Team' }]
+  keywords: ['Carbon Emission Disclosure', 'CED Analyzer', 'PDF Analyzer', 'ESG', 'Gemini AI', 'Supabase', 'Sustainability Report'],
+  authors: [{ name: 'Analyzer AI Team' }],
+  icons: {
+    icon: '/favicon.png',
+    shortcut: '/favicon.png',
+    apple: '/logo.png',
+  }
 };
 
 export default function RootLayout({
@@ -21,6 +26,8 @@ export default function RootLayout({
   return (
     <html lang="id">
       <head>
+        <link rel="icon" type="image/png" href="/favicon.png" />
+        <link rel="apple-touch-icon" href="/logo.png" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link

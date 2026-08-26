@@ -34,7 +34,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# media / user uploads
-*.png
-*.jpg
-*.jpeg
+# media / user uploads in root
+/ChatGPT*.png
+/media_*.png
+!public/*.png
+!public/*.ico

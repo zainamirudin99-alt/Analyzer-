@@ -756,24 +756,66 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
         <div
           className="card"
           style={{
-            background: 'var(--dew)',
-            border: '2px dashed var(--mist)',
+            background: isAnalyzing ? 'linear-gradient(180deg, #f0fdf4 0%, #eef7eb 100%)' : isExtracting ? 'linear-gradient(180deg, #f8fafc 0%, #eef7eb 100%)' : 'var(--dew)',
+            border: isAnalyzing || isExtracting ? '2px solid var(--sage)' : '2px dashed var(--mist)',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            minHeight: '380px',
-            textAlign: 'center'
+            minHeight: '420px',
+            textAlign: 'center',
+            padding: '30px 20px',
+            transition: 'all 0.3s ease'
           }}
         >
-          <div style={{ fontSize: '52px', marginBottom: '16px', opacity: 0.7 }}>🌲</div>
-          <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text)' }}>Alur Ekstraksi & Analisis</h3>
-          <ol style={{ fontSize: '13px', color: 'var(--stone)', maxWidth: '340px', marginTop: '10px', textAlign: 'left', lineHeight: '1.8', paddingLeft: '20px' }}>
-            <li>Upload file PDF laporan tahunan</li>
-            <li>Klik tombol <strong>"1. Ubah PDF ke TXT"</strong></li>
-            <li>Preview isi teks yang berhasil diekstrak</li>
-            <li>Klik tombol <strong>"2. Analisis dengan AI"</strong></li>
-          </ol>
+          {isAnalyzing ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div className="mascot-pulse-wrap">
+                <img src="/logo.png" alt="AI Analyzing" className="mascot-loading-img" />
+              </div>
+              <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--fern)', marginTop: '18px' }}>
+                AI Sedang Menilai 18 Indikator CED...
+              </h3>
+              <div style={{ fontSize: '13px', color: 'var(--stone)', maxWidth: '380px', marginTop: '8px', lineHeight: '1.6' }}>
+                Google Gemini (<strong>{activeModel}</strong>) sedang memindai laporan dan menghitung bobot nilai CC, GHG, EC, RC, dan ACC secara mendalam.
+              </div>
+              <div className="mascot-status-pill">
+                <span className="spinner" style={{ width: '14px', height: '14px' }} />
+                <span>{progressLabel || 'Memproses Analisis...'}</span>
+              </div>
+            </div>
+          ) : isExtracting ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div className="mascot-bounce-wrap">
+                <img src="/logo.png" alt="Extracting PDF" className="mascot-loading-img" />
+              </div>
+              <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--moss)', marginTop: '18px' }}>
+                Mengekstrak Konten PDF ke TXT...
+              </h3>
+              <div style={{ fontSize: '13px', color: 'var(--stone)', maxWidth: '380px', marginTop: '8px', lineHeight: '1.6' }}>
+                Membaca teks dari setiap halaman dokumen langsung di browser lokal Anda tanpa limit server.
+              </div>
+              <div className="mascot-status-pill">
+                <span className="spinner" style={{ width: '14px', height: '14px' }} />
+                <span>{progressLabel || 'Membaca Halaman Dokumen...'}</span>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="mascot-idle-wrap">
+                <img src="/logo.png" alt="PDF Analyzer Mascot" className="mascot-idle-img" />
+              </div>
+              <h3 style={{ fontSize: '17px', fontWeight: 800, color: 'var(--text)', marginTop: '10px' }}>
+                Alur Ekstraksi & Analisis PDF
+              </h3>
+              <ol style={{ fontSize: '13px', color: 'var(--stone)', maxWidth: '360px', marginTop: '12px', textAlign: 'left', lineHeight: '1.8', paddingLeft: '24px' }}>
+                <li>Upload file PDF laporan tahunan / keberlanjutan</li>
+                <li>Klik tombol <strong>"1. Ubah PDF ke TXT"</strong></li>
+                <li>Preview isi teks yang berhasil diekstrak</li>
+                <li>Klik tombol <strong>"2. Analisis dengan AI"</strong></li>
+              </ol>
+            </>
+          )}
         </div>
       )}
 
