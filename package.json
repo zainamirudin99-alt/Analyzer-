@@ -1,5 +1,5 @@
 {
-  "name": "analyzer",
+  "name": "analyzerpdf",
   "version": "1.0.0",
   "private": true,
   "description": "Carbon Emission Disclosure (CED) Analyzer dengan Vercel, Supabase, dan Gemini AI",
