@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS public.ced_results (
         ec1 + ec2 + ec3 + rc1 + rc2 + rc3 + rc4 + acc1 + acc2
     ) STORED,
     disclosure_level VARCHAR(50) DEFAULT 'Rendah',
-    model_used VARCHAR(100) DEFAULT 'gemini-1.5-flash',
+    model_used VARCHAR(100) DEFAULT 'gemini-2.0-flash',
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
@@ -58,11 +58,11 @@ CREATE POLICY "Public Access Heartbeat" ON public.ced_heartbeat FOR ALL USING (t
 
 export const SettingsTab: React.FC = () => {
   const [apiKey, setApiKey] = useState<string>('');
-  const [selectedModel, setSelectedModel] = useState<string>('gemini-1.5-flash');
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-2.0-flash');
   const [customModelInput, setCustomModelInput] = useState<string>('');
   const [isCustomMode, setIsCustomMode] = useState<boolean>(false);
   const [isTestingKey, setIsTestingKey] = useState<boolean>(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string; activeModel?: string } | null>(null);
 
   const [sysStatus, setSysStatus] = useState<any>(null);
   const [copiedSql, setCopiedSql] = useState<boolean>(false);
@@ -70,18 +70,26 @@ export const SettingsTab: React.FC = () => {
   useEffect(() => {
     // Load local settings
     const storedKey = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_key') || '' : '';
-    const storedModel = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') || 'gemini-1.5-flash' : 'gemini-1.5-flash';
+    let storedModel = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') || 'gemini-2.0-flash' : 'gemini-2.0-flash';
     
+    // Bersihkan model usang / fiktif jika sebelumnya tersimpan di localStorage pengguna
+    if (storedModel.includes('3.') || storedModel.includes('2.5') || storedModel.includes('8b') || storedModel.includes('-exp')) {
+      storedModel = 'gemini-2.0-flash';
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('custom_gemini_model', 'gemini-2.0-flash');
+      }
+    }
+
     setApiKey(storedKey);
     if (ALL_SUPPORTED_MODELS.includes(storedModel)) {
       setSelectedModel(storedModel);
       setIsCustomMode(false);
-    } else if (storedModel && storedModel !== 'gemini-1.5-flash') {
+    } else if (storedModel && storedModel !== 'gemini-2.0-flash') {
       setSelectedModel('custom');
       setCustomModelInput(storedModel);
       setIsCustomMode(true);
     } else {
-      setSelectedModel('gemini-1.5-flash');
+      setSelectedModel('gemini-2.0-flash');
       setIsCustomMode(false);
     }
 
@@ -102,9 +110,9 @@ export const SettingsTab: React.FC = () => {
 
   const getEffectiveModel = (): string => {
     if (isCustomMode || selectedModel === 'custom') {
-      return customModelInput.trim() || 'gemini-1.5-flash';
+      return customModelInput.trim() || 'gemini-2.0-flash';
     }
-    return selectedModel || 'gemini-1.5-flash';
+    return selectedModel || 'gemini-2.0-flash';
   };
 
   const handleSaveLocalSettings = () => {
@@ -133,8 +141,18 @@ export const SettingsTab: React.FC = () => {
       const json = await res.json();
       setTestResult({
         success: json.success,
-        message: json.message || json.error || 'Uji koneksi selesai.'
+        message: json.message || json.error || 'Uji koneksi selesai.',
+        activeModel: json.activeModel
       });
+
+      if (json.success && json.activeModel && json.activeModel !== effectiveModel) {
+        // Otomatis sinkronkan model aktif jika model lama tidak ditemukan di akun Google
+        setSelectedModel(json.activeModel);
+        setIsCustomMode(false);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('custom_gemini_model', json.activeModel);
+        }
+      }
     } catch (err: any) {
       setTestResult({
         success: false,
@@ -160,7 +178,7 @@ export const SettingsTab: React.FC = () => {
         <div className="card">
           <div className="card-title">
             <div className="ct-icon"><Key size={18} color="#2e6922" /></div>
-            <span>Konfigurasi Google Gemini AI (1.5 s/d 3.7 & 3.1 Pro)</span>
+            <span>Konfigurasi Google Gemini AI (Resmi Google AI Studio)</span>
           </div>
 
           <div className="alert alert-info" style={{ fontSize: '13px' }}>
@@ -228,7 +246,7 @@ export const SettingsTab: React.FC = () => {
                 <input
                   type="text"
                   className="form-input font-mono"
-                  placeholder="Contoh: gemini-3.1-pro, gemini-3.7-flash, gemini-3.0-pro"
+                  placeholder="Contoh: gemini-2.0-flash, gemini-1.5-flash, gemini-1.5-pro"
                   value={customModelInput}
                   onChange={e => setCustomModelInput(e.target.value.trim())}
                 />
@@ -236,7 +254,7 @@ export const SettingsTab: React.FC = () => {
             )}
 
             <div style={{ fontSize: '12px', color: 'var(--stone)', marginTop: '6px', lineHeight: '1.5' }}>
-              💡 Sistem akan memprioritaskan model pilihan Anda (misal: <strong>{getEffectiveModel()}</strong>). Jika model tersebut belum dirilis pada akun Google Anda, sistem otomatis beralih (*failover*) ke model stabil berikutnya tanpa menghentikan analisis.
+              💡 Rekomendasi: <strong>gemini-2.0-flash</strong> (sangat cepat & akurat untuk analisis 18 indikator CED) atau <strong>gemini-1.5-flash</strong>. Jika model terkena batas kuota, sistem otomatis beralih (*failover*) ke model stabil berikutnya.
             </div>
           </div>
 
@@ -302,3 +320,4 @@ export const SettingsTab: React.FC = () => {
     </div>
   );
 };
+

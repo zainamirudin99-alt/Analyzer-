@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 // GET: Cek status koneksi Supabase & Gemini
 export async function GET(_req: NextRequest) {
   try {
-    const defaultModel = (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-1.5-flash';
+    const defaultModel = (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-2.0-flash';
     const hasServerGeminiKey = Boolean(typeof process !== 'undefined' && process.env.GEMINI_API_KEY);
 
     const supabaseStatus = {
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    const preferredModel = (model || 'gemini-1.5-flash').trim();
+    const preferredModel = (model || 'gemini-2.0-flash').trim();
 
     // 1. Temukan daftar model yang aktif untuk API Key ini
     const discovered = await getAvailableModelsFromApi(testKey);
@@ -72,11 +72,11 @@ export async function POST(req: NextRequest) {
     // 2. Susun antrian uji coba (model pilihan user diuji paling pertama)
     const testQueue = Array.from(new Set([
       preferredModel,
-      ...discovered,
-      'gemini-1.5-flash',
       'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-2.0-flash-lite',
       'gemini-1.5-pro',
-      'gemini-1.5-flash-8b'
+      ...discovered
     ]));
 
     const testPayload = {
@@ -94,8 +94,8 @@ export async function POST(req: NextRequest) {
         if (response.ok) {
           const isDirectMatch = m === preferredModel;
           const msg = isDirectMatch
-            ? `Koneksi ke Google Gemini AI (${m}) BERHASIL 100%! 🚀`
-            : `Koneksi ke Google Gemini AI BERHASIL! Model aktif terverifikasi: ${m} 🚀 (Model ${preferredModel} otomatis dialihkan ke ${m}).`;
+            ? `Koneksi ke Google Gemini AI (${m}) BERHASIL 100%! 🚀 Model aktif dan siap menganalisis dokumen.`
+            : `Koneksi ke Google Gemini AI BERHASIL dengan model aktif: "${m}" 🚀. Catatan: Model "${preferredModel}" tidak tersedia/404 pada akun Anda dan otomatis dialihkan ke "${m}".`;
 
           return NextResponse.json({
             success: true,

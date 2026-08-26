@@ -1,6 +1,6 @@
 // ============================================================
 // Google Gemini AI Integration for CED Analyzer
-// Multi-Model Auto-Discovery (Gemini 1.5 to 3.7 & 3.1 Pro)
+// Multi-Model Auto-Discovery (Gemini 2.0 Flash, 1.5 Flash & Pro)
 // ============================================================
 
 import { CEDScores, INDICATOR_KEYS } from './types';
@@ -12,37 +12,28 @@ export interface ModelCategory {
 
 export const SUPPORTED_MODEL_CATEGORIES: ModelCategory[] = [
   {
-    category: '🚀 Generasi Gemini 3.x & 3.1 Pro (Next-Gen)',
+    category: '⚡ Generasi Gemini 2.0 (Terbaru & Cepat)',
     models: [
-      { id: 'gemini-3.7-flash', label: 'gemini-3.7-flash (Next-Gen Flash High-Speed)' },
-      { id: 'gemini-3.7-pro', label: 'gemini-3.7-pro (Next-Gen Pro Flagship)' },
-      { id: 'gemini-3.1-pro', label: 'gemini-3.1-pro (Pro Deep Reasoning)' },
-      { id: 'gemini-3.1-flash', label: 'gemini-3.1-flash (Ultra-Fast 3.1)' },
-      { id: 'gemini-3.6-flash', label: 'gemini-3.6-flash' },
-      { id: 'gemini-3.5-flash', label: 'gemini-3.5-flash' },
-      { id: 'gemini-3.0-pro', label: 'gemini-3.0-pro' }
+      { id: 'gemini-2.0-flash', label: 'gemini-2.0-flash ⭐ (Sangat Cepat & Akurat - Rekomendasi)', isRecommended: true },
+      { id: 'gemini-2.0-flash-lite', label: 'gemini-2.0-flash-lite (Hemat Kuota & Ringan)' }
     ]
   },
   {
-    category: '⚡ Generasi Gemini 2.x',
+    category: '🌿 Generasi Gemini 1.5 (Stabil & Teruji)',
     models: [
-      { id: 'gemini-2.0-flash', label: 'gemini-2.0-flash (Flash Multimodal 2.0)' },
-      { id: 'gemini-2.5-flash', label: 'gemini-2.5-flash (Enhanced 2.5)' },
-      { id: 'gemini-2.0-flash-exp', label: 'gemini-2.0-flash-exp (Experimental)' },
-      { id: 'gemini-2.0-pro-exp', label: 'gemini-2.0-pro-exp (Experimental Pro)' }
-    ]
-  },
-  {
-    category: '🌿 Generasi Gemini 1.5 (Stabil & Terverifikasi)',
-    models: [
-      { id: 'gemini-1.5-flash', label: 'gemini-1.5-flash ⭐ (Paling Stabil & Tercepat)', isRecommended: true },
-      { id: 'gemini-1.5-pro', label: 'gemini-1.5-pro (Akurasi Analisis Kompleks)' },
-      { id: 'gemini-1.5-flash-8b', label: 'gemini-1.5-flash-8b (Lightweight Fast)' }
+      { id: 'gemini-1.5-flash', label: 'gemini-1.5-flash (Paling Stabil, 1M Token Context)' },
+      { id: 'gemini-1.5-pro', label: 'gemini-1.5-pro (Penalaran Kompleks & Detail)' }
     ]
   }
 ];
 
-export const ALL_SUPPORTED_MODELS = SUPPORTED_MODEL_CATEGORIES.flatMap(c => c.models.map(m => m.id));
+export const ALL_SUPPORTED_MODELS = [
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+  'gemini-2.0-flash-lite',
+  'gemini-1.5-pro'
+];
+
 export const FALLBACK_MODELS = ALL_SUPPORTED_MODELS;
 
 export interface GeminiAnalysisOptions {
@@ -100,6 +91,69 @@ Bantulah untuk mengidentifikasi ke-18 indikator di atas yang berada pada dokumen
 INSTRUKSI OUTPUT WAJIB:
 Kembalikan HANYA objek JSON murni tanpa markdown, tanpa teks pembuka atau penutup:
 {"CC1":0,"CC2":0,"GHG1":0,"GHG2":0,"GHG3":0,"GHG4":0,"GHG5":0,"GHG6":0,"GHG7":0,"EC1":0,"EC2":0,"EC3":0,"RC1":0,"RC2":0,"RC3":0,"RC4":0,"ACC1":0,"ACC2":0}`;
+}
+
+/**
+ * Optimasi dan Pembersihan Teks Laporan untuk Analisis CED
+ * Mencegah Quota Limit Exceeded (429) dan Payload Timeout pada PDF Laporan 300+ halaman
+ */
+export function preprocessTextForCED(rawText: string, maxChars = 250000): string {
+  if (!rawText) return '';
+  const cleaned = rawText
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s*\n\s*\n+/g, '\n\n')
+    .trim();
+
+  if (cleaned.length <= maxChars) {
+    return cleaned;
+  }
+
+  // Jika teks sangat panjang (contoh: > 250k karakter), prioritaskan bagian yang mengandung kata kunci CED
+  const cedKeywords = [
+    'emisi', 'grk', 'ghg', 'scope 1', 'scope 2', 'scope 3', 'cakupan 1', 'cakupan 2', 'cakupan 3',
+    'gas rumah kaca', 'greenhouse gas', 'karbon', 'carbon', 'co2', 'energi', 'energy', 'listrik',
+    'batu bara', 'solar', 'diesel', 'fuel', 'bahan bakar', 'konsumsi energi', 'efisiensi energi',
+    'tcfd', 'iso 14064', 'gri', 'sustainability', 'keberlanjutan', 'lingkungan', 'iklim', 'climate',
+    'transisi energi', 'net zero', 'dekarbonisasi', 'target emisi', 'pengurangan emisi',
+    'komite keberlanjutan', 'dewan komisaris', 'dewan direksi', 'tanggung jawab sosial', 'esg'
+  ];
+
+  const sections = cleaned.split(/(?=--- HALAMAN \d+ ---|\n\n(?=[A-Z0-9\s]{4,40}\n))/i);
+  const relevantSections: string[] = [];
+  let totalLen = 0;
+
+  // Sertakan halaman pembuka (1-15) jika ada
+  for (let i = 0; i < Math.min(sections.length, 10); i++) {
+    relevantSections.push(sections[i]);
+    totalLen += sections[i].length;
+  }
+
+  // Ambil semua section yang relevan dengan CED
+  for (let i = 10; i < sections.length; i++) {
+    const sec = sections[i];
+    const secLower = sec.toLowerCase();
+    const isRelevant = cedKeywords.some(kw => secLower.includes(kw));
+
+    if (isRelevant) {
+      if (totalLen + sec.length > maxChars) break;
+      relevantSections.push(sec);
+      totalLen += sec.length;
+    }
+  }
+
+  // Jika setelah filtering masih kurang dari 100k karakter, tambahkan section lain hingga mendekati batas
+  if (totalLen < maxChars / 2) {
+    for (let i = 10; i < sections.length; i++) {
+      if (!relevantSections.includes(sections[i])) {
+        if (totalLen + sections[i].length > maxChars) break;
+        relevantSections.push(sections[i]);
+        totalLen += sections[i].length;
+      }
+    }
+  }
+
+  return relevantSections.join('\n\n');
 }
 
 /**
@@ -261,7 +315,7 @@ export async function executeGeminiRequest(model: string, apiKey: string, reques
 }
 
 /**
- * Analisis CED dengan Gemini AI & Multi-Model Priority Queue
+ * Analisis CED dengan Gemini AI & Smart Priority Failover
  */
 export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise<GeminiAnalysisResult> {
   const apiKey = (options.apiKey || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '') || '').trim();
@@ -273,24 +327,34 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
   const discoveredModels = await getAvailableModelsFromApi(apiKey);
   
   // Model pilihan pengguna diprioritaskan pertama kali
-  const chosenModel = (options.preferredModel || (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-1.5-flash').trim();
+  const chosenModel = (options.preferredModel || (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-2.0-flash').trim();
+
+  // Susun antrian model dengan mengutamakan model pilihan, disusul model resmi yang tersedia
+  const standardPriority = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro'];
+  const validDiscovered = discoveredModels.filter(m => standardPriority.includes(m) || m.startsWith('gemini-'));
 
   const modelQueue = Array.from(new Set([
     chosenModel,
-    ...discoveredModels,
-    ...ALL_SUPPORTED_MODELS
+    ...validDiscovered,
+    ...standardPriority
   ]));
 
   const prompt = buildCEDPrompt(options.companyCode, options.fiscalYear);
-  let lastError = '';
+  const modelErrors: { model: string; message: string; status?: number }[] = [];
+
+  // 2. Preprocessing teks dokumen untuk efisiensi token & kecepatan
+  let processedText = '';
+  if (options.pdfText && options.pdfText.trim().length > 50) {
+    processedText = preprocessTextForCED(options.pdfText);
+  }
 
   for (const model of modelQueue) {
     console.log(`[Gemini CED] Mencoba model: ${model}...`);
 
     const parts: any[] = [];
-    if (options.pdfText && options.pdfText.trim().length > 50) {
+    if (processedText) {
       parts.push({
-        text: `--- KONTEN TEKS LAPORAN TAHUNAN / LAPORAN KEBERLANJUTAN (HASIL EKSTRAKSI PDF) ---\n\n${options.pdfText}\n\n--- AKHIR DOKUMEN ---`
+        text: `--- KONTEN TEKS LAPORAN TAHUNAN / LAPORAN KEBERLANJUTAN (HASIL EKSTRAKSI PDF) ---\n\n${processedText}\n\n--- AKHIR DOKUMEN ---`
       });
     } else if (options.pdfBase64) {
       parts.push({
@@ -309,7 +373,7 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
       contents: [{ parts }],
       generationConfig: {
         temperature: 0.1,
-        maxOutputTokens: 1024,
+        maxOutputTokens: 2048,
         responseMimeType: 'application/json'
       }
     };
@@ -320,10 +384,16 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
       if (response.status === 200) {
         const data = await response.json();
         const candidate = data.candidates?.[0];
-        const rawText = candidate?.content?.parts?.map((p: any) => p.text || '').join('') || '';
+        
+        // Ambil teks dari seluruh parts
+        const rawParts = candidate?.content?.parts || [];
+        let rawText = '';
+        for (const p of rawParts) {
+          if (p.text) rawText += p.text;
+        }
 
-        if (!rawText) {
-          throw new Error('Respons AI kosong.');
+        if (!rawText || rawText.trim().length === 0) {
+          throw new Error(`Respons dari model ${model} kosong atau di-filter oleh Google Safety Settings.`);
         }
 
         const parsedRaw = extractAndParseJSON(rawText);
@@ -338,25 +408,44 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
       }
 
       if (response.status === 429) {
-        lastError = `Model ${model} terkena limit kuota (429 Rate Limit).`;
-        console.warn(`[Gemini CED] ${lastError} Beralih ke model berikutnya...`);
+        const errDesc = `Model ${model} terkena batas kuota / rate limit (429 Rate Limit).`;
+        modelErrors.push({ model, message: errDesc, status: 429 });
+        console.warn(`[Gemini CED] ${errDesc} Beralih ke model berikutnya...`);
         continue;
       }
 
       if (response.status === 404) {
-        lastError = `Model ${model} tidak ditemukan di Google AI Studio (404).`;
-        console.warn(`[Gemini CED] ${lastError} Beralih ke model berikutnya...`);
+        const errDesc = `Model ${model} tidak ditemukan di Google AI Studio (404).`;
+        modelErrors.push({ model, message: errDesc, status: 404 });
+        console.warn(`[Gemini CED] ${errDesc} Beralih ke model berikutnya...`);
         continue;
       }
 
       const errorText = await response.text();
-      lastError = `HTTP ${response.status} (${model}): ${errorText.substring(0, 200)}`;
-      console.warn(`[Gemini CED] Error: ${lastError}`);
+      const errDesc = `HTTP ${response.status} (${model}): ${errorText.substring(0, 200)}`;
+      modelErrors.push({ model, message: errDesc, status: response.status });
+      console.warn(`[Gemini CED] Error: ${errDesc}`);
     } catch (err: any) {
-      lastError = `Fetch gagal untuk model ${model}: ${err?.message || String(err)}`;
-      console.warn(`[Gemini CED] Exception: ${lastError}`);
+      const errDesc = `Model ${model} error: ${err?.message || String(err)}`;
+      modelErrors.push({ model, message: errDesc });
+      console.warn(`[Gemini CED] Exception: ${errDesc}`);
     }
   }
 
-  throw new Error(`Semua model Gemini AI gagal diakses. Error terakhir: ${lastError}`);
+  // Jika seluruh model gagal, susun pesan error yang jelas dan edukatif
+  const hasRateLimit = modelErrors.some(e => e.status === 429);
+  const has404 = modelErrors.some(e => e.status === 404);
+  const primaryError = modelErrors[0]?.message || 'Koneksi AI gagal.';
+
+  if (hasRateLimit) {
+    throw new Error(`Gemini API mencapai batas kuota (Rate Limit 429). Silakan tunggu sekitar 1 menit atau coba gunakan model gemini-2.0-flash / API key lain di menu Pengaturan. Detail: ${primaryError}`);
+  }
+
+  if (has404 && modelQueue.length === 1) {
+    throw new Error(`Model ${chosenModel} tidak ditemukan di Google AI Studio (404). Silakan pilih model resmi seperti gemini-2.0-flash atau gemini-1.5-flash di menu Pengaturan.`);
+  }
+
+  const errorSummary = modelErrors.map(e => `[${e.model}]: ${e.message}`).join(' | ');
+  throw new Error(`Semua model Gemini AI gagal diakses. Penyebab utama (${chosenModel}): ${primaryError}. Rincian antrian: ${errorSummary}`);
 }
+

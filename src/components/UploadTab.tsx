@@ -268,12 +268,14 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
 
     const storedKey = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_key') : null;
     let storedModel = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') : null;
-    if (!storedModel || storedModel.includes('2.5') || storedModel.includes('3.6') || storedModel.includes('3.5')) {
-      storedModel = 'gemini-1.5-flash';
-      localStorage.setItem('custom_gemini_model', 'gemini-1.5-flash');
+    if (!storedModel || storedModel.includes('3.') || storedModel.includes('2.5') || storedModel.includes('8b') || storedModel.includes('-exp')) {
+      storedModel = 'gemini-2.0-flash';
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('custom_gemini_model', 'gemini-2.0-flash');
+      }
     }
-    if (storedKey) formData.append('apiKey', storedKey);
-    if (storedModel) formData.append('model', storedModel);
+    if (storedKey) formData.append('apiKey', storedKey.trim());
+    if (storedModel) formData.append('model', storedModel.trim());
 
     try {
       const res = await fetch('/api/analyze', {
@@ -617,6 +619,15 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
               </button>
             </div>
           )}
+        </div>
+
+        {/* Model Info Badge */}
+        <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--stone)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          <span>🤖 Model AI Aktif:</span>
+          <span className="badge badge-primary font-mono" style={{ fontSize: '11px', padding: '2px 8px' }}>
+            {typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') || 'gemini-2.0-flash' : 'gemini-2.0-flash'}
+          </span>
+          <span style={{ fontSize: '11.5px', color: 'var(--stone)' }}>(Atur di tab Pengaturan)</span>
         </div>
       </div>
 
