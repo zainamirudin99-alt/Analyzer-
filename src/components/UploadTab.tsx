@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, FC, DragEvent } from 'react';
 import { UploadCloud, FileText, CheckCircle2, Sparkles, RefreshCw, ArrowRight, Copy, Check, Eye, Download, X } from 'lucide-react';
 import { CEDScores, INDICATOR_KEYS } from '@/lib/types';
 
@@ -9,7 +9,7 @@ interface UploadTabProps {
   onNavigateToResults: () => void;
 }
 
-export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToResults }) => {
+export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToResults }) => {
   const [companyCode, setCompanyCode] = useState('');
   const [fiscalYear, setFiscalYear] = useState('FY 2024');
   const [notes, setNotes] = useState('');
@@ -84,7 +84,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
     });
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragOver(true);
   };
@@ -93,7 +93,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ onSuccessAnalysis, onNavig
     setIsDragOver(false);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragOver(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
