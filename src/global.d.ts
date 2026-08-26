@@ -19,6 +19,39 @@ declare namespace NodeJS {
 declare var process: any;
 declare var Buffer: any;
 
+declare module 'react' {
+  export type FC<P = {}> = (props: P) => any;
+  export type ReactNode = any;
+  export type ReactElement = any;
+  export interface ChangeEvent<T = any> {
+    target: T;
+  }
+  export interface DragEvent<T = any> {
+    preventDefault: () => void;
+    dataTransfer: {
+      files: FileList;
+    };
+  }
+  export function useState<T>(initialState: T | (() => T)): [T, (newState: T | ((prevState: T) => T)) => void];
+  export function useEffect(effect: () => void | (() => void), deps?: any[]): void;
+  export function useRef<T>(initialValue?: T): { current: T };
+
+  const React: {
+    FC: FC<any>;
+    useState: typeof useState;
+    useEffect: typeof useEffect;
+    useRef: typeof useRef;
+    createElement: any;
+    [key: string]: any;
+  };
+  export default React;
+}
+
+declare module 'react-dom' {
+  export function render(...args: any[]): any;
+  export function createPortal(...args: any[]): any;
+}
+
 declare namespace React {
   type FC<P = {}> = (props: P) => any;
   type ReactNode = any;
@@ -35,6 +68,13 @@ declare namespace React {
   function useState<T>(initialState: T | (() => T)): [T, (newState: T | ((prevState: T) => T)) => void];
   function useEffect(effect: () => void | (() => void), deps?: any[]): void;
   function useRef<T>(initialValue?: T): { current: T };
+}
+
+declare namespace JSX {
+  interface IntrinsicElements {
+    [elemName: string]: any;
+  }
+  interface Element extends React.ReactElement {}
 }
 
 declare module 'next/server' {
