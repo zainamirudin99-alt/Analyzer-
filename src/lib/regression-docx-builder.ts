@@ -242,12 +242,31 @@ export async function generateRegressionDocx(options: DocxExportOptions): Promis
             spacing: { after: 200 },
           }),
 
-          // SPSS Table 1: Model Summary
+          // 3. Tabel Analisis Bergaya SPSS
           new Paragraph({
             children: [new TextRun({ text: "3. Tabel Analisis Bergaya SPSS", bold: true, size: 24 })],
             heading: HeadingLevel.HEADING_3,
             spacing: { before: 300, after: 100 },
           }),
+
+          // SPSS Table 0: Descriptive Statistics
+          ...(result.descriptiveStatistics && result.descriptiveStatistics.length > 0
+            ? createSPSSTable(
+                "Tabel 3.0: Descriptive Statistics",
+                ["Variabel", "N", "Mean", "Std. Deviation", "Minimum", "Maximum"],
+                result.descriptiveStatistics.map((ds) => [
+                  ds.variable,
+                  ds.n,
+                  ds.mean.toFixed(3),
+                  ds.stdDev.toFixed(3),
+                  ds.min.toFixed(3),
+                  ds.max.toFixed(3),
+                ]),
+                [`a. Ukuran sampel valid (listwise deletion): N = ${result.sampleSize.nUsed}`]
+              )
+            : []),
+
+          // SPSS Table 1: Model Summary
           ...createSPSSTable(
             "Tabel 3.1: Model Summary",
             ["Model", "R", "R Square", "Adjusted R Square", "Std. Error of the Estimate", "Durbin-Watson"],
@@ -330,7 +349,14 @@ export async function generateRegressionDocx(options: DocxExportOptions): Promis
             [`a. Dependent Variable: ${result.variables.yCol}`]
           ),
           new Paragraph({
-            children: [new TextRun({ text: `Interpretasi: ${narrative.coefficients}`, size: 18, italics: true })],
+            children: [
+              new TextRun({ text: "Persamaan Garis Regresi Linear: ", bold: true, size: 20 }),
+              new TextRun({ text: narrative.regressionEquation, bold: true, color: "0055aa", size: 20 }),
+            ],
+            spacing: { before: 100, after: 100 },
+          }),
+          new Paragraph({
+            children: [new TextRun({ text: `Interpretasi Koefisien & Uji Parsial (Uji t): ${narrative.coefficients}`, size: 18, italics: true })],
             spacing: { before: 50, after: 200 },
           }),
 

@@ -102,6 +102,15 @@ export interface ConsistencyCheckItem {
   detail: string;
 }
 
+export interface SPSSDescriptiveStatRow {
+  variable: string;
+  n: number;
+  mean: number;
+  stdDev: number;
+  min: number;
+  max: number;
+}
+
 export interface OLSFitResult {
   engineVersion: string;
   modelType: 'SLR' | 'MLR';
@@ -111,6 +120,7 @@ export interface OLSFitResult {
     nUsed: number;
     rowsDropped: number;
   };
+  descriptiveStatistics?: SPSSDescriptiveStatRow[];
   variables: {
     yCol: string;
     xCols: string[];
@@ -436,6 +446,30 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
   // Standard Errors, t, p, CI, Beta, and Correlations
   const sY = sampleStdDev(Y, meanY);
   const coefCov = invXTX.map(row => row.map(v => v * mse));
+
+  // Descriptive Statistics Table (SPSS format)
+  const descriptiveStatistics: SPSSDescriptiveStatRow[] = [
+    {
+      variable: yCol,
+      n,
+      mean: Math.round(meanY * 1000) / 1000,
+      stdDev: Math.round(sY * 1000) / 1000,
+      min: Math.round(Math.min(...Y) * 1000) / 1000,
+      max: Math.round(Math.max(...Y) * 1000) / 1000
+    },
+    ...xCols.map((col, idx) => {
+      const vals = Xraw.map(row => row[idx]);
+      const m = vals.reduce((a, b) => a + b, 0) / n;
+      return {
+        variable: col,
+        n,
+        mean: Math.round(m * 1000) / 1000,
+        stdDev: Math.round(sampleStdDev(vals, m) * 1000) / 1000,
+        min: Math.round(Math.min(...vals) * 1000) / 1000,
+        max: Math.round(Math.max(...vals) * 1000) / 1000
+      };
+    })
+  ];
 
   const tCrit95 = 1.96 + (2.37 / Math.sqrt(dfRes)); // Student t critical approx for 95%
 
@@ -1031,6 +1065,7 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
       nUsed: n,
       rowsDropped: nInitial - n
     },
+    descriptiveStatistics,
     variables: {
       yCol,
       xCols,

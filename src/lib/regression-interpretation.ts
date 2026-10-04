@@ -29,9 +29,11 @@ export interface ModelNarrativeContext {
 
 export interface DeterministicNarrative {
   executiveSummary: string;
+  regressionEquation: string;
   modelSummary: string;
   anova: string;
   coefficients: string;
+  tTestSummary: string;
   assumptions: string[];
   status: string;
   lowR2Note?: string;
@@ -57,7 +59,7 @@ export function generateDeterministicInterpretation(
     modelSummary += ` Skala ${yCol} telah ditransformasi (${ctx.transformationType}); interpretasi variasi berlaku pada skala terinversi tersebut.`;
   }
 
-  // 2. ANOVA Template
+  // 2. ANOVA Template (Uji F Simultan)
   const df1 = result.anova.regression.df;
   const df2 = result.anova.residual.df;
   const fStat = result.anova.regression.f.toFixed(3);
@@ -68,29 +70,58 @@ export function generateDeterministicInterpretation(
   const h0Word = isSig ? "ditolak" : "gagal ditolak";
   const modelFeasible = isSig ? "layak" : "belum layak";
 
-  const anova = `Uji F menghasilkan F(${df1}, ${df2}) = ${fStat} dengan Sig. ${pValFormatted}. Karena Sig. ${relWord} alpha (${alpha}), H0 ${h0Word}: model ${modelFeasible} digunakan untuk menjelaskan ${yCol}.`;
+  const anova = `Uji F menghasilkan F(${df1}, ${df2}) = ${fStat} dengan Sig. ${pValFormatted}. Karena Sig. ${relWord} alpha (${alpha}), H0 ${h0Word}: model regresi secara simultan ${modelFeasible} digunakan untuk menjelaskan ${yCol}.`;
 
-  // 3. Coefficients Template
-  const coefSentences: string[] = [];
-  for (const c of result.coefficients) {
-    if (c.variable === "(Constant)") {
-      coefSentences.push(
-        `Konstanta sebesar ${c.b.toFixed(3)} menunjukkan nilai ekspektasi ${yCol} saat seluruh prediktor bernilai nol (Sig. ${c.sig < 0.001 ? ".000" : c.sig.toFixed(3).replace(/^0/, "")}).`
-      );
-    } else {
-      const direction = c.b >= 0 ? "naik" : "turun";
-      const absB = Math.abs(c.b).toFixed(3);
-      const cSigFormatted = c.sig < 0.001 ? ".000" : c.sig.toFixed(3).replace(/^0/, "");
-      const sigStatus = c.sig < alpha ? "signifikan" : "tidak signifikan";
-      const lo = c.ciLower.toFixed(3);
-      const hi = c.ciUpper.toFixed(3);
-
-      coefSentences.push(
-        `Setiap kenaikan satu satuan ${c.variable}, ${yCol} diprediksi ${direction} sebesar ${absB} satuan dengan variabel lain konstan (Sig. ${cSigFormatted}; CI 95 persen ${lo} sampai ${hi}). Pengaruhnya ${sigStatus} pada alpha ${alpha}.`
-      );
-    }
+  // 3. Persamaan Garis Regresi Linear
+  const constRow = result.coefficients.find(c => c.variable === "(Constant)");
+  const b0 = constRow ? constRow.b : 0;
+  const predRows = result.coefficients.filter(c => c.variable !== "(Constant)");
+  let regressionEquation = `Ŷ = ${b0.toFixed(3)}`;
+  for (const pr of predRows) {
+    const sign = pr.b >= 0 ? "+" : "-";
+    regressionEquation += ` ${sign} ${Math.abs(pr.b).toFixed(3)}(${pr.variable})`;
   }
-  const coefficients = coefSentences.join(" ");
+
+  // 4. Uji t (Uji Parsial) & Interpretasi Koefisien
+  const tTestSentences: string[] = [];
+  const coefSentences: string[] = [];
+
+  // Konstanta
+  if (constRow) {
+    const cSigFormatted = constRow.sig < 0.001 ? ".000" : constRow.sig.toFixed(3).replace(/^0/, "");
+    coefSentences.push(
+      `Konstanta sebesar ${constRow.b.toFixed(3)} menunjukkan bahwa jika seluruh variabel independen bernilai nol (0), maka nilai ekspektasi ${yCol} adalah sebesar ${constRow.b.toFixed(3)} (t = ${constRow.t.toFixed(3)}, Sig. = ${cSigFormatted}).`
+    );
+  }
+
+  // Tiap Prediktor X
+  for (const c of predRows) {
+    const direction = c.b >= 0 ? "positif" : "negatif";
+    const changeWord = c.b >= 0 ? "kenaikan" : "penurunan";
+    const absB = Math.abs(c.b).toFixed(3);
+    const cSigFormatted = c.sig < 0.001 ? ".000" : c.sig.toFixed(3).replace(/^0/, "");
+    const isHypoAccepted = c.sig < alpha;
+    const lo = c.ciLower.toFixed(3);
+    const hi = c.ciUpper.toFixed(3);
+    const tVal = c.t.toFixed(3);
+
+    const tDesc = isHypoAccepted
+      ? `Uji t (Uji Parsial) untuk ${c.variable}: Diperoleh nilai t hitung = ${tVal} dengan Sig. = ${cSigFormatted} < alpha (${alpha}). Maka H0 ditolak (Ha diterima), yang membuktikan bahwa ${c.variable} berpengaruh ${direction} secara signifikan terhadap ${yCol}.`
+      : `Uji t (Uji Parsial) untuk ${c.variable}: Diperoleh nilai t hitung = ${tVal} dengan Sig. = ${cSigFormatted} >= alpha (${alpha}). Maka H0 gagal ditolak, yang membuktikan bahwa ${c.variable} tidak memiliki pengaruh yang signifikan secara statistik terhadap ${yCol}.`;
+
+    let betaDesc = "";
+    if (result.modelType === "MLR" && c.beta !== undefined) {
+      betaDesc = ` Nilai Standardized Beta sebesar ${c.beta.toFixed(3)} menunjukkan bobot kontribusi relatif ${c.variable} terhadap variasi ${yCol}.`;
+    }
+
+    tTestSentences.push(`${tDesc}${betaDesc}`);
+    coefSentences.push(
+      `Koefisien regresi ${c.variable} adalah ${c.b.toFixed(3)}. Artinya, setiap peningkatan 1 satuan ${c.variable} akan diikuti oleh ${changeWord} ${yCol} sebesar ${absB} satuan dengan asumsi variabel lain konstan (CI 95%: ${lo} hingga ${hi}). ${tDesc}`
+    );
+  }
+
+  const tTestSummary = tTestSentences.join(" ");
+  const coefficients = `Persamaan Regresi: ${regressionEquation}. ` + coefSentences.join(" ");
 
   // 4. Assumptions Template
   const assumptions: string[] = [];
@@ -149,6 +180,8 @@ export function generateDeterministicInterpretation(
     modelSummary,
     anova,
     coefficients,
+    regressionEquation,
+    tTestSummary,
     assumptions,
     status,
     lowR2Note,
