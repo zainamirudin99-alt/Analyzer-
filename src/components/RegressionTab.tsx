@@ -289,11 +289,21 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
     setIsFitting(true);
     setFitError(null);
     try {
+      // Kirim hanya kolom relevan untuk menghemat bandwidth jaringan dan mencegah payload limit
+      const relevantCols = Array.from(new Set([yCol, ...xCols, ...(isTimeSeries && timeCol ? [timeCol] : [])]));
+      const trimmedRows = allRows.map(row => {
+        const cleanRow: Record<string, any> = {};
+        for (const col of relevantCols) {
+          cleanRow[col] = row[col];
+        }
+        return cleanRow;
+      });
+
       const res = await fetch('/api/engine/fit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          rows: allRows,
+          rows: trimmedRows,
           yCol,
           xCols,
           isTimeSeries,
@@ -304,9 +314,15 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
         })
       });
 
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const rawText = await res.text();
+        throw new Error(`Server mengembalikan respon non-JSON (${res.status}): ${rawText.slice(0, 150)}`);
+      }
+
       const json = await res.json();
-      if (!json.success || !json.data) {
-        throw new Error(json.error || 'Gagal mengeksekusi estimasi OLS.');
+      if (!res.ok || !json.success || !json.data) {
+        throw new Error(json.error || `Gagal mengeksekusi estimasi OLS (Status ${res.status}).`);
       }
 
       setFitResult(json.data);

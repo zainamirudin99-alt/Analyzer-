@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runStatisticalRegression, OLSFitInput } from '@/lib/regression-engine';
+import { runStatisticalRegression, OLSFitInput } from '../../../../lib/regression-engine';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -7,7 +7,13 @@ export const maxDuration = 60;
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { rows, yCol, xCols, isTimeSeries, timeCol, frequency, alpha } = body as OLSFitInput;
+    const rows = body.rows || [];
+    const yCol = body.yCol || body.y_col;
+    const xCols = body.xCols || body.x_cols || [];
+    const isTimeSeries = Boolean(body.isTimeSeries ?? body.is_time_series);
+    const timeCol = body.timeCol || body.time_col;
+    const frequency = body.frequency;
+    const alpha = body.alpha ? Number(body.alpha) : 0.05;
 
     if (!rows || rows.length === 0) {
       return NextResponse.json(

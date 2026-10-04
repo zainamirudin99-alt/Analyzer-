@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
-import { validateRegressionConfig, ValidationConfig } from '@/lib/regression-validator';
+import { validateRegressionConfig, ValidationConfig } from '../../../../lib/regression-validator';
 
 export const dynamic = 'force-dynamic';
 

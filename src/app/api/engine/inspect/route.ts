@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
-import { inspectColumn } from '@/lib/regression-validator';
-import { sanitizeCellValue } from '@/lib/file-signature';
+import { inspectColumn } from '../../../../lib/regression-validator';
+import { sanitizeCellValue } from '../../../../lib/file-signature';
 
 export const dynamic = 'force-dynamic';
 

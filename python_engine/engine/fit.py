@@ -22,13 +22,17 @@ class handler(BaseHTTPRequestHandler):
             payload = json.loads(body.decode('utf-8'))
 
             rows = payload.get('rows', [])
-            y_col = payload.get('y_col')
-            x_cols = payload.get('x_cols', [])
-            is_time_series = payload.get('is_time_series', False)
+            y_col = payload.get('yCol') or payload.get('y_col')
+            x_cols = payload.get('xCols') or payload.get('x_cols', [])
+            is_time_series = payload.get('isTimeSeries', payload.get('is_time_series', False))
             alpha = float(payload.get('alpha', 0.05))
 
             if not rows or not y_col or not x_cols:
-                self.send_error(400, "Missing rows, y_col, or x_cols")
+                self.send_response(400)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": "Missing rows, yCol, or xCols"}).encode('utf-8'))
                 return
 
             df = pd.DataFrame(rows)
