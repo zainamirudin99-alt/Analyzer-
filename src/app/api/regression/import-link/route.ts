@@ -65,7 +65,8 @@ export async function POST(req: NextRequest) {
         rowCount: rawRows.length,
         columnCount: columns.length,
         columns,
-        previewRows: rawRows.slice(0, 10)
+        previewRows: rawRows.slice(0, 10),
+        allRows: rawRows
       };
     });
 

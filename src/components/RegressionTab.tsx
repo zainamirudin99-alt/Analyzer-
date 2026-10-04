@@ -1,7 +1,7 @@
 'use client';
 /* eslint-disable @next/next/no-img-element */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   FileSpreadsheet, 
   Link2, 
@@ -70,6 +70,16 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
   const [fileSizeBytes, setFileSizeBytes] = useState<number>(14500);
   const [sheetsList, setSheetsList] = useState<string[]>(['Sheet1_Penelitian']);
   const [selectedSheet, setSelectedSheet] = useState<string>('Sheet1_Penelitian');
+  const [availableSheetsData, setAvailableSheetsData] = useState<any[]>([
+    {
+      sheetName: 'Sheet1_Penelitian',
+      rowCount: SAMPLE_DATASET.length,
+      columnCount: Object.keys(SAMPLE_DATASET[0]).length,
+      columns: Object.keys(SAMPLE_DATASET[0]),
+      previewRows: SAMPLE_DATASET.slice(0, 10),
+      allRows: SAMPLE_DATASET
+    }
+  ]);
   const [allRows, setAllRows] = useState<Record<string, any>[]>(SAMPLE_DATASET);
 
   // Step 4: Variable Selection State
@@ -112,6 +122,62 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
     return map;
   }, [availableColumns, allRows]);
 
+  // Handler pemilihan sheet yang memperbarui baris data dan variabel
+  const selectSheetByName = (sheetName: string, sheetsSource?: any[]) => {
+    setSelectedSheet(sheetName);
+    const sheets = sheetsSource || availableSheetsData;
+    const targetSheet = sheets.find((s: any) => s.sheetName === sheetName);
+    if (targetSheet) {
+      const rows = targetSheet.allRows || targetSheet.previewRows || [];
+      setAllRows(rows);
+      
+      const cols: string[] = targetSheet.columns || (rows.length > 0 ? Object.keys(rows[0]) : []);
+      const validCols = cols.filter(c => c && typeof c === 'string');
+
+      const numericCols = validCols.filter(c => {
+        const vals = rows.map((r: any) => r[c]);
+        return inspectColumn(c, vals).type === 'numeric';
+      });
+
+      if (numericCols.length >= 2) {
+        setYCol(numericCols[0]);
+        setXCols([numericCols[1]]);
+      } else if (numericCols.length === 1) {
+        setYCol(numericCols[0]);
+        setXCols([]);
+      } else if (validCols.length >= 2) {
+        setYCol(validCols[0]);
+        setXCols([validCols[1]]);
+      } else {
+        setYCol(validCols[0] || '');
+        setXCols([]);
+      }
+    }
+  };
+
+  // Invarian: Pastikan xCols dan yCol SELALU tersinkronisasi dengan availableColumns yang aktif
+  useEffect(() => {
+    if (availableColumns.length > 0) {
+      // 1. Bersihkan xCols dari kolom yang tidak ada di dataset aktif atau sama dengan yCol
+      setXCols(prev => {
+        const validX = prev.filter(c => availableColumns.includes(c) && c !== yCol);
+        if (validX.length !== prev.length) {
+          return validX;
+        }
+        return prev;
+      });
+
+      // 2. Pastikan yCol valid dan ada di availableColumns
+      if (yCol && !availableColumns.includes(yCol)) {
+        const firstNumeric = availableColumns.find(c => columnTypeMap[c]?.type === 'numeric');
+        setYCol(firstNumeric || availableColumns[0] || '');
+      }
+    } else {
+      setXCols([]);
+      setYCol('');
+    }
+  }, [availableColumns, yCol, columnTypeMap]);
+
   // Handle Local File Upload
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -139,17 +205,13 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
 
       setFileName(json.data.originalName);
       setFileSizeBytes(json.data.sizeBytes);
-      setSheetsList(json.data.sheetNames);
-      setSelectedSheet(json.data.sheetNames[0]);
-      
-      const activeSheetObj = json.data.sheets[0];
-      setAllRows(activeSheetObj.allRows || []);
+      const sheetNames = json.data.sheetNames || [];
+      setSheetsList(sheetNames);
+      const sheets = json.data.sheets || [];
+      setAvailableSheetsData(sheets);
 
-      // Auto-assign first numeric column as Y and next as X
-      const cols = activeSheetObj.columns || [];
-      if (cols.length >= 2) {
-        setYCol(cols[cols.length - 1]); // Biasanya kolom terakhir adalah dependent
-        setXCols([cols[0]]);
+      if (sheetNames.length > 0) {
+        selectSheetByName(sheetNames[0], sheets);
       }
 
       setCurrentStep(2); // Lanjut ke step pilih sheet
@@ -190,11 +252,14 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
 
       setFileName(json.data.originalName);
       setFileSizeBytes(json.data.sizeBytes);
-      setSheetsList(json.data.sheetNames);
-      setSelectedSheet(json.data.sheetNames[0]);
+      const sheetNames = json.data.sheetNames || [];
+      setSheetsList(sheetNames);
+      const sheets = json.data.sheets || [];
+      setAvailableSheetsData(sheets);
 
-      const activeSheetObj = json.data.sheets[0];
-      setAllRows(activeSheetObj.previewRows || []);
+      if (sheetNames.length > 0) {
+        selectSheetByName(sheetNames[0], sheets);
+      }
 
       setCurrentStep(2);
     } catch (err: any) {
@@ -256,11 +321,13 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
   // Toggle X Column
   const toggleXColumn = (col: string) => {
     if (col === yCol) return; // Invarian I5: Y tidak boleh menjadi X
+    if (!availableColumns.includes(col)) return; // Hanya kolom yang benar-benar ada di dataset aktif
     setXCols(prev => {
-      if (prev.includes(col)) {
-        return prev.filter(c => c !== col);
+      const cleanPrev = prev.filter(c => availableColumns.includes(c) && c !== yCol);
+      if (cleanPrev.includes(col)) {
+        return cleanPrev.filter(c => c !== col);
       } else {
-        return [...prev, col];
+        return [...cleanPrev, col];
       }
     });
   };
@@ -509,11 +576,19 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                   <button 
                     className="btn btn-outline btn-sm"
                     onClick={() => {
+                      const demoSheets = [{
+                        sheetName: 'Sheet1_Penelitian',
+                        rowCount: SAMPLE_DATASET.length,
+                        columnCount: Object.keys(SAMPLE_DATASET[0]).length,
+                        columns: Object.keys(SAMPLE_DATASET[0]),
+                        previewRows: SAMPLE_DATASET.slice(0, 10),
+                        allRows: SAMPLE_DATASET
+                      }];
                       setFileName('sample_data_penelitian.xlsx');
                       setFileSizeBytes(14500);
                       setSheetsList(['Sheet1_Penelitian']);
-                      setSelectedSheet('Sheet1_Penelitian');
-                      setAllRows(SAMPLE_DATASET);
+                      setAvailableSheetsData(demoSheets);
+                      selectSheetByName('Sheet1_Penelitian', demoSheets);
                       setCurrentStep(2);
                     }}
                     style={{ minHeight: '38px' }}
@@ -547,39 +622,43 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                 </p>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
-                  {sheetsList.map((sheet, idx) => (
-                    <div
-                      key={sheet}
-                      onClick={() => setSelectedSheet(sheet)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '14px 18px',
-                        borderRadius: '12px',
-                        border: selectedSheet === sheet ? '2px solid var(--fern)' : '1px solid var(--border)',
-                        background: selectedSheet === sheet ? 'var(--dew)' : '#ffffff',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <FileSpreadsheet size={20} color="var(--fern)" />
-                        <div>
-                          <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text)' }}>{sheet}</div>
-                          <div style={{ fontSize: '12px', color: 'var(--stone)' }}>
-                            {allRows.length} baris data terdeteksi
+                  {sheetsList.map((sheet) => {
+                    const sheetObj = availableSheetsData.find(s => s.sheetName === sheet);
+                    const rowsCount = sheetObj?.allRows?.length || sheetObj?.rowCount || (selectedSheet === sheet ? allRows.length : 0);
+                    return (
+                      <div
+                        key={sheet}
+                        onClick={() => selectSheetByName(sheet)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '14px 18px',
+                          borderRadius: '12px',
+                          border: selectedSheet === sheet ? '2px solid var(--fern)' : '1px solid var(--border)',
+                          background: selectedSheet === sheet ? 'var(--dew)' : '#ffffff',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <FileSpreadsheet size={20} color="var(--fern)" />
+                          <div>
+                            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text)' }}>{sheet}</div>
+                            <div style={{ fontSize: '12px', color: 'var(--stone)' }}>
+                              {rowsCount > 0 ? `${rowsCount} baris data terdeteksi` : 'Lembar kerja aktif'}
+                            </div>
                           </div>
                         </div>
+                        <div style={{
+                          width: '18px',
+                          height: '18px',
+                          borderRadius: '50%',
+                          border: selectedSheet === sheet ? '5px solid var(--fern)' : '2px solid var(--border)',
+                          background: '#ffffff'
+                        }} />
                       </div>
-                      <div style={{
-                        width: '18px',
-                        height: '18px',
-                        borderRadius: '50%',
-                        border: selectedSheet === sheet ? '5px solid var(--fern)' : '2px solid var(--border)',
-                        background: '#ffffff'
-                      }} />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -672,9 +751,13 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                 </p>
 
                 {/* SLR / MLR Auto Detection Badge */}
-                <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>Klasifikasi Model:</span>
-                  {xCols.length <= 1 ? (
+                  {xCols.length === 0 ? (
+                    <span style={{ background: '#fef2f2', color: '#991b1b', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 800 }}>
+                      Belum Ada Variabel X Terpilih (Pilih Minimal 1)
+                    </span>
+                  ) : xCols.length === 1 ? (
                     <span style={{ background: '#dbeafe', color: '#1e40af', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 800 }}>
                       Simple Linear Regression (SLR) — 1 Prediktor
                     </span>
@@ -697,7 +780,7 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                       const newY = e.target.value;
                       setYCol(newY);
                       // Invarian I5: Hapus Y dari X jika ada
-                      setXCols(prev => prev.filter(c => c !== newY));
+                      setXCols(prev => prev.filter(c => c !== newY && availableColumns.includes(c)));
                     }}
                     style={{ minHeight: '44px', fontSize: '16px' }}
                   >
@@ -1112,7 +1195,7 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
 
               <div>
                 <span style={{ color: 'var(--stone)', display: 'block', fontSize: '11px' }}>Tipe Model:</span>
-                <strong>{xCols.length <= 1 ? 'SLR (Simple)' : `MLR (${xCols.length} Prediktor)`}</strong>
+                <strong>{xCols.length === 0 ? 'Belum Ada X' : xCols.length === 1 ? 'SLR (Simple)' : `MLR (${xCols.length} Prediktor)`}</strong>
               </div>
 
               <div>
