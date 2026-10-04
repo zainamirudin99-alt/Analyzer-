@@ -1,0 +1,55 @@
+name: Supabase Keepalive Heartbeat Loop
+
+on:
+  schedule:
+    # Berjalan otomatis setiap 12 jam (pukul 00:00 dan 12:00 UTC)
+    - cron: '0 0,12 * * *'
+  workflow_dispatch: # Memungkinkan eksekusi manual kapan saja via tombol Run Workflow di GitHub
+
+jobs:
+  ping-supabase:
+    name: Execute Keepalive Heartbeat
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Keepalive Ping to Application Cron Endpoint
+        env:
+          APP_URL: ${{ secrets.VERCEL_APP_URL || 'https://ced-analyzer.vercel.app' }}
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          echo "Memulai eksekusi Supabase keepalive loop..."
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          # 1. Panggil Endpoint Aplikasi Web /api/cron/keepalive jika URL tersedia
+          if [ -n "$APP_URL" ]; then
+            echo "Menghubungi endpoint cron aplikasi: $APP_URL/api/cron/keepalive"
+            curl -s -f -X GET "$APP_URL/api/cron/keepalive" \
+              -H "User-Agent: GitHub-Actions-Keepalive/1.0" \
+              -H "x-cron-source: github-actions" || echo "Peringatan: Endpoint aplikasi tidak merespons atau belum aktif."
+          fi
+
+          # 2. Panggil Supabase REST API Langsung jika secret tersedia di GitHub
+          if [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_KEY" ]; then
+            echo "Menghubungi Supabase REST API langsung..."
+            
+            # Coba RPC keepalive_ping
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+              "$SUPABASE_URL/rest/v1/rpc/keepalive_ping" \
+              -H "apikey: $SUPABASE_KEY" \
+              -H "Authorization: Bearer $SUPABASE_KEY" \
+              -H "Content-Type: application/json")
+
+            if [ "$HTTP_STATUS" -eq 200 ] || [ "$HTTP_STATUS" -eq 204 ]; then
+              echo "✅ Supabase RPC keepalive_ping() sukses (HTTP $HTTP_STATUS)!"
+            else
+              # Fallback: Query tabel ced_heartbeat atau ced_results
+              echo "Mencoba fallback query ke tabel ced_heartbeat..."
+              curl -s -X GET \
+                "$SUPABASE_URL/rest/v1/ced_heartbeat?select=id,last_ping,ping_count&limit=1" \
+                -H "apikey: $SUPABASE_KEY" \
+                -H "Authorization: Bearer $SUPABASE_KEY"
+              echo "✅ Kueri fallback Supabase dieksekusi!"
+            fi
+          fi
+
+          echo "Supabase keepalive loop selesai dengan sukses pada: $TIMESTAMP"

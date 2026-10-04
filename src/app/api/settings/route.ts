@@ -20,12 +20,26 @@ export async function GET(_req: NextRequest) {
       const supabase = getSupabaseServerClient();
       if (supabase) {
         const { error } = await supabase.from('ced_results').select('id').limit(1);
+        let heartbeatInfo = null;
+        try {
+          const { data: hbData } = await supabase
+            .from('ced_heartbeat')
+            .select('last_ping, ping_count, status')
+            .eq('id', 'primary')
+            .maybeSingle();
+          if (hbData) {
+            heartbeatInfo = hbData;
+          }
+        } catch {}
+
         if (!error) {
           supabaseStatus.connected = true;
           supabaseStatus.message = 'Database Supabase Terhubung dan Siap Digunakan ✅';
+          (supabaseStatus as any).heartbeat = heartbeatInfo;
         } else {
           supabaseStatus.connected = false;
           supabaseStatus.message = `Terhubung ke URL Supabase, namun tabel belum siap (${error.message}). Jalankan schema.sql di Supabase SQL Editor.`;
+          (supabaseStatus as any).heartbeat = heartbeatInfo;
         }
       }
     }

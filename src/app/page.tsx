@@ -7,8 +7,10 @@ import { ResultsTab } from '@/components/ResultsTab';
 import { GuideTab } from '@/components/GuideTab';
 import { SettingsTab } from '@/components/SettingsTab';
 import { RegressionTab } from '@/components/RegressionTab';
+import { useSupabaseKeepalive } from '@/hooks/useSupabaseKeepalive';
 
 export default function HomePage() {
+  useSupabaseKeepalive();
   const [activeTab, setActiveTab] = useState<'upload' | 'results' | 'guide' | 'settings' | 'regression'>('upload');
   const [supabaseStatus, setSupabaseStatus] = useState({ configured: false, connected: false });
   const [refreshResultsCount, setRefreshResultsCount] = useState(0);

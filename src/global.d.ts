@@ -159,6 +159,7 @@ declare module 'lucide-react' {
   export const Clock: any;
   export const Lock: any;
   export const UserCheck: any;
+  export const Activity: any;
 
   const icons: any;
   export default icons;

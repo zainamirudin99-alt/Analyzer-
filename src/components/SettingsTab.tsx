@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Database, Key, Copy, ExternalLink, RefreshCw } from 'lucide-react';
+import { Database, Key, Copy, ExternalLink, RefreshCw, Activity, ShieldCheck } from 'lucide-react';
 import { SUPPORTED_MODEL_CATEGORIES, ALL_SUPPORTED_MODELS } from '@/lib/gemini';
 
 const SQL_SETUP_SCRIPT = `-- Jalankan ini di Supabase SQL Editor:
@@ -54,7 +54,25 @@ CREATE TABLE IF NOT EXISTS public.ced_heartbeat (
 
 ALTER TABLE public.ced_heartbeat ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public Access Heartbeat" ON public.ced_heartbeat;
-CREATE POLICY "Public Access Heartbeat" ON public.ced_heartbeat FOR ALL USING (true) WITH CHECK (true);`;
+CREATE POLICY "Public Access Heartbeat" ON public.ced_heartbeat FOR ALL USING (true) WITH CHECK (true);
+
+-- Function RPC untuk Loop Heartbeat Otomatis
+CREATE OR REPLACE FUNCTION public.keepalive_ping()
+RETURNS TABLE(last_ping TIMESTAMPTZ, ping_count BIGINT, status TEXT) 
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    RETURN QUERY
+    INSERT INTO public.ced_heartbeat (id, last_ping, ping_count, status)
+    VALUES ('primary', NOW(), 1, 'active_keepalive')
+    ON CONFLICT (id) DO UPDATE 
+    SET last_ping = NOW(), 
+        ping_count = public.ced_heartbeat.ping_count + 1,
+        status = 'active_keepalive'
+    RETURNING public.ced_heartbeat.last_ping, public.ced_heartbeat.ping_count, public.ced_heartbeat.status;
+END;
+$$;`;
 
 export const SettingsTab: React.FC = () => {
   const [apiKey, setApiKey] = useState<string>('');
@@ -66,6 +84,27 @@ export const SettingsTab: React.FC = () => {
 
   const [sysStatus, setSysStatus] = useState<any>(null);
   const [copiedSql, setCopiedSql] = useState<boolean>(false);
+  const [isPinging, setIsPinging] = useState<boolean>(false);
+  const [pingMessage, setPingMessage] = useState<string | null>(null);
+
+  const handleManualKeepalivePing = async () => {
+    setIsPinging(true);
+    setPingMessage(null);
+    try {
+      const res = await fetch('/api/cron/keepalive', { method: 'POST' });
+      const json = await res.json();
+      if (json.success) {
+        setPingMessage(`Ping sukses! (${json.method || 'aktif'})`);
+        await checkSystemStatus();
+      } else {
+        setPingMessage(`Gagal: ${json.error || json.message}`);
+      }
+    } catch (e: any) {
+      setPingMessage(`Gagal: ${e.message}`);
+    } finally {
+      setIsPinging(false);
+    }
+  };
 
   useEffect(() => {
     // Load local settings
@@ -287,6 +326,59 @@ export const SettingsTab: React.FC = () => {
                 {sysStatus?.supabase?.message || 'Memeriksa...'}
               </span>
             </div>
+          </div>
+
+          {/* Card Status Keepalive Loop */}
+          <div style={{
+            background: 'var(--surface-sunken, #f8fafc)',
+            border: '1px solid var(--border-color, #e2e8f0)',
+            borderRadius: '8px',
+            padding: '12px 14px',
+            marginBottom: '16px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 600, color: 'var(--forest-green, #166534)' }}>
+                <Activity size={15} />
+                <span>Pelindung Anti-Hibernasi (Keepalive Loop)</span>
+              </div>
+              <button
+                className="btn btn-outline btn-sm"
+                onClick={handleManualKeepalivePing}
+                disabled={isPinging}
+                style={{ padding: '3px 8px', fontSize: '11px' }}
+                title="Kirim ping paksa untuk memicu aktivitas database sekarang"
+              >
+                {isPinging ? <span className="spinner" /> : <RefreshCw size={11} />}
+                <span>{isPinging ? 'Pinging...' : 'Ping Sekarang'}</span>
+              </button>
+            </div>
+
+            <div style={{ fontSize: '12px', color: 'var(--text-muted, #64748b)', lineHeight: '1.5', marginBottom: '8px' }}>
+              Looping kegiatan otomatis menjaga Supabase Free Tier tetap aktif 24/7 tanpa mencemari data analisis atau memodifikasi tabel regresi.
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: '11.5px', background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border-color, #e2e8f0)' }}>
+              <div>
+                <span style={{ color: 'var(--text-muted)' }}>Ping Terakhir:</span>
+                <div style={{ fontWeight: 500, marginTop: '2px' }}>
+                  {sysStatus?.supabase?.heartbeat?.last_ping 
+                    ? new Date(sysStatus.supabase.heartbeat.last_ping).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit', day: 'numeric', month: 'short' })
+                    : (sysStatus?.supabase?.connected ? 'Terkoneksi (Menunggu Siklus)' : 'Belum aktif')}
+                </div>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted)' }}>Total Siklus Ping:</span>
+                <div style={{ fontWeight: 500, marginTop: '2px', color: '#166534' }}>
+                  {sysStatus?.supabase?.heartbeat?.ping_count ? `${sysStatus.supabase.heartbeat.ping_count} kali` : '1 kali'}
+                </div>
+              </div>
+            </div>
+
+            {pingMessage && (
+              <div style={{ fontSize: '11.5px', color: '#166534', marginTop: '6px' }}>
+                🟢 {pingMessage}
+              </div>
+            )}
           </div>
 
           <div className="form-group">
