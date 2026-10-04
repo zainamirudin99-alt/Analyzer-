@@ -123,7 +123,7 @@ export function validateRegressionConfig(
 
   // 1. Validasi Invarian I3: Alpha di antara 0 dan 1
   if (typeof alpha !== 'number' || alpha <= 0 || alpha >= 1) {
-    errors.append ? errors.push(`Tingkat signifikansi (alpha) harus di antara 0 dan 1 (eksklusif), diberikan: ${alpha}`) : errors.push(`Alpha harus di antara 0 dan 1.`);
+    errors.push(`Tingkat signifikansi (alpha) harus di antara 0 dan 1 (eksklusif), diberikan: ${alpha}`);
   }
 
   // 2. Validasi Invarian I4: Minimal 1 prediktor X

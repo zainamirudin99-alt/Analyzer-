@@ -146,7 +146,7 @@ export async function generateRegressionDocx(options: DocxExportOptions): Promis
     for (const fn of footnotes) {
       tableElements.push(
         new Paragraph({
-          children: [new TextRun({ text: fn, italic: true, size: 16, color: "555555" })],
+          children: [new TextRun({ text: fn, italics: true, size: 16, color: "555555" })],
           spacing: { before: 50, after: 100 },
         })
       );
@@ -267,7 +267,7 @@ export async function generateRegressionDocx(options: DocxExportOptions): Promis
             ]
           ),
           new Paragraph({
-            children: [new TextRun({ text: `Interpretasi: ${narrative.modelSummary}`, size: 18, italic: true })],
+            children: [new TextRun({ text: `Interpretasi: ${narrative.modelSummary}`, size: 18, italics: true })],
             spacing: { before: 50, after: 200 },
           }),
 
@@ -307,7 +307,7 @@ export async function generateRegressionDocx(options: DocxExportOptions): Promis
             ]
           ),
           new Paragraph({
-            children: [new TextRun({ text: `Interpretasi: ${narrative.anova}`, size: 18, italic: true })],
+            children: [new TextRun({ text: `Interpretasi: ${narrative.anova}`, size: 18, italics: true })],
             spacing: { before: 50, after: 200 },
           }),
 
@@ -330,7 +330,7 @@ export async function generateRegressionDocx(options: DocxExportOptions): Promis
             [`a. Dependent Variable: ${result.variables.yCol}`]
           ),
           new Paragraph({
-            children: [new TextRun({ text: `Interpretasi: ${narrative.coefficients}`, size: 18, italic: true })],
+            children: [new TextRun({ text: `Interpretasi: ${narrative.coefficients}`, size: 18, italics: true })],
             spacing: { before: 50, after: 200 },
           }),
 
@@ -347,7 +347,7 @@ export async function generateRegressionDocx(options: DocxExportOptions): Promis
               a.name,
               a.statistic !== undefined && a.statistic !== null ? a.statistic.toFixed(3) : "-",
               a.pValue !== undefined && a.pValue !== null ? (a.pValue < 0.001 ? ".000" : a.pValue.toFixed(3).replace(/^0/, "")) : a.criteria,
-              a.status === "terpenuhi" ? "Terpenuhi" : a.status === "waspada" ? "Waspada" : "Gagal",
+              a.status === "lulus" ? "Terpenuhi" : a.status === "gagal" ? "Gagal" : "Tidak Berlaku",
               a.reason,
             ])
           ),
@@ -356,7 +356,7 @@ export async function generateRegressionDocx(options: DocxExportOptions): Promis
           ...(narrative.lowR2Note
             ? [
                 new Paragraph({
-                  children: [new TextRun({ text: `Catatan Jalur R² Rendah: ${narrative.lowR2Note}`, size: 18, italic: true, color: "c2410c" })],
+                  children: [new TextRun({ text: `Catatan Jalur R² Rendah: ${narrative.lowR2Note}`, size: 18, italics: true, color: "c2410c" })],
                   spacing: { before: 100, after: 150 },
                 }),
               ]

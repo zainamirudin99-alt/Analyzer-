@@ -6,9 +6,10 @@ import { PlotDataPoints } from '../lib/regression-engine';
 interface DiagnosticPlotsProps {
   plots: PlotDataPoints;
   isTimeSeries?: boolean;
+  yCol?: string;
 }
 
-export const DiagnosticPlots: React.FC<DiagnosticPlotsProps> = ({ plots, isTimeSeries = false }) => {
+export const DiagnosticPlots: React.FC<DiagnosticPlotsProps> = ({ plots, isTimeSeries = false, yCol }) => {
   const [activeTab, setActiveTab] = useState<'pp' | 'qq' | 'hist' | 'res_fit'>('pp');
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
 

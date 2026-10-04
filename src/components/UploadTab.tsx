@@ -4,7 +4,7 @@
 
 import React, { useState, useRef, useEffect, FC, DragEvent } from 'react';
 import { UploadCloud, FileText, CheckCircle2, Sparkles, RefreshCw, ArrowRight, Copy, Check, Eye, Download, X } from 'lucide-react';
-import { CEDScores, INDICATOR_KEYS } from '@/lib/types';
+import { CEDScores, INDICATOR_KEYS, CEDResultRecord } from '@/lib/types';
 
 interface UploadTabProps {
   onSuccessAnalysis: () => void;

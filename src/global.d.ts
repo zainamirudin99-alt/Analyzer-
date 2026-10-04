@@ -35,12 +35,16 @@ declare module 'react' {
   export function useState<T>(initialState: T | (() => T)): [T, (newState: T | ((prevState: T) => T)) => void];
   export function useEffect(effect: () => void | (() => void), deps?: any[]): void;
   export function useRef<T>(initialValue?: T): { current: T };
+  export function useMemo<T>(factory: () => T, deps: any[] | undefined): T;
+  export function useCallback<T extends Function>(callback: T, deps: any[]): T;
 
   const React: {
     FC: FC<any>;
     useState: typeof useState;
     useEffect: typeof useEffect;
     useRef: typeof useRef;
+    useMemo: typeof useMemo;
+    useCallback: typeof useCallback;
     createElement: any;
     [key: string]: any;
   };
@@ -68,6 +72,8 @@ declare namespace React {
   function useState<T>(initialState: T | (() => T)): [T, (newState: T | ((prevState: T) => T)) => void];
   function useEffect(effect: () => void | (() => void), deps?: any[]): void;
   function useRef<T>(initialValue?: T): { current: T };
+  function useMemo<T>(factory: () => T, deps: any[] | undefined): T;
+  function useCallback<T extends Function>(callback: T, deps: any[]): T;
 }
 
 declare namespace JSX {
@@ -123,6 +129,7 @@ declare module 'lucide-react' {
   export const Sparkles: any;
   export const RefreshCw: any;
   export const ArrowRight: any;
+  export const ArrowLeft: any;
   export const Copy: any;
   export const Check: any;
   export const Eye: any;
@@ -142,6 +149,16 @@ declare module 'lucide-react' {
   export const ChevronUp: any;
   export const Info: any;
   export const Trees: any;
+  export const MinusCircle: any;
+  export const LayoutGrid: any;
+  export const Sliders: any;
+  export const ShieldCheck: any;
+  export const Link2: any;
+  export const XCircle: any;
+  export const Layers: any;
+  export const Clock: any;
+  export const Lock: any;
+  export const UserCheck: any;
 
   const icons: any;
   export default icons;

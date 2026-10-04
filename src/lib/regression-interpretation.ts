@@ -99,11 +99,11 @@ export function generateDeterministicInterpretation(
     const sigStr = a.pValue !== undefined && a.pValue !== null
       ? (a.pValue < 0.001 ? ".000" : a.pValue.toFixed(3).replace(/^0/, ""))
       : "-";
-    const passStatus = a.status === "terpenuhi" ? "terpenuhi" : a.status === "waspada" ? "peringatan (waspada)" : "gagal";
+    const passStatus = a.status === "lulus" ? "terpenuhi" : "gagal";
 
     if (a.name.toLowerCase().includes("normalitas")) {
-      const normalConclusion = a.status === "terpenuhi" ? "berdistribusi normal" : "tidak normal";
-      let text = `Uji ${a.name} menghasilkan Sig. ${sigStr}. Residu ${normalConclusion} pada alpha ${alpha}. Q-Q plot tampak ${a.status === "terpenuhi" ? "sejalan dengan garis acuan diagonal" : "mengalami deviasi pada ekor distribusi"}.`;
+      const normalConclusion = a.status === "lulus" ? "berdistribusi normal" : "tidak normal";
+      let text = `Uji ${a.name} menghasilkan Sig. ${sigStr}. Residu ${normalConclusion} pada alpha ${alpha}. Q-Q plot tampak ${a.status === "lulus" ? "sejalan dengan garis acuan diagonal" : "mengalami deviasi pada ekor distribusi"}.`;
       if (result.sampleSize.nUsed > 200) {
         text += ` (Catatan: ukuran sampel besar N=${result.sampleSize.nUsed} cenderung sangat sensitif terhadap deviasi minor).`;
       }

@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
 
     const filename = `Hasil_Regresi_SPSS_${new Date().toISOString().slice(0, 10)}.docx`;
 
-    return new NextResponse(docxBuffer, {
+    return new NextResponse(new Uint8Array(docxBuffer), {
       status: 200,
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
