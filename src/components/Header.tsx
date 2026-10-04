@@ -65,6 +65,13 @@ export const Header: React.FC<HeaderProps> = ({ supabaseStatus, activeTab, onTab
         >
           <span>⚙️</span> Pengaturan & Database
         </button>
+        <button
+          className={`nav-tab-btn ${activeTab === 'regression' ? 'active' : ''}`}
+          onClick={() => onTabChange('regression')}
+          style={{ background: activeTab === 'regression' ? 'var(--fern)' : 'transparent', color: activeTab === 'regression' ? '#ffffff' : 'inherit' }}
+        >
+          <span>📊</span> Analisis Regresi Statistik
+        </button>
       </nav>
     </>
   );

@@ -6,9 +6,10 @@ import { UploadTab } from '@/components/UploadTab';
 import { ResultsTab } from '@/components/ResultsTab';
 import { GuideTab } from '@/components/GuideTab';
 import { SettingsTab } from '@/components/SettingsTab';
+import { RegressionTab } from '@/components/RegressionTab';
 
 export default function HomePage() {
-  const [activeTab, setActiveTab] = useState<'upload' | 'results' | 'guide' | 'settings'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'results' | 'guide' | 'settings' | 'regression'>('upload');
   const [supabaseStatus, setSupabaseStatus] = useState({ configured: false, connected: false });
   const [refreshResultsCount, setRefreshResultsCount] = useState(0);
 
@@ -62,6 +63,10 @@ export default function HomePage() {
 
         {activeTab === 'settings' && (
           <SettingsTab />
+        )}
+
+        {activeTab === 'regression' && (
+          <RegressionTab />
         )}
       </main>
     </div>
