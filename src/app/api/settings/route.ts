@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase';
 import { ALL_SUPPORTED_MODELS, executeGeminiRequest, getAvailableModelsFromApi } from '@/lib/gemini';
+import { testOpenAIConnection, DEFAULT_OPENAI_MODELS } from '@/lib/openai';
 
 export const dynamic = 'force-dynamic';
 
-// GET: Cek status koneksi Supabase & Gemini
+// GET: Cek status koneksi Supabase & Multi-AI Provider
 export async function GET(_req: NextRequest) {
   try {
     const defaultModel = (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-3.7-flash';
     const hasServerGeminiKey = Boolean(typeof process !== 'undefined' && process.env.GEMINI_API_KEY);
+    const hasServerOpenAIKey = Boolean(typeof process !== 'undefined' && process.env.OPENAI_API_KEY);
 
     const supabaseStatus = {
       configured: isSupabaseConfigured,
@@ -52,6 +54,11 @@ export async function GET(_req: NextRequest) {
           hasKey: hasServerGeminiKey,
           defaultModel,
           availableModels: ALL_SUPPORTED_MODELS
+        },
+        openai: {
+          hasKey: hasServerOpenAIKey,
+          defaultModel: 'gpt-4o-mini',
+          availableModels: DEFAULT_OPENAI_MODELS.map(m => m.id)
         }
       }
     });
@@ -63,24 +70,47 @@ export async function GET(_req: NextRequest) {
   }
 }
 
-// POST: Uji coba Gemini API Key dari client dengan Automatic Failover Queue
+// POST: Uji coba API Key dari client (Gemini atau OpenAI / Compatible)
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    const provider = (body?.provider || 'gemini').trim().toLowerCase();
     const apiKey = body?.apiKey;
     const model = body?.model;
+    const baseUrl = body?.baseUrl;
+
+    // 1. Jalur Pengujian OpenAI / Compatible
+    if (provider === 'openai') {
+      const testKey = (apiKey || (typeof process !== 'undefined' ? process.env.OPENAI_API_KEY : '') || '').trim();
+      if (!testKey) {
+        return NextResponse.json({
+          success: false,
+          error: 'API Key OpenAI belum diisi. Masukkan API Key dari OpenAI / platform terkait.'
+        }, { status: 400 });
+      }
+
+      const result = await testOpenAIConnection({
+        apiKey: testKey,
+        model: model || 'gpt-4o-mini',
+        baseUrl: baseUrl || undefined
+      });
+
+      return NextResponse.json(result, { status: result.success ? 200 : 400 });
+    }
+
+    // 2. Jalur Pengujian Google Gemini (Default)
     const testKey = (apiKey || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '') || '').trim();
 
     if (!testKey) {
       return NextResponse.json({
         success: false,
-        error: 'API Key belum diisi. Masukkan API Key dari Google AI Studio.'
+        error: 'API Key Gemini belum diisi. Masukkan API Key dari Google AI Studio.'
       }, { status: 400 });
     }
 
     const preferredModel = (model || 'gemini-3.7-flash').trim();
 
-    // 1. Temukan daftar model yang aktif untuk API Key ini
+    // Temukan daftar model yang aktif untuk API Key ini
     const discovered = await getAvailableModelsFromApi(testKey);
 
     // 2. Susun antrian uji coba (model pilihan user diuji paling pertama)

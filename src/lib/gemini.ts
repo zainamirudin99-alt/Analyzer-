@@ -167,7 +167,7 @@ export function preprocessTextForCED(rawText: string, maxChars = 250000): string
 /**
  * Ekstraktor JSON yang tangguh (robust JSON parser)
  */
-function extractAndParseJSON(rawText: string): Record<string, number> {
+export function extractAndParseJSON(rawText: string): Record<string, number> {
   const cleaned = rawText
     .replace(/```json\s*/gi, '')
     .replace(/```\s*/gi, '')
@@ -211,7 +211,7 @@ function extractAndParseJSON(rawText: string): Record<string, number> {
   return fallbackScores;
 }
 
-function normalizeScores(rawObj: Record<string, any>): CEDScores {
+export function normalizeScores(rawObj: Record<string, any>): CEDScores {
   const result: CEDScores = {
     cc1: 0, cc2: 0,
     ghg1: 0, ghg2: 0, ghg3: 0, ghg4: 0, ghg5: 0, ghg6: 0, ghg7: 0,

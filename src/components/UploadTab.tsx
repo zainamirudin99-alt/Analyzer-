@@ -51,12 +51,20 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
     savedInDb: boolean;
   } | null>(null);
 
+  const [activeProvider, setActiveProvider] = useState<'gemini' | 'openai'>('gemini');
   const [activeModel, setActiveModel] = useState<string>('gemini-3.7-flash');
 
   useEffect(() => {
     const syncModel = () => {
-      const stored = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') || 'gemini-3.7-flash' : 'gemini-3.7-flash';
-      setActiveModel(stored);
+      const provider = (typeof window !== 'undefined' ? localStorage.getItem('custom_ai_provider') || 'gemini' : 'gemini') as 'gemini' | 'openai';
+      setActiveProvider(provider);
+      if (provider === 'openai') {
+        const stored = typeof window !== 'undefined' ? localStorage.getItem('custom_openai_model') || 'gpt-4o-mini' : 'gpt-4o-mini';
+        setActiveModel(stored);
+      } else {
+        const stored = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') || 'gemini-3.7-flash' : 'gemini-3.7-flash';
+        setActiveModel(stored);
+      }
     };
     syncModel();
     if (typeof window !== 'undefined') {
@@ -282,10 +290,22 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
       formData.append('file', selectedFile);
     }
 
-    const storedKey = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_key') : null;
-    const storedModel = (typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') : null) || activeModel || 'gemini-3.7-flash';
-    if (storedKey) formData.append('apiKey', storedKey.trim());
-    if (storedModel) formData.append('model', storedModel.trim());
+    const provider = typeof window !== 'undefined' ? localStorage.getItem('custom_ai_provider') || 'gemini' : 'gemini';
+    formData.append('provider', provider);
+
+    if (provider === 'openai') {
+      const storedKey = typeof window !== 'undefined' ? localStorage.getItem('custom_openai_key') : null;
+      const storedModel = (typeof window !== 'undefined' ? localStorage.getItem('custom_openai_model') : null) || activeModel || 'gpt-4o-mini';
+      const storedBaseUrl = typeof window !== 'undefined' ? localStorage.getItem('custom_openai_base_url') : null;
+      if (storedKey) formData.append('apiKey', storedKey.trim());
+      if (storedModel) formData.append('model', storedModel.trim());
+      if (storedBaseUrl) formData.append('baseUrl', storedBaseUrl.trim());
+    } else {
+      const storedKey = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_key') : null;
+      const storedModel = (typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') : null) || activeModel || 'gemini-3.7-flash';
+      if (storedKey) formData.append('apiKey', storedKey.trim());
+      if (storedModel) formData.append('model', storedModel.trim());
+    }
 
     try {
       const res = await fetch('/api/analyze', {
@@ -575,6 +595,27 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
             <span>{alertInfo.message}</span>
           </div>
         )}
+
+        {/* Status Mesin AI Aktif */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: 'var(--dew, #eef7eb)',
+          border: '1px solid var(--border)',
+          borderRadius: '8px',
+          padding: '8px 12px',
+          marginTop: '12px',
+          fontSize: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--moss)' }}>
+            <span>{activeProvider === 'openai' ? '⚡' : '🌿'}</span>
+            <span>Mesin Analisis: <strong>{activeProvider === 'openai' ? 'OpenAI / ChatGPT' : 'Google Gemini'}</strong> ({activeModel})</span>
+          </div>
+          <span style={{ fontSize: '11px', color: 'var(--stone)' }}>
+            Dikonfigurasi di Tab Pengaturan
+          </span>
+        </div>
 
         {/* Action Buttons: 2-Step Workflow */}
         <div style={{ display: 'flex', gap: '10px', marginTop: '14px', flexWrap: 'wrap' }}>

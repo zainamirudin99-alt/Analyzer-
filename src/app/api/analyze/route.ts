@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractTextFromPdf } from '@/lib/pdf-parser';
 import { analyzeWithGemini } from '@/lib/gemini';
+import { analyzeWithOpenAI } from '@/lib/openai';
 import { calculateDisclosureLevel, calculateTotalScore } from '@/lib/types';
 import { getSupabaseServerClient } from '@/lib/supabase';
 
@@ -15,8 +16,10 @@ export async function POST(req: NextRequest) {
     const companyCode = ((formData.get('companyCode') as string) || '').trim().toUpperCase();
     const fiscalYear = ((formData.get('fiscalYear') as string) || '').trim();
     const notes = ((formData.get('notes') as string) || '').trim();
+    const provider = ((formData.get('provider') as string) || 'gemini').trim().toLowerCase();
     const customApiKey = ((formData.get('apiKey') as string) || '').trim();
     const customModel = ((formData.get('model') as string) || '').trim();
+    const customBaseUrl = ((formData.get('baseUrl') as string) || '').trim();
 
     if (!companyCode) {
       return NextResponse.json({ success: false, error: 'Kode emiten/perusahaan wajib diisi.' }, { status: 400 });
@@ -55,16 +58,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'File PDF atau teks dokumen wajib diberikan.' }, { status: 400 });
     }
 
-    // 2. Analisis 18 Indikator CED dengan Gemini AI
-    console.log(`[Analyze] Mengirim ke Gemini AI untuk analisis ${companyCode} ${fiscalYear}...`);
-    const aiResult = await analyzeWithGemini({
-      companyCode,
-      fiscalYear,
-      pdfText: textToAnalyze.length >= 50 ? textToAnalyze : undefined,
-      pdfBase64: base64Fallback,
-      apiKey: customApiKey || undefined,
-      preferredModel: customModel || undefined
-    });
+    // 2. Analisis 18 Indikator CED dengan Multi-AI Provider (Gemini atau OpenAI)
+    let aiResult: { success: boolean; scores: any; modelUsed: string; rawResponse?: string };
+    if (provider === 'openai') {
+      console.log(`[Analyze] Mengirim ke OpenAI / Compatible (${customModel || 'gpt-4o-mini'}) untuk analisis ${companyCode} ${fiscalYear}...`);
+      aiResult = await analyzeWithOpenAI({
+        companyCode,
+        fiscalYear,
+        pdfText: textToAnalyze.length >= 50 ? textToAnalyze : undefined,
+        apiKey: customApiKey || undefined,
+        model: customModel || undefined,
+        baseUrl: customBaseUrl || undefined
+      });
+    } else {
+      console.log(`[Analyze] Mengirim ke Gemini AI untuk analisis ${companyCode} ${fiscalYear}...`);
+      aiResult = await analyzeWithGemini({
+        companyCode,
+        fiscalYear,
+        pdfText: textToAnalyze.length >= 50 ? textToAnalyze : undefined,
+        pdfBase64: base64Fallback,
+        apiKey: customApiKey || undefined,
+        preferredModel: customModel || undefined
+      });
+    }
 
     const totalScore = calculateTotalScore(aiResult.scores);
     const disclosureLevel = calculateDisclosureLevel(totalScore);
