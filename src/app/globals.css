@@ -891,3 +891,310 @@ table.result-table {
   }
 }
 
+/* ============================================================
+   NAVIGATION DRAWER & HAMBURGER (P0)
+   ============================================================ */
+
+.header-left-cluster {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.nav-hamburger-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: var(--card, #ffffff);
+  border: 1px solid var(--border-light, #e4efe0);
+  color: var(--bark, #2b221a);
+  cursor: pointer;
+  transition: var(--transition);
+  box-shadow: 0 2px 6px rgba(30, 61, 20, 0.05);
+}
+
+.nav-hamburger-btn:hover {
+  background: var(--dew, #eef7eb);
+  border-color: var(--border, #d2e2ca);
+  color: var(--fern, #2e6922);
+}
+
+.nav-hamburger-btn:focus-visible {
+  outline: 2px solid var(--fern, #2e6922);
+  outline-offset: 2px;
+}
+
+/* Backdrop */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 35, 18, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 998;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.drawer-backdrop.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Drawer Aside */
+.navigation-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 320px;
+  max-width: 85vw;
+  background: var(--card, #ffffff);
+  border-right: 1px solid var(--border, #d2e2ca);
+  z-index: 999;
+  transform: translateX(-100%);
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-lg, 0 16px 48px rgba(30, 61, 20, 0.18));
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.navigation-drawer.open {
+  transform: translateX(0);
+}
+
+.drawer-header {
+  padding: 20px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-light, #e4efe0);
+  background: var(--cream, #f8faf6);
+}
+
+.drawer-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.drawer-logo-badge {
+  font-size: 22px;
+}
+
+.drawer-title-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.drawer-app-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--bark, #2b221a);
+  line-height: 1.2;
+}
+
+.drawer-app-subtitle {
+  font-size: 11px;
+  color: var(--text-muted, #687962);
+}
+
+.drawer-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted, #687962);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.drawer-close-btn:hover {
+  background: var(--dew, #eef7eb);
+  color: var(--danger, #b82d2d);
+  border-color: var(--border-light, #e4efe0);
+}
+
+.drawer-close-btn:focus-visible {
+  outline: 2px solid var(--fern, #2e6922);
+}
+
+.drawer-nav-list {
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.drawer-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text, #2b221a);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: var(--transition);
+}
+
+.drawer-nav-item:hover {
+  background: var(--dew, #eef7eb);
+  color: var(--fern, #2e6922);
+}
+
+.drawer-nav-item.active {
+  background: var(--fern, #2e6922) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(46, 105, 34, 0.25);
+}
+
+.nav-item-icon {
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.nav-item-label {
+  flex: 1;
+}
+
+.nav-item-panel-label-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  gap: 8px;
+}
+
+.nav-item-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--mist, #c2e2b3);
+  color: var(--moss, #1e3d14);
+  letter-spacing: 0.5px;
+}
+
+.drawer-nav-item.active .nav-item-badge {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+/* Accordion Group Analyze SR */
+.drawer-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.drawer-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text, #2b221a);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: var(--transition);
+}
+
+.drawer-group-header:hover {
+  background: var(--dew, #eef7eb);
+  color: var(--fern, #2e6922);
+}
+
+.drawer-group-header.has-active-child {
+  color: var(--fern, #2e6922);
+  background: rgba(46, 105, 34, 0.06);
+}
+
+.group-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.group-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.group-chevron {
+  color: var(--stone, #687962);
+  display: flex;
+  align-items: center;
+}
+
+.drawer-subgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 12px;
+  margin-left: 18px;
+  margin-top: 4px;
+  margin-bottom: 6px;
+  border-left: 2px solid var(--border-light, #e4efe0);
+}
+
+.drawer-sub-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted, #687962);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: var(--transition);
+}
+
+.drawer-sub-item:hover {
+  background: var(--dew, #eef7eb);
+  color: var(--fern, #2e6922);
+}
+
+.drawer-sub-item.active {
+  background: var(--fern, #2e6922) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(46, 105, 34, 0.2);
+}
+
+.drawer-footer {
+  padding: 16px 18px;
+  border-top: 1px solid var(--border-light, #e4efe0);
+  background: var(--cream, #f8faf6);
+}
+
+.drawer-footer-text {
+  font-size: 11px;
+  color: var(--stone, #687962);
+  text-align: center;
+}
+

@@ -1,17 +1,21 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Header } from '@/components/Header';
+import { NavigationDrawer } from '@/components/NavigationDrawer';
 import { UploadTab } from '@/components/UploadTab';
 import { ResultsTab } from '@/components/ResultsTab';
 import { GuideTab } from '@/components/GuideTab';
 import { SettingsTab } from '@/components/SettingsTab';
 import { RegressionTab } from '@/components/RegressionTab';
+import { PanelTabShell } from '@/components/PanelTabShell';
 import { useSupabaseKeepalive } from '@/hooks/useSupabaseKeepalive';
 
 export default function HomePage() {
   useSupabaseKeepalive();
-  const [activeTab, setActiveTab] = useState<'upload' | 'results' | 'guide' | 'settings' | 'regression'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'results' | 'guide' | 'settings' | 'regression' | 'panel'>('upload');
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const toggleButtonRef = useRef<HTMLButtonElement>(null);
   const [supabaseStatus, setSupabaseStatus] = useState({ configured: false, connected: false });
   const [refreshResultsCount, setRefreshResultsCount] = useState(0);
 
@@ -45,6 +49,17 @@ export default function HomePage() {
         supabaseStatus={supabaseStatus}
         activeTab={activeTab}
         onTabChange={(tab: string) => setActiveTab(tab as any)}
+        isDrawerOpen={isDrawerOpen}
+        onToggleDrawer={() => setIsDrawerOpen(prev => !prev)}
+        toggleButtonRef={toggleButtonRef}
+      />
+
+      <NavigationDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        activeTab={activeTab}
+        onSelectTab={(tab: string) => setActiveTab(tab as any)}
+        toggleButtonRef={toggleButtonRef}
       />
 
       <main className="main-container">
@@ -69,6 +84,10 @@ export default function HomePage() {
 
         {activeTab === 'regression' && (
           <RegressionTab />
+        )}
+
+        {activeTab === 'panel' && (
+          <PanelTabShell />
         )}
       </main>
     </div>

@@ -160,6 +160,14 @@ declare module 'lucide-react' {
   export const Lock: any;
   export const UserCheck: any;
   export const Activity: any;
+  export const Play: any;
+  export const Terminal: any;
+  export const Lightbulb: any;
+  export const BookOpen: any;
+  export const Circle: any;
+  export const CheckCircle: any;
+  export const Menu: any;
+  export const ChevronRight: any;
 
   const icons: any;
   export default icons;

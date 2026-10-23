@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import React from 'react';
-import { Trees } from 'lucide-react';
+import { Menu } from 'lucide-react';
 
 interface HeaderProps {
   supabaseStatus: {
@@ -11,19 +11,45 @@ interface HeaderProps {
   };
   activeTab: string;
   onTabChange: (tab: string) => void;
+  isDrawerOpen?: boolean;
+  onToggleDrawer?: () => void;
+  toggleButtonRef?: React.RefObject<HTMLButtonElement>;
 }
 
-export const Header: React.FC<HeaderProps> = ({ supabaseStatus, activeTab, onTabChange }) => {
+export const Header: React.FC<HeaderProps> = ({
+  supabaseStatus,
+  activeTab,
+  onTabChange,
+  isDrawerOpen = false,
+  onToggleDrawer,
+  toggleButtonRef
+}) => {
   return (
     <>
       <header className="app-header">
-        <div className="header-brand" style={{ cursor: 'pointer' }} onClick={() => onTabChange('upload')}>
-          <div className="header-logo-badge">
-            <img src="/logo.png" alt="PDF Analyzer Logo" className="header-logo-img" />
-          </div>
-          <div className="header-title-box">
-            <h1>PDF Analyzer</h1>
-            <p>Carbon Emission Disclosure (CED) — Analisis AI & Database Supabase</p>
+        <div className="header-left-cluster">
+          <button
+            ref={toggleButtonRef}
+            type="button"
+            id="nav-toggle-btn"
+            className="nav-hamburger-btn"
+            onClick={onToggleDrawer}
+            aria-expanded={isDrawerOpen}
+            aria-controls="app-navigation-drawer"
+            aria-label="Toggle Menu Navigasi"
+            data-testid="nav-toggle-btn"
+          >
+            <Menu size={22} />
+          </button>
+
+          <div className="header-brand" style={{ cursor: 'pointer' }} onClick={() => onTabChange('upload')}>
+            <div className="header-logo-badge">
+              <img src="/logo.png" alt="PDF Analyzer Logo" className="header-logo-img" />
+            </div>
+            <div className="header-title-box">
+              <h1>PDF Analyzer</h1>
+              <p>Carbon Emission Disclosure (CED) — Analisis AI & Database Supabase</p>
+            </div>
           </div>
         </div>
 
@@ -71,6 +97,13 @@ export const Header: React.FC<HeaderProps> = ({ supabaseStatus, activeTab, onTab
           style={{ background: activeTab === 'regression' ? 'var(--fern)' : 'transparent', color: activeTab === 'regression' ? '#ffffff' : 'inherit' }}
         >
           <span>📊</span> Analisis Regresi Statistik
+        </button>
+        <button
+          className={`nav-tab-btn ${activeTab === 'panel' ? 'active' : ''}`}
+          onClick={() => onTabChange('panel')}
+          style={{ background: activeTab === 'panel' ? 'var(--fern)' : 'transparent', color: activeTab === 'panel' ? '#ffffff' : 'inherit' }}
+        >
+          <span>📈</span> Regresi Data Panel
         </button>
       </nav>
     </>
