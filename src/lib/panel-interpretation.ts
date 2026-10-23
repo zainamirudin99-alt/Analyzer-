@@ -486,3 +486,65 @@ ${allVars.map(v => `  ${padR(v, 10)} |   ${allVars.map(() => '1.0000 ').join(' '
 
   return blocks;
 }
+
+/**
+ * Format ringkasan eksekutif regresi data panel untuk disalin ke clipboard
+ */
+export function formatPanelClipboardSummary(
+  fitResult: PanelFitResult,
+  datasetName = 'Dataset_Panel.xlsx'
+): string {
+  const { declaration, selection, finalModel, assumptions } = fitResult;
+  const lines: string[] = [];
+
+  lines.push('==============================================================================');
+  lines.push('RINGKASAN EKSEKUTIF: REGRESI DATA PANEL (STANDAR STATA)');
+  lines.push('==============================================================================');
+  lines.push(`Nama Berkas        : ${datasetName}`);
+  lines.push(`Dimensi Panel      : ${declaration.entityCount} Entitas, ${declaration.tMax} Periode (Total Obs N = ${declaration.totalObs})`);
+  lines.push(`Keseimbangan Panel : ${declaration.isBalanced ? 'Strongly Balanced' : 'Unbalanced Panel'}`);
+  lines.push(`Model Terpilih     : ${selection.selectedModel} (${selection.selectedModel === 'FEM' ? 'Fixed Effects Model' : selection.selectedModel === 'REM' ? 'Random Effects Model' : 'Common Effect Model'})`);
+  lines.push(`Koreksi SE         : Cluster-Robust Standard Errors (Arellano, 1987)`);
+  lines.push('');
+
+  lines.push('1. PENGUJIAN SPESIFIKASI & PEMILIHAN MODEL');
+  lines.push(`- Uji Chow (CEM vs FEM)          : F(${selection.chow.df1}, ${selection.chow.df2}) = ${selection.chow.stat.toFixed(2)} (p = ${selection.chow.p.toFixed(4)}) -> Memilih ${selection.chow.preferred}`);
+  lines.push(`- Uji Hausman (FEM vs REM)       : chi2(${selection.hausman.df}) = ${selection.hausman.chi2.toFixed(2)} (p = ${selection.hausman.p.toFixed(4)}) -> Memilih ${selection.hausman.preferred}`);
+  lines.push(`- Uji Breusch-Pagan LM (CEM vs REM): chibar2(${selection.breuschPaganLM.df}) = ${selection.breuschPaganLM.chibar2.toFixed(2)} (p = ${selection.breuschPaganLM.p.toFixed(4)}) -> Memilih ${selection.breuschPaganLM.preferred}`);
+  if (selection.hausman.isNegativeChi2 && selection.mundlakCRE) {
+    lines.push(`  * Catatan: Uji Mundlak CRE Auxiliary Regression: Wald chi2(${selection.mundlakCRE.df}) = ${selection.mundlakCRE.waldChi2.toFixed(2)} (p = ${selection.mundlakCRE.p.toFixed(4)}) -> Memilih ${selection.mundlakCRE.preferred}`);
+  }
+  lines.push(`Kesimpulan Model                 : ${selection.selectedModel} (${selection.selectionReason})`);
+  lines.push('');
+
+  lines.push(`2. ESTIMASI MODEL AKHIR (${finalModel.modelType} - Cluster Robust)`);
+  lines.push('------------------------------------------------------------------------------------------------------');
+  lines.push('Variabel       | Koefisien (b)  | Std. Err (Robust) | t / z    | P>|t| / P>|z| | 95% Conf. Interval');
+  lines.push('------------------------------------------------------------------------------------------------------');
+
+  for (const [vName, cRow] of Object.entries(finalModel.coefficients)) {
+    const padVar = (vName + '              ').slice(0, 14);
+    const padB = (cRow.b.toFixed(6) + '              ').slice(0, 14);
+    const padSe = (cRow.stdError.toFixed(6) + '                 ').slice(0, 17);
+    const padT = (cRow.tOrZ.toFixed(2) + '        ').slice(0, 8);
+    const padSig = (cRow.sig.toFixed(4) + '              ').slice(0, 13);
+    const ci = `[${cRow.ciLower.toFixed(6)}, ${cRow.ciUpper.toFixed(6)}]`;
+    lines.push(`${padVar} | ${padB} | ${padSe} | ${padT} | ${padSig} | ${ci}`);
+  }
+  lines.push('------------------------------------------------------------------------------------------------------');
+  lines.push(`R-squared      : Within = ${finalModel.r2.within.toFixed(4)}, Between = ${finalModel.r2.between.toFixed(4)}, Overall = ${finalModel.r2.overall.toFixed(4)}`);
+  lines.push('');
+
+  lines.push('3. UJI ASUMSI KLASIK & REMEDIAL');
+  lines.push(`- Multikolinearitas (VIF)        : Mean VIF = ${assumptions.vif.meanVif.toFixed(2)} (${assumptions.vif.meanVif < 10 ? 'Lolos / Bebas Multikolinearitas' : 'Waspada Multikolinearitas Tinggi'})`);
+  lines.push(`- Heteroskedastisitas (xttest3)  : chi2(${assumptions.greeneHetero?.df ?? 10}) = ${assumptions.greeneHetero?.chi2.toFixed(2) ?? '-'} (p = ${assumptions.greeneHetero?.p.toFixed(4) ?? '-'}) -> ${assumptions.greeneHetero?.hasHeteroskedasticity ? 'Terdeteksi Heteroskedastisitas (Diperbaiki Robust SE)' : 'Homoskedastis'}`);
+  lines.push(`- Autokorelasi Serial (xtserial) : ${assumptions.wooldridgeSerial?.skippedReason ? `Dilewati (${assumptions.wooldridgeSerial.skippedReason})` : `F(${assumptions.wooldridgeSerial?.df1}, ${assumptions.wooldridgeSerial?.df2}) = ${assumptions.wooldridgeSerial?.f.toFixed(2)} (p = ${assumptions.wooldridgeSerial?.p.toFixed(4)}) -> ${assumptions.wooldridgeSerial?.hasAutocorrelation ? 'Terdeteksi Autokorelasi Serial (Diperbaiki Robust SE)' : 'Bebas Autokorelasi'}`}`);
+  lines.push(`- Normalitas Residu (swilk)      : ${assumptions.normality?.isNormal ? 'Normal' : `Non-normal (${assumptions.normality?.cltProtected ? 'Aman berkat Central Limit Theorem / CLT N >= 30' : 'Perlu perhatian'})`}`);
+  if (assumptions.clusterBiasWarning?.isBiased) {
+    lines.push(`- Catatan Ukuran Cluster (G)     : G = ${assumptions.clusterBiasWarning.clusterCount} (< 30 Entitas) -> Peringatan: standard error cluster-robust berpotensi underestimated.`);
+  }
+  lines.push('==============================================================================');
+
+  return lines.join('\n');
+}
+

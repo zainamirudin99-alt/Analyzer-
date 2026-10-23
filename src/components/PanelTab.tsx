@@ -25,7 +25,11 @@ import {
   testPanelNormality,
   computeClusterRobustSE
 } from '@/lib/panel-engine';
-import { generateAllPanelConsoleBlocks, formatStataRegTable } from '@/lib/panel-interpretation';
+import {
+  generateAllPanelConsoleBlocks,
+  formatStataRegTable,
+  formatPanelClipboardSummary
+} from '@/lib/panel-interpretation';
 import { PanelStepper } from './PanelStepper';
 import { StataConsoleBlock } from './StataConsoleBlock';
 import {
@@ -45,7 +49,10 @@ import {
   Copy,
   Check,
   Terminal,
-  ShieldCheck
+  ShieldCheck,
+  Download,
+  Printer,
+  FileText
 } from 'lucide-react';
 import grunfeldFixture from '../../tests/fixtures/panel/grunfeld.json';
 
@@ -102,6 +109,11 @@ export const PanelTab: React.FC = () => {
   const [consoleBlocks, setConsoleBlocks] = useState<StataConsoleBlockData[]>([]);
   const [isCalculating, setIsCalculating] = useState<boolean>(false);
   const [calculationError, setCalculationError] = useState<string | null>(null);
+
+  // Export & Action State (P6)
+  const [isExportingDocx, setIsExportingDocx] = useState<boolean>(false);
+  const [docxExportError, setDocxExportError] = useState<string | null>(null);
+  const [isCopiedSummary, setIsCopiedSummary] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -397,10 +409,106 @@ export const PanelTab: React.FC = () => {
     }
   };
 
+  // Handler Export DOCX (P6)
+  const handleExportDocx = async () => {
+    if (!fitResult) return;
+    try {
+      setIsExportingDocx(true);
+      setDocxExportError(null);
+
+      const res = await fetch('/api/panel/export-docx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fitResult,
+          datasetName: fileName || 'Dataset_Panel.xlsx'
+        })
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `HTTP error ${res.status}`);
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Laporan_Regresi_Panel_Stata_${new Date().toISOString().slice(0, 10)}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      console.error('[Export DOCX Error]:', err);
+      setDocxExportError(err.message || 'Gagal mengunduh dokumen Word.');
+    } finally {
+      setIsExportingDocx(false);
+    }
+  };
+
+  // Handler Print PDF (P6)
+  const handlePrintPdf = () => {
+    window.print();
+  };
+
+  // Handler Copy Summary to Clipboard (P6)
+  const handleCopySummary = async () => {
+    if (!fitResult) return;
+    try {
+      const summaryText = formatPanelClipboardSummary(fitResult, fileName || 'Dataset_Panel.xlsx');
+      await navigator.clipboard.writeText(summaryText);
+      setIsCopiedSummary(true);
+      setTimeout(() => setIsCopiedSummary(false), 2500);
+    } catch (err) {
+      console.error('Failed to copy summary:', err);
+    }
+  };
+
   return (
     <div className="panel-tab-wrapper" style={{ padding: '8px 0 40px 0' }}>
+      {/* Print Stylesheet & Header (P6) */}
+      <style>{`
+        @media print {
+          header, nav, aside, #app-navigation-drawer, .no-print,
+          .panel-stepper-container, button {
+            display: none !important;
+          }
+          body, .panel-tab-wrapper, .panel-main-layout {
+            background: #ffffff !important;
+            color: #000000 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            display: block !important;
+            box-shadow: none !important;
+          }
+          .panel-print-header {
+            display: block !important;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #2e6922;
+          }
+        }
+        @media screen {
+          .panel-print-header {
+            display: none;
+          }
+        }
+      `}</style>
+
+      {/* Header Khusus Print Cetak PDF */}
+      <div className="panel-print-header">
+        <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#1e3d14', margin: '0 0 4px 0' }}>
+          LAPORAN HASIL REGRESI DATA PANEL (STANDAR STATA)
+        </h1>
+        <p style={{ fontSize: '13px', color: '#475569', margin: 0 }}>
+          Berkas: {fileName} | Dimensi: {fitResult?.declaration.entityCount} Entitas, {fitResult?.declaration.tMax} Periode (N = {fitResult?.declaration.totalObs}) | Model: {fitResult?.selection.selectedModel} (Cluster-Robust SE)
+        </p>
+      </div>
+
       {/* 1. Header Banner */}
       <div
+        className="no-print"
         style={{
           background: 'linear-gradient(135deg, var(--moss, #1e3d14) 0%, var(--fern, #2e6922) 100%)',
           color: '#ffffff',
@@ -459,6 +567,7 @@ export const PanelTab: React.FC = () => {
 
       {/* 2. Kartu Ingestion & Impor Data (P1) */}
       <div
+        className="no-print"
         style={{
           background: 'var(--card, #ffffff)',
           border: '1px solid var(--border, #d2e2ca)',
@@ -748,6 +857,7 @@ export const PanelTab: React.FC = () => {
 
       {/* 3. Kartu Pemetaan Variabel (P1) */}
       <div
+        className="no-print"
         style={{
           background: 'var(--card, #ffffff)',
           border: '1px solid var(--border, #d2e2ca)',
@@ -955,6 +1065,7 @@ export const PanelTab: React.FC = () => {
 
       {/* 4. Kartu Cek & Pembersihan Data + Log Transformasi Kode Stata (P2) */}
       <div
+        className="no-print"
         style={{
           background: 'var(--card, #ffffff)',
           border: '1px solid var(--border, #d2e2ca)',
@@ -1148,6 +1259,124 @@ export const PanelTab: React.FC = () => {
         )}
       </div>
 
+      {/* Quick Export & Actions Toolbar (P6) */}
+      {fitResult && (
+        <div
+          className="no-print"
+          style={{
+            marginBottom: '20px',
+            padding: '14px 20px',
+            background: '#ffffff',
+            border: '1px solid var(--border, #d2e2ca)',
+            borderRadius: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                background: 'var(--dew, #eef7eb)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <FileText size={18} color="var(--fern, #2e6922)" />
+            </div>
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--bark, #2b221a)' }}>
+                Hasil Regresi Panel Tersedia: Model Terpilih {fitResult.selection.selectedModel}
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--stone, #687962)' }}>
+                {fitResult.declaration.entityCount} Entitas, {fitResult.declaration.tMax} Periode, {fitResult.declaration.totalObs} Observasi ({fitResult.declaration.isBalanced ? 'Balanced' : 'Unbalanced'})
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {/* Tombol Unduh Word (.docx) */}
+            <button
+              onClick={handleExportDocx}
+              disabled={isExportingDocx}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '9px 16px',
+                minHeight: '40px',
+                borderRadius: '8px',
+                border: 'none',
+                background: 'var(--fern, #2e6922)',
+                color: '#ffffff',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: isExportingDocx ? 'wait' : 'pointer',
+                opacity: isExportingDocx ? 0.7 : 1,
+                boxShadow: '0 1px 3px rgba(46, 105, 34, 0.2)'
+              }}
+              title="Unduh Laporan Lengkap Microsoft Word (.docx)"
+            >
+              {isExportingDocx ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
+              <span>{isExportingDocx ? 'Membuat Dokumen Word...' : 'Unduh Word (.docx)'}</span>
+            </button>
+
+            {/* Tombol Cetak / Simpan PDF */}
+            <button
+              onClick={handlePrintPdf}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '9px 16px',
+                minHeight: '40px',
+                borderRadius: '8px',
+                border: '1px solid var(--border, #d2e2ca)',
+                background: '#ffffff',
+                color: 'var(--bark, #2b221a)',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+              title="Cetak atau Simpan sebagai PDF"
+            >
+              <Printer size={14} color="var(--stone, #687962)" />
+              <span>Cetak PDF</span>
+            </button>
+
+            {/* Tombol Salin Ringkasan */}
+            <button
+              onClick={handleCopySummary}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '9px 16px',
+                minHeight: '40px',
+                borderRadius: '8px',
+                border: '1px solid var(--border, #d2e2ca)',
+                background: isCopiedSummary ? '#ecfdf5' : '#ffffff',
+                color: isCopiedSummary ? '#065f46' : 'var(--bark, #2b221a)',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+              title="Salin Ringkasan Hasil ke Clipboard"
+            >
+              {isCopiedSummary ? <Check size={14} color="#059669" /> : <Copy size={14} color="var(--stone, #687962)" />}
+              <span>{isCopiedSummary ? 'Tersalin ke Clipboard!' : 'Salin Ringkasan'}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 5. Tata Letak Utama 2 Kolom (Stepper Kiri + Konsol Kanan) */}
       <div
         className="panel-main-layout"
@@ -1159,7 +1388,7 @@ export const PanelTab: React.FC = () => {
         }}
       >
         {/* Kolom Kiri: Stepper */}
-        <div>
+        <div className="panel-stepper-container no-print">
           <PanelStepper
             activeStep={activeStep}
             maxReachedStep={maxReachedStep}
@@ -1746,6 +1975,111 @@ export const PanelTab: React.FC = () => {
                 <div style={{ fontSize: '13px', lineHeight: 1.5 }}>
                   {fitResult.assumptions.clusterBiasWarning.message}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 12: Ekspor & Dokumentasi Laporan Word (.docx) */}
+          {activeStep === 12 && fitResult && (
+            <div
+              className="no-print"
+              style={{
+                marginBottom: '20px',
+                padding: '20px',
+                background: 'linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%)',
+                borderRadius: '12px',
+                border: '1px solid #86efac',
+                boxShadow: '0 2px 8px rgba(46, 105, 34, 0.08)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '14px' }}>
+                <div>
+                  <div style={{ fontSize: '16px', fontWeight: 700, color: '#166534', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FileText size={20} color="#166534" />
+                    Ekspor &amp; Dokumentasi Laporan Panel Lengkap
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#374151', marginTop: '3px' }}>
+                    Unduh berkas Word (.docx) dengan tabel ekonometrika resmi APA/Stata, cetak langsung ke format PDF, atau salin ringkasan eksekutif untuk draft skripsi / tesis.
+                  </div>
+                </div>
+                {docxExportError && (
+                  <div style={{ fontSize: '12px', color: '#dc2626', fontWeight: 600 }}>
+                    {docxExportError}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                {/* Tombol Unduh Word (.docx) */}
+                <button
+                  onClick={handleExportDocx}
+                  disabled={isExportingDocx}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 20px',
+                    minHeight: '44px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: 'var(--fern, #2e6922)',
+                    color: '#ffffff',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    cursor: isExportingDocx ? 'wait' : 'pointer',
+                    opacity: isExportingDocx ? 0.7 : 1,
+                    boxShadow: '0 2px 6px rgba(46, 105, 34, 0.25)'
+                  }}
+                >
+                  {isExportingDocx ? <RefreshCw size={16} className="animate-spin" /> : <Download size={16} />}
+                  <span>{isExportingDocx ? 'Membuat Dokumen Word...' : 'Unduh Laporan Word (.docx)'}</span>
+                </button>
+
+                {/* Tombol Cetak / Simpan PDF */}
+                <button
+                  onClick={handlePrintPdf}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 20px',
+                    minHeight: '44px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border, #d2e2ca)',
+                    background: '#ffffff',
+                    color: 'var(--bark, #2b221a)',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                  }}
+                >
+                  <Printer size={16} color="var(--stone, #687962)" />
+                  <span>Cetak / Simpan PDF</span>
+                </button>
+
+                {/* Tombol Salin Ringkasan */}
+                <button
+                  onClick={handleCopySummary}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 20px',
+                    minHeight: '44px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border, #d2e2ca)',
+                    background: isCopiedSummary ? '#ecfdf5' : '#ffffff',
+                    color: isCopiedSummary ? '#065f46' : 'var(--bark, #2b221a)',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                  }}
+                >
+                  {isCopiedSummary ? <Check size={16} color="#059669" /> : <Copy size={16} color="var(--stone, #687962)" />}
+                  <span>{isCopiedSummary ? 'Ringkasan Tersalin!' : 'Salin Ringkasan ke Clipboard'}</span>
+                </button>
               </div>
             </div>
           )}
