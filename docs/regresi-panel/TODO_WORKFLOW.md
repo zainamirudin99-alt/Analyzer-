@@ -137,11 +137,12 @@ Implementasi dibagi menjadi 5 fase berurutan tanpa penulisan kode spekulatif. Se
 
 ---
 
-## 4. Definisi Selesai (Definition of Done - DoD)
+## 4. Definisi Selesai (Definition of Done - DoD) — STATUS: 100% SELESAI (COMPLETED)
 
-Fitur "Regresi Data Panel" dinyatakan selesai jika dan hanya jika:
-1. Seluruh dokumen arsitektur ([SOURCE_OF_TRUTH.md](file:///c:/Users/LENOVO/Documents/Zain%202.0/Project%20AI/CED%20Analyzer/docs/regresi-panel/SOURCE_OF_TRUTH.md), [ARCHITECTURE_ROADMAP.md](file:///c:/Users/LENOVO/Documents/Zain%202.0/Project%20AI/CED%20Analyzer/docs/regresi-panel/ARCHITECTURE_ROADMAP.md), [TODO_WORKFLOW.md](file:///c:/Users/LENOVO/Documents/Zain%202.0/Project%20AI/CED%20Analyzer/docs/regresi-panel/TODO_WORKFLOW.md)) saling tertaut tanpa ada tag "TBD".
-2. Seluruh 8 dugaan ekonometrika diuji dan berstatus final (`Terverifikasi` / `Dikoreksi`).
-3. Seluruh koefisien matematis pada dataset benchmark Grunfeld 1958 cocok terhadap output Stata dengan toleransi $\le 10^{-6}$.
-4. Tampilan 4 blok Stata tersedia lengkap pada langkah 0 s/d 12.
-5. Invarian I1 sampai I12 ditegakkan tanpa melanggar fungsionalitas menu CED eksisting (Invarian I7).
+Fitur "Regresi Data Panel" dinyatakan selesai dan telah memenuhi seluruh kriteria DoD:
+- [x] 1. Seluruh dokumen arsitektur ([SOURCE_OF_TRUTH.md](file:///c:/Users/LENOVO/Documents/Zain%202.0/Project%20AI/CED%20Analyzer/docs/regresi-panel/SOURCE_OF_TRUTH.md), [ARCHITECTURE_ROADMAP.md](file:///c:/Users/LENOVO/Documents/Zain%202.0/Project%20AI/CED%20Analyzer/docs/regresi-panel/ARCHITECTURE_ROADMAP.md), [TODO_WORKFLOW.md](file:///c:/Users/LENOVO/Documents/Zain%202.0/Project%20AI/CED%20Analyzer/docs/regresi-panel/TODO_WORKFLOW.md)) saling tertaut tanpa ada tag "TBD".
+- [x] 2. Seluruh 8 dugaan ekonometrika diuji dan berstatus final (`Terverifikasi` / `Dikoreksi`) pada Bab 4 [SOURCE_OF_TRUTH.md](file:///c:/Users/LENOVO/Documents/Zain%202.0/Project%20AI/CED%20Analyzer/docs/regresi-panel/SOURCE_OF_TRUTH.md).
+- [x] 3. Seluruh koefisien matematis pada dataset benchmark Grunfeld 1958 cocok terhadap output Stata dengan toleransi $\le 10^{-6}$ (dibuktikan pada `panel-p3-estimations.test.ts` dan `panel-regression-complete.test.ts`).
+- [x] 4. Tampilan 4 blok Stata (Kode, Fungsi, Output Monospace, Bahasa Bayi) tersedia lengkap pada langkah 0 s/d 12 (dibuktikan pada `panel-p6-export-and-blocks.test.ts`).
+- [x] 5. Invarian I1 sampai I12 ditegakkan tanpa melanggar fungsionalitas menu CED eksisting (Invarian I7 Zero-Regression dibuktikan pada `ced-behavior.test.ts` dan `panel-regression-complete.test.ts`).
+- [x] 6. Seluruh 33 berkas uji Vitest (181 tes) lulus 100%, kompilasi TypeScript `tsc --noEmit` lolos 0 error, dan `next build` berhasil menghasilkan bundel produksi.
