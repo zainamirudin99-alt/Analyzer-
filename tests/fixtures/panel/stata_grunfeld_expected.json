@@ -1,0 +1,109 @@
+{
+  "dataset": "Grunfeld 1958 Investment Panel",
+  "entities": 10,
+  "periods": 20,
+  "totalObs": 200,
+  "balanced": true,
+  "variables": {
+    "y": "invest",
+    "x": ["mvalue", "kstock"]
+  },
+  "descriptive": {
+    "invest": {
+      "overall": { "mean": 145.9583, "sd": 216.8753, "min": 0.9, "max": 1486.0, "N": 200 },
+      "between": { "sd": 166.7037, "min": 13.0645, "max": 624.4935, "n": 10 },
+      "within": { "sd": 142.1481, "min": -439.5348, "max": 1007.465, "Tbar": 20 }
+    },
+    "mvalue": {
+      "overall": { "mean": 1081.681, "sd": 1314.996, "min": 26.7, "max": 5530.2, "N": 200 },
+      "between": { "sd": 1190.222, "min": 157.065, "max": 3890.365, "n": 10 },
+      "within": { "sd": 600.7303, "min": -1049.034, "max": 2721.516, "Tbar": 20 }
+    },
+    "kstock": {
+      "overall": { "mean": 276.0172, "sd": 379.8415, "min": 0.8, "max": 2226.1, "N": 200 },
+      "between": { "sd": 334.6192, "min": 10.825, "max": 1225.5, "n": 10 },
+      "within": { "sd": 184.8142, "min": -369.0428, "max": 1276.617, "Tbar": 20 }
+    }
+  },
+  "cem": {
+    "coefficients": {
+      "mvalue": { "b": 0.1155622, "se": 0.0058357, "t": 19.80, "p": 0.000 },
+      "kstock": { "b": 0.2306785, "se": 0.0254758, "t": 9.05, "p": 0.000 },
+      "_cons": { "b": -42.71437, "se": 9.511676, "t": -4.49, "p": 0.000 }
+    },
+    "r2": 0.8124,
+    "adjR2": 0.8105,
+    "fStat": 426.6,
+    "dfResidual": 197
+  },
+  "fem": {
+    "coefficients": {
+      "mvalue": { "b": 0.1101238, "se": 0.0118567, "t": 9.29, "p": 0.000, "ciLower": 0.0867258, "ciUpper": 0.1335218 },
+      "kstock": { "b": 0.3100653, "se": 0.0173545, "t": 17.87, "p": 0.000, "ciLower": 0.2758189, "ciUpper": 0.3443118 },
+      "_cons": { "b": -58.74393, "se": 12.45369, "t": -4.72, "p": 0.000, "ciLower": -83.31835, "ciUpper": -34.16951 }
+    },
+    "r2": {
+      "within": 0.7668,
+      "between": 0.8194,
+      "overall": 0.8060
+    },
+    "sigma_u": 85.73347,
+    "sigma_e": 52.76791,
+    "rho": 0.72524979,
+    "fStat": 309.01,
+    "fPValue": 0.0000,
+    "dfModel": 2,
+    "dfResidual": 188,
+    "chowF": {
+      "f": 49.18,
+      "df1": 9,
+      "df2": 188,
+      "p": 0.0000
+    }
+  },
+  "rem": {
+    "coefficients": {
+      "mvalue": { "b": 0.1097812, "se": 0.0104928, "z": 10.46, "p": 0.000, "ciLower": 0.0892157, "ciUpper": 0.1303468 },
+      "kstock": { "b": 0.3081130, "se": 0.0171804, "z": 17.93, "p": 0.000, "ciLower": 0.2744401, "ciUpper": 0.3417859 },
+      "_cons": { "b": -57.83441, "se": 28.89893, "z": -2.00, "p": 0.045, "ciLower": -114.4753, "ciUpper": -1.193554 }
+    },
+    "r2": {
+      "within": 0.7668,
+      "between": 0.8194,
+      "overall": 0.8060
+    },
+    "sigma_u": 84.200994,
+    "sigma_e": 52.767909,
+    "rho": 0.71790479,
+    "theta": 0.8614,
+    "waldChi2": 658.11,
+    "waldPValue": 0.0000,
+    "dfModel": 2
+  },
+  "modelSelection": {
+    "chow": { "stat": 49.18, "df1": 9, "df2": 188, "p": 0.0000, "preferred": "FEM" },
+    "hausman": { "chi2": 2.33, "df": 2, "p": 0.3118, "preferred": "REM" },
+    "breuschPaganLM": { "chibar2": 798.16, "df": 1, "p": 0.0000, "preferred": "REM" },
+    "selectedModel": "REM"
+  },
+  "assumptions": {
+    "vif": {
+      "mvalue": 1.31,
+      "kstock": 1.31,
+      "meanVif": 1.31
+    },
+    "wooldridgeSerial": {
+      "f": 263.59,
+      "df1": 1,
+      "df2": 9,
+      "p": 0.0000,
+      "hasAutocorrelation": true
+    },
+    "greeneHetero": {
+      "chi2": 485.45,
+      "df": 10,
+      "p": 0.0000,
+      "hasHeteroskedasticity": true
+    }
+  }
+}

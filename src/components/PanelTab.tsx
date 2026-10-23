@@ -1,0 +1,1025 @@
+'use client';
+
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import {
+  PanelFitInput,
+  PanelFitResult,
+  StataConsoleBlockData
+} from '@/lib/panel-types';
+import {
+  validatePanelStructure,
+  validatePanelMappingConfig,
+  fitPanelCEM,
+  fitPanelFEM,
+  fitPanelREM,
+  testChow,
+  testHausman,
+  testMundlakCRE,
+  testBreuschPaganLM,
+  selectOptimalPanelModel,
+  testPanelVIF,
+  testGroupwiseHeteroGreene,
+  testWooldridgeSerial,
+  computeClusterRobustSE
+} from '@/lib/panel-engine';
+import { generateAllPanelConsoleBlocks } from '@/lib/panel-interpretation';
+import { PanelStepper } from './PanelStepper';
+import { StataConsoleBlock } from './StataConsoleBlock';
+import {
+  Play,
+  Database,
+  FileSpreadsheet,
+  Link2,
+  UploadCloud,
+  CheckCircle,
+  AlertTriangle,
+  ArrowRight,
+  ArrowLeft,
+  XCircle,
+  Info,
+  RefreshCw,
+  Table
+} from 'lucide-react';
+import grunfeldFixture from '../../tests/fixtures/panel/grunfeld.json';
+
+interface SheetData {
+  sheetName: string;
+  rowCount: number;
+  columnCount: number;
+  columns: string[];
+  previewRows: Record<string, any>[];
+  allRows: Record<string, any>[];
+}
+
+export const PanelTab: React.FC = () => {
+  // Source State: 'upload' | 'link' | 'preset'
+  const [sourceType, setSourceType] = useState<'upload' | 'link' | 'preset'>('preset');
+  const [googleSheetsUrl, setGoogleSheetsUrl] = useState<string>('');
+  const [isLoadingFile, setIsLoadingFile] = useState<boolean>(false);
+  const [ingestionError, setIngestionError] = useState<string | null>(null);
+
+  // File & Sheet State
+  const [fileName, setFileName] = useState<string>('grunfeld_1958.xlsx');
+  const [sheetsList, setSheetsList] = useState<string[]>(['Grunfeld_Panel']);
+  const [activeSheet, setActiveSheet] = useState<string>('Grunfeld_Panel');
+  const [availableSheetsData, setAvailableSheetsData] = useState<SheetData[]>([
+    {
+      sheetName: 'Grunfeld_Panel',
+      rowCount: grunfeldFixture.length,
+      columnCount: 5,
+      columns: ['company', 'year', 'invest', 'mvalue', 'kstock'],
+      previewRows: grunfeldFixture.slice(0, 10),
+      allRows: grunfeldFixture
+    }
+  ]);
+
+  // Current Dataset Rows & Columns
+  const [dataRows, setDataRows] = useState<Record<string, any>[]>(grunfeldFixture);
+  const [columns, setColumns] = useState<string[]>(['company', 'year', 'invest', 'mvalue', 'kstock']);
+
+  // Variable Mapping State (P1)
+  const [idCol, setIdCol] = useState<string>('company');
+  const [timeCol, setTimeCol] = useState<string>('year');
+  const [yCol, setYCol] = useState<string>('invest');
+  const [xCols, setXCols] = useState<string[]>(['mvalue', 'kstock']);
+
+  // Stepper & Execution State
+  const [activeStep, setActiveStep] = useState<number>(0);
+  const [maxReachedStep, setMaxReachedStep] = useState<number>(12);
+  const [fitResult, setFitResult] = useState<PanelFitResult | null>(null);
+  const [consoleBlocks, setConsoleBlocks] = useState<StataConsoleBlockData[]>([]);
+  const [isCalculating, setIsCalculating] = useState<boolean>(false);
+  const [calculationError, setCalculationError] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 10-Row Preview computed from active sheet
+  const previewRows = useMemo(() => {
+    return dataRows.slice(0, 10);
+  }, [dataRows]);
+
+  // Real-time Mapping Invariant Validation (Invarian I1, I5, I6, I10, I11)
+  const mappingValidation = useMemo(() => {
+    if (!dataRows || dataRows.length === 0 || !idCol || !timeCol || !yCol) {
+      return {
+        isValid: false,
+        errors: ['Lengkapi pilihan variabel entitas, waktu, dependen (Y), dan independen (X).'],
+        warnings: [],
+        summary: { nEntities: 0, nPeriods: 0, isBalanced: false, nObs: 0 }
+      };
+    }
+    return validatePanelMappingConfig(dataRows, idCol, timeCol, yCol, xCols);
+  }, [dataRows, idCol, timeCol, yCol, xCols]);
+
+  // Jalankan estimasi lengkap
+  const runFullEstimation = (
+    rowsToUse: Record<string, any>[],
+    currentId: string,
+    currentTime: string,
+    currentY: string,
+    currentX: string[]
+  ) => {
+    try {
+      setIsCalculating(true);
+      setCalculationError(null);
+
+      const decl = validatePanelStructure(rowsToUse, currentId, currentTime);
+      if (!decl.isValid) {
+        throw new Error(decl.errors.join(' '));
+      }
+
+      const input: PanelFitInput = {
+        rows: rowsToUse,
+        idCol: currentId,
+        timeCol: currentTime,
+        yCol: currentY,
+        xCols: currentX,
+        alpha: 0.05
+      };
+
+      const cem = fitPanelCEM(input);
+      const fem = fitPanelFEM(input);
+      const rem = fitPanelREM(input);
+
+      const chow = testChow(cem, fem);
+      const hausman = testHausman(fem, rem);
+      const mundlak = testMundlakCRE(input);
+      const bp = testBreuschPaganLM(input);
+      const selection = selectOptimalPanelModel(chow, hausman, mundlak, bp);
+
+      const vif = testPanelVIF(input);
+      const greene = testGroupwiseHeteroGreene(input, fem);
+      const serial = testWooldridgeSerial(input);
+
+      const selectedModel = selection.selectedModel === 'FEM' ? fem : rem;
+      const robustFinal = computeClusterRobustSE(selectedModel, input);
+
+      const result: PanelFitResult = {
+        success: true,
+        declaration: decl,
+        models: { cem, fem, rem },
+        selection,
+        selectedModel,
+        finalModel: robustFinal,
+        assumptions: {
+          vif,
+          greeneHetero: greene,
+          wooldridgeSerial: serial,
+          clusterBiasWarning: robustFinal.clusterBiasWarning
+        },
+        consoleBlocks: []
+      };
+
+      const blocks = generateAllPanelConsoleBlocks(input, result);
+      result.consoleBlocks = blocks;
+
+      setFitResult(result);
+      setConsoleBlocks(blocks);
+      setMaxReachedStep(12);
+    } catch (err: any) {
+      console.error(err);
+      setCalculationError(err.message || 'Terjadi kesalahan dalam estimasi regresi data panel.');
+    } finally {
+      setIsCalculating(false);
+    }
+  };
+
+  // Inisialisasi awal dengan dataset Grunfeld
+  useEffect(() => {
+    runFullEstimation(grunfeldFixture, 'company', 'year', 'invest', ['mvalue', 'kstock']);
+  }, []);
+
+  // Handler Preset Grunfeld
+  const handleLoadGrunfeldPreset = () => {
+    setSourceType('preset');
+    setDataRows(grunfeldFixture);
+    setColumns(['company', 'year', 'invest', 'mvalue', 'kstock']);
+    setFileName('grunfeld_1958.xlsx');
+    setSheetsList(['Grunfeld_Panel']);
+    setActiveSheet('Grunfeld_Panel');
+    setAvailableSheetsData([
+      {
+        sheetName: 'Grunfeld_Panel',
+        rowCount: grunfeldFixture.length,
+        columnCount: 5,
+        columns: ['company', 'year', 'invest', 'mvalue', 'kstock'],
+        previewRows: grunfeldFixture.slice(0, 10),
+        allRows: grunfeldFixture
+      }
+    ]);
+    setIdCol('company');
+    setTimeCol('year');
+    setYCol('invest');
+    setXCols(['mvalue', 'kstock']);
+    setIngestionError(null);
+    runFullEstimation(grunfeldFixture, 'company', 'year', 'invest', ['mvalue', 'kstock']);
+  };
+
+  // Handler Switch Sheet
+  const handleSelectSheet = (sheetName: string, sheetsSource?: SheetData[]) => {
+    setActiveSheet(sheetName);
+    const sheets = sheetsSource || availableSheetsData;
+    const target = sheets.find(s => s.sheetName === sheetName);
+    if (target) {
+      const rows = target.allRows || target.previewRows || [];
+      setDataRows(rows);
+      const cols = target.columns || (rows.length > 0 ? Object.keys(rows[0]) : []);
+      setColumns(cols);
+
+      // Auto-assign candidates
+      if (cols.length >= 4) {
+        setIdCol(cols[0]);
+        setTimeCol(cols[1]);
+        setYCol(cols[2]);
+        setXCols([cols[3]]);
+      }
+    }
+  };
+
+  // Handler Local File Upload (.xlsx, .xls, .csv)
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsLoadingFile(true);
+    setIngestionError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/regression/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      const json = await res.json();
+      if (!json.success) {
+        setIngestionError(json.error || 'Gagal memproses file.');
+        setIsLoadingFile(false);
+        return;
+      }
+
+      setFileName(json.data.originalName || file.name);
+      const names: string[] = json.data.sheetNames || [];
+      setSheetsList(names);
+      const sheets: SheetData[] = json.data.sheets || [];
+      setAvailableSheetsData(sheets);
+
+      if (names.length > 0) {
+        handleSelectSheet(names[0], sheets);
+      }
+    } catch (err: any) {
+      setIngestionError(`Terjadi kesalahan unggah: ${err.message}`);
+    } finally {
+      setIsLoadingFile(false);
+    }
+  };
+
+  // Handler Google Sheets Import
+  const handleGoogleSheetsImport = async () => {
+    if (!googleSheetsUrl.trim()) {
+      setIngestionError('Masukkan tautan Google Sheets yang valid.');
+      return;
+    }
+
+    setIsLoadingFile(true);
+    setIngestionError(null);
+
+    try {
+      const res = await fetch('/api/regression/import-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: googleSheetsUrl.trim() })
+      });
+
+      const json = await res.json();
+      if (!json.success) {
+        setIngestionError(json.error || 'Gagal mengimpor dari Google Sheets.');
+        setIsLoadingFile(false);
+        return;
+      }
+
+      setFileName(json.data.originalName || 'Google_Sheets_Data.xlsx');
+      const names: string[] = json.data.sheetNames || [];
+      setSheetsList(names);
+      const sheets: SheetData[] = json.data.sheets || [];
+      setAvailableSheetsData(sheets);
+
+      if (names.length > 0) {
+        handleSelectSheet(names[0], sheets);
+      }
+    } catch (err: any) {
+      setIngestionError(`Terjadi kesalahan jaringan: ${err.message}`);
+    } finally {
+      setIsLoadingFile(false);
+    }
+  };
+
+  // Toggle X Predictor
+  const handleToggleX = (col: string) => {
+    if (xCols.includes(col)) {
+      if (xCols.length > 1) {
+        setXCols(xCols.filter(c => c !== col));
+      }
+    } else {
+      setXCols([...xCols, col]);
+    }
+  };
+
+  return (
+    <div className="panel-tab-wrapper" style={{ padding: '8px 0 40px 0' }}>
+      {/* 1. Header Banner */}
+      <div
+        style={{
+          background: 'linear-gradient(135deg, var(--moss, #1e3d14) 0%, var(--fern, #2e6922) 100%)',
+          color: '#ffffff',
+          borderRadius: 'var(--radius, 16px)',
+          padding: '24px 32px',
+          marginBottom: '24px',
+          boxShadow: 'var(--shadow-md, 0 8px 30px rgba(30, 61, 20, 0.12))'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+          <div>
+            <span
+              style={{
+                background: 'rgba(255, 255, 255, 0.2)',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 700,
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase'
+              }}
+            >
+              Stata-Grade Econometric Engine
+            </span>
+            <h2 style={{ fontSize: '24px', fontWeight: 800, marginTop: '8px', marginBottom: '6px' }}>
+              Regresi Data Panel (CEM, FEM, REM)
+            </h2>
+            <p style={{ opacity: 0.9, fontSize: '14px', maxWidth: '720px', margin: 0 }}>
+              Modul regresi data panel lengkap bergaya Stata dengan alur 13 langkah: deklarasi struktur (xtset), estimasi OLS & GLS Swamy-Arora, uji pemilihan model bertingkat (Chow, Hausman, LM), uji asumsi klasik, dan koreksi Cluster-Robust SE.
+            </p>
+          </div>
+
+          <button
+            onClick={handleLoadGrunfeldPreset}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: 'var(--dew, #eef7eb)',
+              color: 'var(--moss, #1e3d14)',
+              border: 'none',
+              borderRadius: '10px',
+              padding: '12px 18px',
+              minHeight: '44px',
+              fontWeight: 700,
+              fontSize: '14px',
+              cursor: 'pointer',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
+            }}
+          >
+            <Database size={16} />
+            <span>Pakai Data Contoh: Grunfeld (10 Entitas, 20 Tahun)</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 2. Kartu Ingestion & Impor Data (P1) */}
+      <div
+        style={{
+          background: 'var(--card, #ffffff)',
+          border: '1px solid var(--border, #d2e2ca)',
+          borderRadius: 'var(--radius, 16px)',
+          padding: '24px',
+          marginBottom: '24px',
+          boxShadow: 'var(--shadow, 0 4px 20px rgba(30, 61, 20, 0.08))'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+          <div>
+            <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--bark, #2b221a)', margin: 0 }}>
+              Langkah 1: Impor Data Panel
+            </h3>
+            <p style={{ fontSize: '13px', color: 'var(--stone, #687962)', margin: '4px 0 0 0' }}>
+              Dukungan berkas Excel (.xlsx, .xls), CSV, atau impor langsung dari Google Sheets dengan perlindungan SSRF.
+            </p>
+          </div>
+
+          {/* Source Tabs */}
+          <div style={{ display: 'flex', gap: '8px', background: 'var(--dew, #eef7eb)', padding: '4px', borderRadius: '10px' }}>
+            <button
+              type="button"
+              onClick={() => setSourceType('upload')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 14px',
+                minHeight: '38px',
+                borderRadius: '8px',
+                border: 'none',
+                background: sourceType === 'upload' ? '#ffffff' : 'transparent',
+                color: sourceType === 'upload' ? 'var(--moss, #1e3d14)' : 'var(--stone, #687962)',
+                fontWeight: sourceType === 'upload' ? 700 : 500,
+                fontSize: '13px',
+                cursor: 'pointer',
+                boxShadow: sourceType === 'upload' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none'
+              }}
+            >
+              <UploadCloud size={15} />
+              <span>Unggah File</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSourceType('link')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 14px',
+                minHeight: '38px',
+                borderRadius: '8px',
+                border: 'none',
+                background: sourceType === 'link' ? '#ffffff' : 'transparent',
+                color: sourceType === 'link' ? 'var(--moss, #1e3d14)' : 'var(--stone, #687962)',
+                fontWeight: sourceType === 'link' ? 700 : 500,
+                fontSize: '13px',
+                cursor: 'pointer',
+                boxShadow: sourceType === 'link' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none'
+              }}
+            >
+              <Link2 size={15} />
+              <span>Google Sheets</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleLoadGrunfeldPreset}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 14px',
+                minHeight: '38px',
+                borderRadius: '8px',
+                border: 'none',
+                background: sourceType === 'preset' ? '#ffffff' : 'transparent',
+                color: sourceType === 'preset' ? 'var(--moss, #1e3d14)' : 'var(--stone, #687962)',
+                fontWeight: sourceType === 'preset' ? 700 : 500,
+                fontSize: '13px',
+                cursor: 'pointer',
+                boxShadow: sourceType === 'preset' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none'
+              }}
+            >
+              <Database size={15} />
+              <span>Preset Grunfeld</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Upload Container */}
+        {sourceType === 'upload' && (
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            style={{
+              border: '2px dashed var(--border, #d2e2ca)',
+              borderRadius: '12px',
+              padding: '32px 20px',
+              textAlign: 'center',
+              cursor: 'pointer',
+              background: 'var(--sage, #f7faf5)',
+              transition: 'all 0.2s ease',
+              marginBottom: '16px'
+            }}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={handleFileUpload}
+              style={{ display: 'none' }}
+            />
+            <FileSpreadsheet size={36} color="var(--fern, #2e6922)" style={{ margin: '0 auto 10px auto' }} />
+            <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--bark, #2b221a)' }}>
+              {isLoadingFile ? 'Mengunggah & Memvalidasi Berkas...' : 'Klik untuk Memilih File (.xlsx, .xls, .csv)'}
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--stone, #687962)', marginTop: '4px' }}>
+              Maksimum 10 MB per berkas. Struktur data panel: kolom ID, Tahun/Waktu, Y, dan X.
+            </div>
+          </div>
+        )}
+
+        {/* Google Sheets Link Container */}
+        {sourceType === 'link' && (
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+            <input
+              type="url"
+              placeholder="https://docs.google.com/spreadsheets/d/e/.../pubhtml atau link berbagi Google Sheets"
+              value={googleSheetsUrl}
+              onChange={e => setGoogleSheetsUrl(e.target.value)}
+              style={{
+                flex: 1,
+                minWidth: '280px',
+                padding: '12px 16px',
+                minHeight: '44px',
+                fontSize: '16px',
+                borderRadius: '8px',
+                border: '1px solid var(--border, #d2e2ca)',
+                background: '#ffffff',
+                color: 'var(--bark, #2b221a)'
+              }}
+            />
+            <button
+              type="button"
+              onClick={handleGoogleSheetsImport}
+              disabled={isLoadingFile || !googleSheetsUrl.trim()}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '12px 20px',
+                minHeight: '44px',
+                borderRadius: '8px',
+                border: 'none',
+                background: 'var(--fern, #2e6922)',
+                color: '#ffffff',
+                fontWeight: 700,
+                fontSize: '14px',
+                cursor: isLoadingFile || !googleSheetsUrl.trim() ? 'not-allowed' : 'pointer',
+                opacity: isLoadingFile || !googleSheetsUrl.trim() ? 0.6 : 1
+              }}
+            >
+              {isLoadingFile ? <RefreshCw size={16} className="animate-spin" /> : <Link2 size={16} />}
+              <span>Impor Spreadsheet</span>
+            </button>
+          </div>
+        )}
+
+        {ingestionError && (
+          <div
+            style={{
+              padding: '12px 16px',
+              borderRadius: '8px',
+              background: '#fef2f2',
+              border: '1px solid #f87171',
+              color: '#b91c1c',
+              fontSize: '13px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              marginBottom: '16px'
+            }}
+          >
+            <XCircle size={16} />
+            <span>{ingestionError}</span>
+          </div>
+        )}
+
+        {/* Sheet Selector & Info Bar */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', borderTop: '1px solid var(--border, #d2e2ca)', paddingTop: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--stone, #687962)' }}>
+              Berkas Aktif:
+            </span>
+            <span style={{ fontWeight: 700, color: 'var(--bark, #2b221a)', fontSize: '13px' }}>
+              {fileName}
+            </span>
+
+            {sheetsList.length > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '12px' }}>
+                <span style={{ fontSize: '13px', color: 'var(--stone, #687962)' }}>Sheet:</span>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  {sheetsList.map(name => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => handleSelectSheet(name)}
+                      style={{
+                        padding: '4px 10px',
+                        minHeight: '32px',
+                        borderRadius: '6px',
+                        border: '1px solid',
+                        borderColor: activeSheet === name ? 'var(--fern, #2e6922)' : 'var(--border, #d2e2ca)',
+                        background: activeSheet === name ? 'var(--dew, #eef7eb)' : '#ffffff',
+                        color: activeSheet === name ? 'var(--moss, #1e3d14)' : 'var(--stone, #687962)',
+                        fontWeight: activeSheet === name ? 700 : 500,
+                        fontSize: '12px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ fontSize: '12px', color: 'var(--stone, #687962)' }}>
+            Total {dataRows.length} baris observasi | {columns.length} kolom
+          </div>
+        </div>
+
+        {/* 10-Row Table Preview */}
+        {previewRows.length > 0 && (
+          <div style={{ marginTop: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+              <Table size={14} color="var(--stone, #687962)" />
+              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--stone, #687962)' }}>
+                Pratinjau Data (10 Baris Pertama):
+              </span>
+            </div>
+            <div
+              style={{
+                overflowX: 'auto',
+                border: '1px solid var(--border, #d2e2ca)',
+                borderRadius: '8px',
+                background: '#ffffff'
+              }}
+            >
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ background: 'var(--dew, #eef7eb)', borderBottom: '1px solid var(--border, #d2e2ca)' }}>
+                    <th style={{ padding: '8px 12px', fontWeight: 700, color: 'var(--moss, #1e3d14)' }}>#</th>
+                    {columns.map(c => (
+                      <th key={c} style={{ padding: '8px 12px', fontWeight: 700, color: 'var(--moss, #1e3d14)' }}>
+                        {c}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewRows.map((r, i) => (
+                    <tr
+                      key={i}
+                      style={{
+                        borderBottom: i === previewRows.length - 1 ? 'none' : '1px solid #f0f4ee',
+                        background: i % 2 === 0 ? '#ffffff' : '#fafdf8'
+                      }}
+                    >
+                      <td style={{ padding: '6px 12px', color: 'var(--stone, #687962)' }}>{i + 1}</td>
+                      {columns.map(c => (
+                        <td key={c} style={{ padding: '6px 12px', color: 'var(--bark, #2b221a)' }}>
+                          {String(r[c] ?? '')}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 3. Kartu Pemetaan Variabel & Invariant Validation (P1) */}
+      <div
+        style={{
+          background: 'var(--card, #ffffff)',
+          border: '1px solid var(--border, #d2e2ca)',
+          borderRadius: 'var(--radius, 16px)',
+          padding: '24px',
+          marginBottom: '24px',
+          boxShadow: 'var(--shadow, 0 4px 20px rgba(30, 61, 20, 0.08))'
+        }}
+      >
+        <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '6px', color: 'var(--bark, #2b221a)' }}>
+          Langkah 2: Pemetaan Variabel Data Panel
+        </h3>
+        <p style={{ fontSize: '13px', color: 'var(--stone, #687962)', marginBottom: '20px' }}>
+          Tentukan identitas entitas (perusahaan/negara), penanda waktu, variabel terikat (Y), dan variabel bebas (X).
+        </p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+          {/* Kolom ID */}
+          <div>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--stone, #687962)', marginBottom: '6px' }}>
+              Kolom Entitas (idCol)
+            </label>
+            <select
+              value={idCol}
+              onChange={e => setIdCol(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                minHeight: '44px',
+                fontSize: '16px',
+                borderRadius: '8px',
+                border: '1px solid var(--border, #d2e2ca)',
+                background: '#ffffff',
+                color: 'var(--bark, #2b221a)'
+              }}
+            >
+              {columns.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Kolom Waktu */}
+          <div>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--stone, #687962)', marginBottom: '6px' }}>
+              Kolom Waktu (timeCol)
+            </label>
+            <select
+              value={timeCol}
+              onChange={e => setTimeCol(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                minHeight: '44px',
+                fontSize: '16px',
+                borderRadius: '8px',
+                border: '1px solid var(--border, #d2e2ca)',
+                background: '#ffffff',
+                color: 'var(--bark, #2b221a)'
+              }}
+            >
+              {columns.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Kolom Y */}
+          <div>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--stone, #687962)', marginBottom: '6px' }}>
+              Variabel Dependen (Y)
+            </label>
+            <select
+              value={yCol}
+              onChange={e => setYCol(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                minHeight: '44px',
+                fontSize: '16px',
+                borderRadius: '8px',
+                border: '1px solid var(--border, #d2e2ca)',
+                background: '#ffffff',
+                color: 'var(--bark, #2b221a)'
+              }}
+            >
+              {columns.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Kolom X (Multi-Select Checkboxes) */}
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--stone, #687962)', marginBottom: '8px' }}>
+            Variabel Independen (X) — Minimal 1
+          </label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {columns.filter(c => c !== idCol && c !== timeCol && c !== yCol).map(c => {
+              const isChecked = xCols.includes(c);
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => handleToggleX(c)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 14px',
+                    minHeight: '44px',
+                    borderRadius: '8px',
+                    border: `1px solid ${isChecked ? 'var(--fern, #2e6922)' : 'var(--border, #d2e2ca)'}`,
+                    background: isChecked ? 'var(--dew, #eef7eb)' : '#ffffff',
+                    color: isChecked ? 'var(--moss, #1e3d14)' : 'var(--bark, #2b221a)',
+                    fontSize: '14px',
+                    fontWeight: isChecked ? 700 : 500,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    readOnly
+                    style={{ pointerEvents: 'none' }}
+                  />
+                  <span>{c}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Live Validation Feedback (Invarian I1, I5, I6, I10, I11) */}
+        {mappingValidation.errors.length > 0 && (
+          <div
+            style={{
+              padding: '14px 18px',
+              borderRadius: '10px',
+              background: '#fef2f2',
+              border: '1px solid #f87171',
+              color: '#991b1b',
+              fontSize: '13px',
+              marginBottom: '16px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, marginBottom: '6px' }}>
+              <AlertTriangle size={16} />
+              <span>Pelanggaran Invarian Sistem Ditemukan:</span>
+            </div>
+            <ul style={{ margin: 0, paddingLeft: '20px' }}>
+              {mappingValidation.errors.map((err, idx) => (
+                <li key={idx} style={{ marginTop: '2px' }}>{err}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {mappingValidation.warnings.length > 0 && (
+          <div
+            style={{
+              padding: '12px 16px',
+              borderRadius: '10px',
+              background: '#fffbeb',
+              border: '1px solid #fcd34d',
+              color: '#92400e',
+              fontSize: '13px',
+              marginBottom: '16px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, marginBottom: '4px' }}>
+              <Info size={16} />
+              <span>Catatan Metodologi:</span>
+            </div>
+            <ul style={{ margin: 0, paddingLeft: '20px' }}>
+              {mappingValidation.warnings.map((warn, idx) => (
+                <li key={idx}>{warn}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {mappingValidation.isValid && (
+          <div
+            style={{
+              padding: '12px 16px',
+              borderRadius: '10px',
+              background: '#f0fdf4',
+              border: '1px solid #86efac',
+              color: '#166534',
+              fontSize: '13px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              marginBottom: '16px'
+            }}
+          >
+            <CheckCircle size={16} />
+            <span>
+              Struktur panel valid: N = {mappingValidation.summary.nEntities} entitas, T = {mappingValidation.summary.nPeriods} periode, {mappingValidation.summary.isBalanced ? 'Panel Seimbang (Balanced)' : 'Panel Tidak Seimbang (Unbalanced)'}. Siap diestimasi.
+            </span>
+          </div>
+        )}
+
+        <button
+          onClick={() => runFullEstimation(dataRows, idCol, timeCol, yCol, xCols)}
+          disabled={isCalculating || !mappingValidation.isValid}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: 'var(--fern, #2e6922)',
+            color: '#ffffff',
+            border: 'none',
+            borderRadius: '10px',
+            padding: '12px 24px',
+            minHeight: '44px',
+            fontWeight: 700,
+            fontSize: '15px',
+            cursor: isCalculating || !mappingValidation.isValid ? 'not-allowed' : 'pointer',
+            opacity: isCalculating || !mappingValidation.isValid ? 0.6 : 1
+          }}
+        >
+          <Play size={18} />
+          <span>{isCalculating ? 'Menghitung Model...' : 'Jalankan Regresi Panel (13 Langkah)'}</span>
+        </button>
+
+        {calculationError && (
+          <div
+            style={{
+              marginTop: '16px',
+              padding: '12px 16px',
+              borderRadius: '8px',
+              background: '#fef2f2',
+              border: '1px solid #f87171',
+              color: '#b91c1c',
+              fontSize: '14px'
+            }}
+          >
+            {calculationError}
+          </div>
+        )}
+      </div>
+
+      {/* 4. Tata Letak Utama 2 Kolom (Stepper Kiri + Konsol Kanan) */}
+      <div
+        className="panel-main-layout"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(260px, 300px) 1fr',
+          gap: '24px',
+          alignItems: 'start'
+        }}
+      >
+        {/* Kolom Kiri: Stepper */}
+        <div>
+          <PanelStepper
+            activeStep={activeStep}
+            maxReachedStep={maxReachedStep}
+            onSelectStep={step => setActiveStep(step)}
+          />
+        </div>
+
+        {/* Kolom Kanan: Output Blok Stata Aktif */}
+        <div>
+          {consoleBlocks.length > 0 && consoleBlocks[activeStep] ? (
+            <div>
+              <StataConsoleBlock block={consoleBlocks[activeStep]} />
+
+              {/* Navigasi Bawah */}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  marginTop: '16px'
+                }}
+              >
+                <button
+                  onClick={() => setActiveStep(prev => Math.max(0, prev - 1))}
+                  disabled={activeStep === 0}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '10px 18px',
+                    minHeight: '44px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border, #d2e2ca)',
+                    background: '#ffffff',
+                    color: 'var(--bark, #2b221a)',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: activeStep === 0 ? 'not-allowed' : 'pointer',
+                    opacity: activeStep === 0 ? 0.5 : 1
+                  }}
+                >
+                  <ArrowLeft size={16} />
+                  <span>Langkah Sebelumnya</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveStep(prev => Math.min(12, prev + 1))}
+                  disabled={activeStep === 12}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '10px 18px',
+                    minHeight: '44px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: 'var(--fern, #2e6922)',
+                    color: '#ffffff',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    cursor: activeStep === 12 ? 'not-allowed' : 'pointer',
+                    opacity: activeStep === 12 ? 0.5 : 1
+                  }}
+                >
+                  <span>Langkah Selanjutnya</span>
+                  <ArrowRight size={16} />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div
+              style={{
+                background: '#ffffff',
+                border: '1px solid var(--border, #d2e2ca)',
+                borderRadius: '16px',
+                padding: '40px',
+                textAlign: 'center',
+                color: 'var(--stone, #687962)'
+              }}
+            >
+              Klik tombol &quot;Jalankan Regresi Panel&quot; untuk memulai analisis.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};

@@ -83,3 +83,12 @@ Poin-poin kritis:
 - **Layout Mobile**: Stepper ringkas di bagian atas, pemilih variabel berupa bottom-sheet modal dengan pencarian, tombol aksi ("Lanjut") menempel di bawah dengan `env(safe-area-inset-bottom)`.
 - **Aksesibilitas**: Target sentuh minimal $44 \times 44\text{ px}$, ukuran font input minimal $16\text{ px}$ (mencegah auto-zoom iOS), tidak ada scroll horizontal halaman pada viewport $360\text{px}$, $390\text{px}$, $768\text{px}$, dan $1440\text{px}$.
 - **Keamanan Formula Excel**: Sel yang diawali `=`, `+`, `-`, `@` wajib dinetralkan saat impor/ekspor untuk mencegah *formula injection*.
+
+---
+
+## 6. Aturan Kerja Agen AI
+
+1. **Dokumen Dulu Baru Kode**: Setiap fitur baru, penambahan menu, atau perubahan arsitektur wajib dirancang secara lengkap dalam dokumen spesifikasi (`SOURCE_OF_TRUTH.md`, `ARCHITECTURE_ROADMAP.md`, `TODO_WORKFLOW.md`) sebelum baris kode produk pertama ditulis.
+2. **Commit Atas Nama Pengguna**: Setiap commit git wajib dibuat atas nama pengguna (pemilik repositori) secara langsung, tanpa menambahkan co-author AI (`Co-authored-by: ...`) atau atribusi bot pada commit message.
+3. **Kebenaran Faktual & Anti-Halusinasi**: Dilarang mengarang nama fungsi, nilai kritis statistik, rumus fiktif, atau kutipan dokumentasi. Jika suatu fakta belum diverifikasi langsung dari sumber/lingkungan riil, beri label eksplisit `"belum terverifikasi"`.
+

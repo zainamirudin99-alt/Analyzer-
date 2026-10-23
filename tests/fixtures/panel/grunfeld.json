@@ -1,0 +1,1402 @@
+[
+  {
+    "company": 1,
+    "year": 1935,
+    "invest": 317.6,
+    "mvalue": 3078.5,
+    "kstock": 2.8
+  },
+  {
+    "company": 1,
+    "year": 1936,
+    "invest": 391.8,
+    "mvalue": 4661.7,
+    "kstock": 52.6
+  },
+  {
+    "company": 1,
+    "year": 1937,
+    "invest": 410.6,
+    "mvalue": 5387.1,
+    "kstock": 156.9
+  },
+  {
+    "company": 1,
+    "year": 1938,
+    "invest": 257.7,
+    "mvalue": 2792.2,
+    "kstock": 209.2
+  },
+  {
+    "company": 1,
+    "year": 1939,
+    "invest": 330.8,
+    "mvalue": 4313.2,
+    "kstock": 203.4
+  },
+  {
+    "company": 1,
+    "year": 1940,
+    "invest": 461.2,
+    "mvalue": 4643.9,
+    "kstock": 207.2
+  },
+  {
+    "company": 1,
+    "year": 1941,
+    "invest": 512,
+    "mvalue": 4551.2,
+    "kstock": 255.2
+  },
+  {
+    "company": 1,
+    "year": 1942,
+    "invest": 448,
+    "mvalue": 3244.1,
+    "kstock": 303.7
+  },
+  {
+    "company": 1,
+    "year": 1943,
+    "invest": 499.6,
+    "mvalue": 4053.7,
+    "kstock": 264.1
+  },
+  {
+    "company": 1,
+    "year": 1944,
+    "invest": 547.5,
+    "mvalue": 4379.3,
+    "kstock": 201.6
+  },
+  {
+    "company": 1,
+    "year": 1945,
+    "invest": 561.2,
+    "mvalue": 4840.9,
+    "kstock": 265
+  },
+  {
+    "company": 1,
+    "year": 1946,
+    "invest": 688.1,
+    "mvalue": 4900.9,
+    "kstock": 402.2
+  },
+  {
+    "company": 1,
+    "year": 1947,
+    "invest": 568.9,
+    "mvalue": 3526.5,
+    "kstock": 761.5
+  },
+  {
+    "company": 1,
+    "year": 1948,
+    "invest": 529.2,
+    "mvalue": 3254.7,
+    "kstock": 922.4
+  },
+  {
+    "company": 1,
+    "year": 1949,
+    "invest": 555.1,
+    "mvalue": 3700.2,
+    "kstock": 1020.1
+  },
+  {
+    "company": 1,
+    "year": 1950,
+    "invest": 642.9,
+    "mvalue": 3755.6,
+    "kstock": 1099
+  },
+  {
+    "company": 1,
+    "year": 1951,
+    "invest": 755.9,
+    "mvalue": 4833,
+    "kstock": 1207.7
+  },
+  {
+    "company": 1,
+    "year": 1952,
+    "invest": 891.2,
+    "mvalue": 4924.9,
+    "kstock": 1430.5
+  },
+  {
+    "company": 1,
+    "year": 1953,
+    "invest": 1304.4,
+    "mvalue": 6241.7,
+    "kstock": 1777.3
+  },
+  {
+    "company": 1,
+    "year": 1954,
+    "invest": 1486.7,
+    "mvalue": 5593.6,
+    "kstock": 2226.3
+  },
+  {
+    "company": 2,
+    "year": 1935,
+    "invest": 209.9,
+    "mvalue": 1362.4,
+    "kstock": 53.8
+  },
+  {
+    "company": 2,
+    "year": 1936,
+    "invest": 355.3,
+    "mvalue": 1807.1,
+    "kstock": 50.5
+  },
+  {
+    "company": 2,
+    "year": 1937,
+    "invest": 469.9,
+    "mvalue": 2676.3,
+    "kstock": 118.1
+  },
+  {
+    "company": 2,
+    "year": 1938,
+    "invest": 262.3,
+    "mvalue": 1801.9,
+    "kstock": 260.2
+  },
+  {
+    "company": 2,
+    "year": 1939,
+    "invest": 230.4,
+    "mvalue": 1957.3,
+    "kstock": 312.7
+  },
+  {
+    "company": 2,
+    "year": 1940,
+    "invest": 361.6,
+    "mvalue": 2202.9,
+    "kstock": 254.2
+  },
+  {
+    "company": 2,
+    "year": 1941,
+    "invest": 472.8,
+    "mvalue": 2380.5,
+    "kstock": 261.4
+  },
+  {
+    "company": 2,
+    "year": 1942,
+    "invest": 445.6,
+    "mvalue": 2168.6,
+    "kstock": 298.7
+  },
+  {
+    "company": 2,
+    "year": 1943,
+    "invest": 361.6,
+    "mvalue": 1985.1,
+    "kstock": 301.8
+  },
+  {
+    "company": 2,
+    "year": 1944,
+    "invest": 288.2,
+    "mvalue": 1813.9,
+    "kstock": 279.1
+  },
+  {
+    "company": 2,
+    "year": 1945,
+    "invest": 258.7,
+    "mvalue": 1850.2,
+    "kstock": 213.8
+  },
+  {
+    "company": 2,
+    "year": 1946,
+    "invest": 420.3,
+    "mvalue": 2067.7,
+    "kstock": 132.6
+  },
+  {
+    "company": 2,
+    "year": 1947,
+    "invest": 420.5,
+    "mvalue": 1796.7,
+    "kstock": 264.8
+  },
+  {
+    "company": 2,
+    "year": 1948,
+    "invest": 494.5,
+    "mvalue": 1625.8,
+    "kstock": 306.9
+  },
+  {
+    "company": 2,
+    "year": 1949,
+    "invest": 405.1,
+    "mvalue": 1667,
+    "kstock": 351.1
+  },
+  {
+    "company": 2,
+    "year": 1950,
+    "invest": 418.8,
+    "mvalue": 1677.4,
+    "kstock": 357.8
+  },
+  {
+    "company": 2,
+    "year": 1951,
+    "invest": 588.2,
+    "mvalue": 2289.5,
+    "kstock": 342.1
+  },
+  {
+    "company": 2,
+    "year": 1952,
+    "invest": 645.5,
+    "mvalue": 2159.4,
+    "kstock": 444.2
+  },
+  {
+    "company": 2,
+    "year": 1953,
+    "invest": 641,
+    "mvalue": 2031.3,
+    "kstock": 623.6
+  },
+  {
+    "company": 2,
+    "year": 1954,
+    "invest": 459.3,
+    "mvalue": 2115.5,
+    "kstock": 669.7
+  },
+  {
+    "company": 3,
+    "year": 1935,
+    "invest": 33.1,
+    "mvalue": 1170.6,
+    "kstock": 97.8
+  },
+  {
+    "company": 3,
+    "year": 1936,
+    "invest": 45,
+    "mvalue": 2015.8,
+    "kstock": 104.4
+  },
+  {
+    "company": 3,
+    "year": 1937,
+    "invest": 77.2,
+    "mvalue": 2803.3,
+    "kstock": 118
+  },
+  {
+    "company": 3,
+    "year": 1938,
+    "invest": 44.6,
+    "mvalue": 2039.7,
+    "kstock": 156.2
+  },
+  {
+    "company": 3,
+    "year": 1939,
+    "invest": 48.1,
+    "mvalue": 2256.2,
+    "kstock": 172.6
+  },
+  {
+    "company": 3,
+    "year": 1940,
+    "invest": 74.4,
+    "mvalue": 2132.2,
+    "kstock": 186.6
+  },
+  {
+    "company": 3,
+    "year": 1941,
+    "invest": 113,
+    "mvalue": 1834.1,
+    "kstock": 220.9
+  },
+  {
+    "company": 3,
+    "year": 1942,
+    "invest": 91.9,
+    "mvalue": 1588,
+    "kstock": 287.8
+  },
+  {
+    "company": 3,
+    "year": 1943,
+    "invest": 61.3,
+    "mvalue": 1749.4,
+    "kstock": 319.9
+  },
+  {
+    "company": 3,
+    "year": 1944,
+    "invest": 56.8,
+    "mvalue": 1687.2,
+    "kstock": 321.3
+  },
+  {
+    "company": 3,
+    "year": 1945,
+    "invest": 93.6,
+    "mvalue": 2007.7,
+    "kstock": 319.6
+  },
+  {
+    "company": 3,
+    "year": 1946,
+    "invest": 159.9,
+    "mvalue": 2208.3,
+    "kstock": 346
+  },
+  {
+    "company": 3,
+    "year": 1947,
+    "invest": 147.2,
+    "mvalue": 1656.7,
+    "kstock": 456.4
+  },
+  {
+    "company": 3,
+    "year": 1948,
+    "invest": 146.3,
+    "mvalue": 1604.4,
+    "kstock": 543.4
+  },
+  {
+    "company": 3,
+    "year": 1949,
+    "invest": 98.3,
+    "mvalue": 1431.8,
+    "kstock": 618.3
+  },
+  {
+    "company": 3,
+    "year": 1950,
+    "invest": 93.5,
+    "mvalue": 1610.5,
+    "kstock": 647.4
+  },
+  {
+    "company": 3,
+    "year": 1951,
+    "invest": 135.2,
+    "mvalue": 1819.4,
+    "kstock": 671.3
+  },
+  {
+    "company": 3,
+    "year": 1952,
+    "invest": 157.3,
+    "mvalue": 2079.7,
+    "kstock": 726.1
+  },
+  {
+    "company": 3,
+    "year": 1953,
+    "invest": 179.5,
+    "mvalue": 2371.6,
+    "kstock": 800.3
+  },
+  {
+    "company": 3,
+    "year": 1954,
+    "invest": 189.6,
+    "mvalue": 2759.9,
+    "kstock": 888.9
+  },
+  {
+    "company": 4,
+    "year": 1935,
+    "invest": 40.29,
+    "mvalue": 417.5,
+    "kstock": 10.5
+  },
+  {
+    "company": 4,
+    "year": 1936,
+    "invest": 72.76,
+    "mvalue": 837.8,
+    "kstock": 10.2
+  },
+  {
+    "company": 4,
+    "year": 1937,
+    "invest": 66.26,
+    "mvalue": 883.9,
+    "kstock": 34.7
+  },
+  {
+    "company": 4,
+    "year": 1938,
+    "invest": 51.6,
+    "mvalue": 437.9,
+    "kstock": 51.8
+  },
+  {
+    "company": 4,
+    "year": 1939,
+    "invest": 52.41,
+    "mvalue": 679.7,
+    "kstock": 64.3
+  },
+  {
+    "company": 4,
+    "year": 1940,
+    "invest": 69.41,
+    "mvalue": 727.8,
+    "kstock": 67.1
+  },
+  {
+    "company": 4,
+    "year": 1941,
+    "invest": 68.35,
+    "mvalue": 643.6,
+    "kstock": 75.2
+  },
+  {
+    "company": 4,
+    "year": 1942,
+    "invest": 46.8,
+    "mvalue": 410.9,
+    "kstock": 71.4
+  },
+  {
+    "company": 4,
+    "year": 1943,
+    "invest": 47.4,
+    "mvalue": 588.4,
+    "kstock": 67.1
+  },
+  {
+    "company": 4,
+    "year": 1944,
+    "invest": 59.57,
+    "mvalue": 698.4,
+    "kstock": 60.5
+  },
+  {
+    "company": 4,
+    "year": 1945,
+    "invest": 88.78,
+    "mvalue": 846.4,
+    "kstock": 54.6
+  },
+  {
+    "company": 4,
+    "year": 1946,
+    "invest": 74.12,
+    "mvalue": 893.8,
+    "kstock": 84.8
+  },
+  {
+    "company": 4,
+    "year": 1947,
+    "invest": 62.68,
+    "mvalue": 579,
+    "kstock": 96.8
+  },
+  {
+    "company": 4,
+    "year": 1948,
+    "invest": 89.36,
+    "mvalue": 694.6,
+    "kstock": 110.2
+  },
+  {
+    "company": 4,
+    "year": 1949,
+    "invest": 78.98,
+    "mvalue": 590.3,
+    "kstock": 147.4
+  },
+  {
+    "company": 4,
+    "year": 1950,
+    "invest": 100.66,
+    "mvalue": 693.5,
+    "kstock": 163.2
+  },
+  {
+    "company": 4,
+    "year": 1951,
+    "invest": 160.62,
+    "mvalue": 809,
+    "kstock": 203.5
+  },
+  {
+    "company": 4,
+    "year": 1952,
+    "invest": 145,
+    "mvalue": 727,
+    "kstock": 290.6
+  },
+  {
+    "company": 4,
+    "year": 1953,
+    "invest": 174.93,
+    "mvalue": 1001.5,
+    "kstock": 346.1
+  },
+  {
+    "company": 4,
+    "year": 1954,
+    "invest": 172.49,
+    "mvalue": 703.2,
+    "kstock": 414.9
+  },
+  {
+    "company": 5,
+    "year": 1935,
+    "invest": 39.68,
+    "mvalue": 157.7,
+    "kstock": 183.2
+  },
+  {
+    "company": 5,
+    "year": 1936,
+    "invest": 50.73,
+    "mvalue": 167.9,
+    "kstock": 204
+  },
+  {
+    "company": 5,
+    "year": 1937,
+    "invest": 74.24,
+    "mvalue": 192.9,
+    "kstock": 236
+  },
+  {
+    "company": 5,
+    "year": 1938,
+    "invest": 53.51,
+    "mvalue": 156.7,
+    "kstock": 291.7
+  },
+  {
+    "company": 5,
+    "year": 1939,
+    "invest": 42.65,
+    "mvalue": 191.4,
+    "kstock": 323.1
+  },
+  {
+    "company": 5,
+    "year": 1940,
+    "invest": 46.48,
+    "mvalue": 185.5,
+    "kstock": 344
+  },
+  {
+    "company": 5,
+    "year": 1941,
+    "invest": 61.4,
+    "mvalue": 199.6,
+    "kstock": 367.7
+  },
+  {
+    "company": 5,
+    "year": 1942,
+    "invest": 39.67,
+    "mvalue": 189.5,
+    "kstock": 407.2
+  },
+  {
+    "company": 5,
+    "year": 1943,
+    "invest": 62.24,
+    "mvalue": 151.2,
+    "kstock": 426.6
+  },
+  {
+    "company": 5,
+    "year": 1944,
+    "invest": 52.32,
+    "mvalue": 187.7,
+    "kstock": 470
+  },
+  {
+    "company": 5,
+    "year": 1945,
+    "invest": 63.21,
+    "mvalue": 214.7,
+    "kstock": 499.2
+  },
+  {
+    "company": 5,
+    "year": 1946,
+    "invest": 59.37,
+    "mvalue": 232.9,
+    "kstock": 534.6
+  },
+  {
+    "company": 5,
+    "year": 1947,
+    "invest": 58.02,
+    "mvalue": 249,
+    "kstock": 566.6
+  },
+  {
+    "company": 5,
+    "year": 1948,
+    "invest": 70.34,
+    "mvalue": 224.5,
+    "kstock": 595.3
+  },
+  {
+    "company": 5,
+    "year": 1949,
+    "invest": 67.42,
+    "mvalue": 237.3,
+    "kstock": 631.4
+  },
+  {
+    "company": 5,
+    "year": 1950,
+    "invest": 55.74,
+    "mvalue": 240.1,
+    "kstock": 662.3
+  },
+  {
+    "company": 5,
+    "year": 1951,
+    "invest": 80.3,
+    "mvalue": 327.3,
+    "kstock": 683.9
+  },
+  {
+    "company": 5,
+    "year": 1952,
+    "invest": 85.4,
+    "mvalue": 359.4,
+    "kstock": 729.3
+  },
+  {
+    "company": 5,
+    "year": 1953,
+    "invest": 91.9,
+    "mvalue": 398.4,
+    "kstock": 774.3
+  },
+  {
+    "company": 5,
+    "year": 1954,
+    "invest": 81.43,
+    "mvalue": 365.7,
+    "kstock": 804.9
+  },
+  {
+    "company": 6,
+    "year": 1935,
+    "invest": 20.36,
+    "mvalue": 197,
+    "kstock": 6.5
+  },
+  {
+    "company": 6,
+    "year": 1936,
+    "invest": 25.98,
+    "mvalue": 210.3,
+    "kstock": 15.8
+  },
+  {
+    "company": 6,
+    "year": 1937,
+    "invest": 25.94,
+    "mvalue": 223.1,
+    "kstock": 27.7
+  },
+  {
+    "company": 6,
+    "year": 1938,
+    "invest": 27.53,
+    "mvalue": 216.7,
+    "kstock": 39.2
+  },
+  {
+    "company": 6,
+    "year": 1939,
+    "invest": 24.6,
+    "mvalue": 286.4,
+    "kstock": 48.6
+  },
+  {
+    "company": 6,
+    "year": 1940,
+    "invest": 28.54,
+    "mvalue": 298,
+    "kstock": 52.5
+  },
+  {
+    "company": 6,
+    "year": 1941,
+    "invest": 43.41,
+    "mvalue": 276.9,
+    "kstock": 61.5
+  },
+  {
+    "company": 6,
+    "year": 1942,
+    "invest": 42.81,
+    "mvalue": 272.6,
+    "kstock": 80.5
+  },
+  {
+    "company": 6,
+    "year": 1943,
+    "invest": 27.84,
+    "mvalue": 287.4,
+    "kstock": 94.4
+  },
+  {
+    "company": 6,
+    "year": 1944,
+    "invest": 32.6,
+    "mvalue": 330.3,
+    "kstock": 92.6
+  },
+  {
+    "company": 6,
+    "year": 1945,
+    "invest": 39.03,
+    "mvalue": 324.4,
+    "kstock": 92.3
+  },
+  {
+    "company": 6,
+    "year": 1946,
+    "invest": 50.17,
+    "mvalue": 401.9,
+    "kstock": 94.2
+  },
+  {
+    "company": 6,
+    "year": 1947,
+    "invest": 51.85,
+    "mvalue": 407.4,
+    "kstock": 111.4
+  },
+  {
+    "company": 6,
+    "year": 1948,
+    "invest": 64.03,
+    "mvalue": 409.2,
+    "kstock": 127.4
+  },
+  {
+    "company": 6,
+    "year": 1949,
+    "invest": 68.16,
+    "mvalue": 482.2,
+    "kstock": 149.3
+  },
+  {
+    "company": 6,
+    "year": 1950,
+    "invest": 77.34,
+    "mvalue": 673.8,
+    "kstock": 164.4
+  },
+  {
+    "company": 6,
+    "year": 1951,
+    "invest": 95.3,
+    "mvalue": 676.9,
+    "kstock": 177.2
+  },
+  {
+    "company": 6,
+    "year": 1952,
+    "invest": 99.49,
+    "mvalue": 702,
+    "kstock": 200
+  },
+  {
+    "company": 6,
+    "year": 1953,
+    "invest": 127.52,
+    "mvalue": 793.5,
+    "kstock": 211.5
+  },
+  {
+    "company": 6,
+    "year": 1954,
+    "invest": 135.72,
+    "mvalue": 927.3,
+    "kstock": 238.7
+  },
+  {
+    "company": 7,
+    "year": 1935,
+    "invest": 24.43,
+    "mvalue": 138,
+    "kstock": 100.2
+  },
+  {
+    "company": 7,
+    "year": 1936,
+    "invest": 23.21,
+    "mvalue": 200.1,
+    "kstock": 125
+  },
+  {
+    "company": 7,
+    "year": 1937,
+    "invest": 32.78,
+    "mvalue": 210.1,
+    "kstock": 142.4
+  },
+  {
+    "company": 7,
+    "year": 1938,
+    "invest": 32.54,
+    "mvalue": 161.2,
+    "kstock": 165.1
+  },
+  {
+    "company": 7,
+    "year": 1939,
+    "invest": 26.65,
+    "mvalue": 161.7,
+    "kstock": 194.8
+  },
+  {
+    "company": 7,
+    "year": 1940,
+    "invest": 33.71,
+    "mvalue": 145.1,
+    "kstock": 222.9
+  },
+  {
+    "company": 7,
+    "year": 1941,
+    "invest": 43.5,
+    "mvalue": 110.6,
+    "kstock": 252.1
+  },
+  {
+    "company": 7,
+    "year": 1942,
+    "invest": 34.46,
+    "mvalue": 98.1,
+    "kstock": 276.3
+  },
+  {
+    "company": 7,
+    "year": 1943,
+    "invest": 44.28,
+    "mvalue": 108.8,
+    "kstock": 300.3
+  },
+  {
+    "company": 7,
+    "year": 1944,
+    "invest": 70.8,
+    "mvalue": 118.2,
+    "kstock": 318.2
+  },
+  {
+    "company": 7,
+    "year": 1945,
+    "invest": 44.12,
+    "mvalue": 126.5,
+    "kstock": 336.2
+  },
+  {
+    "company": 7,
+    "year": 1946,
+    "invest": 48.98,
+    "mvalue": 156.7,
+    "kstock": 351.2
+  },
+  {
+    "company": 7,
+    "year": 1947,
+    "invest": 48.51,
+    "mvalue": 119.4,
+    "kstock": 373.6
+  },
+  {
+    "company": 7,
+    "year": 1948,
+    "invest": 50,
+    "mvalue": 129.1,
+    "kstock": 389.4
+  },
+  {
+    "company": 7,
+    "year": 1949,
+    "invest": 50.59,
+    "mvalue": 134.8,
+    "kstock": 406.7
+  },
+  {
+    "company": 7,
+    "year": 1950,
+    "invest": 42.53,
+    "mvalue": 140.8,
+    "kstock": 429.5
+  },
+  {
+    "company": 7,
+    "year": 1951,
+    "invest": 64.77,
+    "mvalue": 179,
+    "kstock": 450.6
+  },
+  {
+    "company": 7,
+    "year": 1952,
+    "invest": 72.68,
+    "mvalue": 178.1,
+    "kstock": 466.9
+  },
+  {
+    "company": 7,
+    "year": 1953,
+    "invest": 73.86,
+    "mvalue": 186.8,
+    "kstock": 486.2
+  },
+  {
+    "company": 7,
+    "year": 1954,
+    "invest": 89.51,
+    "mvalue": 192.7,
+    "kstock": 511.3
+  },
+  {
+    "company": 8,
+    "year": 1935,
+    "invest": 12.93,
+    "mvalue": 191.5,
+    "kstock": 1.8
+  },
+  {
+    "company": 8,
+    "year": 1936,
+    "invest": 25.9,
+    "mvalue": 516,
+    "kstock": 0.8
+  },
+  {
+    "company": 8,
+    "year": 1937,
+    "invest": 35.05,
+    "mvalue": 729,
+    "kstock": 7.4
+  },
+  {
+    "company": 8,
+    "year": 1938,
+    "invest": 22.89,
+    "mvalue": 560.4,
+    "kstock": 18.1
+  },
+  {
+    "company": 8,
+    "year": 1939,
+    "invest": 18.84,
+    "mvalue": 519.9,
+    "kstock": 23.5
+  },
+  {
+    "company": 8,
+    "year": 1940,
+    "invest": 28.57,
+    "mvalue": 628.5,
+    "kstock": 26.5
+  },
+  {
+    "company": 8,
+    "year": 1941,
+    "invest": 48.51,
+    "mvalue": 537.1,
+    "kstock": 36.2
+  },
+  {
+    "company": 8,
+    "year": 1942,
+    "invest": 43.34,
+    "mvalue": 561.2,
+    "kstock": 60.8
+  },
+  {
+    "company": 8,
+    "year": 1943,
+    "invest": 37.02,
+    "mvalue": 617.2,
+    "kstock": 84.4
+  },
+  {
+    "company": 8,
+    "year": 1944,
+    "invest": 37.81,
+    "mvalue": 626.7,
+    "kstock": 91.2
+  },
+  {
+    "company": 8,
+    "year": 1945,
+    "invest": 39.27,
+    "mvalue": 737.2,
+    "kstock": 92.4
+  },
+  {
+    "company": 8,
+    "year": 1946,
+    "invest": 53.46,
+    "mvalue": 760.5,
+    "kstock": 86
+  },
+  {
+    "company": 8,
+    "year": 1947,
+    "invest": 55.56,
+    "mvalue": 581.4,
+    "kstock": 111.1
+  },
+  {
+    "company": 8,
+    "year": 1948,
+    "invest": 49.56,
+    "mvalue": 662.3,
+    "kstock": 130.6
+  },
+  {
+    "company": 8,
+    "year": 1949,
+    "invest": 32.04,
+    "mvalue": 583.8,
+    "kstock": 141.8
+  },
+  {
+    "company": 8,
+    "year": 1950,
+    "invest": 32.24,
+    "mvalue": 635.2,
+    "kstock": 136.7
+  },
+  {
+    "company": 8,
+    "year": 1951,
+    "invest": 54.38,
+    "mvalue": 723.8,
+    "kstock": 129.7
+  },
+  {
+    "company": 8,
+    "year": 1952,
+    "invest": 71.78,
+    "mvalue": 864.1,
+    "kstock": 145.5
+  },
+  {
+    "company": 8,
+    "year": 1953,
+    "invest": 90.08,
+    "mvalue": 1193.5,
+    "kstock": 174.8
+  },
+  {
+    "company": 8,
+    "year": 1954,
+    "invest": 68.6,
+    "mvalue": 1188.9,
+    "kstock": 213.5
+  },
+  {
+    "company": 9,
+    "year": 1935,
+    "invest": 26.63,
+    "mvalue": 290.6,
+    "kstock": 162
+  },
+  {
+    "company": 9,
+    "year": 1936,
+    "invest": 23.39,
+    "mvalue": 291.1,
+    "kstock": 174
+  },
+  {
+    "company": 9,
+    "year": 1937,
+    "invest": 30.65,
+    "mvalue": 335,
+    "kstock": 183
+  },
+  {
+    "company": 9,
+    "year": 1938,
+    "invest": 20.89,
+    "mvalue": 246,
+    "kstock": 198
+  },
+  {
+    "company": 9,
+    "year": 1939,
+    "invest": 28.78,
+    "mvalue": 356.2,
+    "kstock": 208
+  },
+  {
+    "company": 9,
+    "year": 1940,
+    "invest": 26.93,
+    "mvalue": 289.8,
+    "kstock": 223
+  },
+  {
+    "company": 9,
+    "year": 1941,
+    "invest": 32.08,
+    "mvalue": 268.2,
+    "kstock": 234
+  },
+  {
+    "company": 9,
+    "year": 1942,
+    "invest": 32.21,
+    "mvalue": 213.3,
+    "kstock": 248
+  },
+  {
+    "company": 9,
+    "year": 1943,
+    "invest": 35.69,
+    "mvalue": 348.2,
+    "kstock": 274
+  },
+  {
+    "company": 9,
+    "year": 1944,
+    "invest": 62.47,
+    "mvalue": 374.2,
+    "kstock": 282
+  },
+  {
+    "company": 9,
+    "year": 1945,
+    "invest": 52.32,
+    "mvalue": 387.2,
+    "kstock": 316
+  },
+  {
+    "company": 9,
+    "year": 1946,
+    "invest": 56.95,
+    "mvalue": 347.4,
+    "kstock": 302
+  },
+  {
+    "company": 9,
+    "year": 1947,
+    "invest": 54.32,
+    "mvalue": 291.9,
+    "kstock": 333
+  },
+  {
+    "company": 9,
+    "year": 1948,
+    "invest": 40.53,
+    "mvalue": 297.2,
+    "kstock": 359
+  },
+  {
+    "company": 9,
+    "year": 1949,
+    "invest": 32.54,
+    "mvalue": 276.9,
+    "kstock": 370
+  },
+  {
+    "company": 9,
+    "year": 1950,
+    "invest": 43.48,
+    "mvalue": 274.6,
+    "kstock": 376
+  },
+  {
+    "company": 9,
+    "year": 1951,
+    "invest": 56.49,
+    "mvalue": 339.9,
+    "kstock": 391
+  },
+  {
+    "company": 9,
+    "year": 1952,
+    "invest": 65.98,
+    "mvalue": 474.8,
+    "kstock": 414
+  },
+  {
+    "company": 9,
+    "year": 1953,
+    "invest": 66.11,
+    "mvalue": 496,
+    "kstock": 443
+  },
+  {
+    "company": 9,
+    "year": 1954,
+    "invest": 49.34,
+    "mvalue": 474.5,
+    "kstock": 468
+  },
+  {
+    "company": 10,
+    "year": 1935,
+    "invest": 2.54,
+    "mvalue": 70.91,
+    "kstock": 4.5
+  },
+  {
+    "company": 10,
+    "year": 1936,
+    "invest": 2,
+    "mvalue": 87.94,
+    "kstock": 4.71
+  },
+  {
+    "company": 10,
+    "year": 1937,
+    "invest": 2.19,
+    "mvalue": 82.2,
+    "kstock": 4.57
+  },
+  {
+    "company": 10,
+    "year": 1938,
+    "invest": 1.99,
+    "mvalue": 58.72,
+    "kstock": 4.56
+  },
+  {
+    "company": 10,
+    "year": 1939,
+    "invest": 2.03,
+    "mvalue": 80.54,
+    "kstock": 4.38
+  },
+  {
+    "company": 10,
+    "year": 1940,
+    "invest": 1.81,
+    "mvalue": 86.47,
+    "kstock": 4.21
+  },
+  {
+    "company": 10,
+    "year": 1941,
+    "invest": 2.14,
+    "mvalue": 77.68,
+    "kstock": 4.12
+  },
+  {
+    "company": 10,
+    "year": 1942,
+    "invest": 1.86,
+    "mvalue": 62.16,
+    "kstock": 3.83
+  },
+  {
+    "company": 10,
+    "year": 1943,
+    "invest": 0.93,
+    "mvalue": 62.24,
+    "kstock": 3.58
+  },
+  {
+    "company": 10,
+    "year": 1944,
+    "invest": 1.18,
+    "mvalue": 61.82,
+    "kstock": 3.41
+  },
+  {
+    "company": 10,
+    "year": 1945,
+    "invest": 1.36,
+    "mvalue": 65.85,
+    "kstock": 3.31
+  },
+  {
+    "company": 10,
+    "year": 1946,
+    "invest": 2.24,
+    "mvalue": 69.54,
+    "kstock": 3.23
+  },
+  {
+    "company": 10,
+    "year": 1947,
+    "invest": 3.81,
+    "mvalue": 64.97,
+    "kstock": 3.9
+  },
+  {
+    "company": 10,
+    "year": 1948,
+    "invest": 5.66,
+    "mvalue": 68,
+    "kstock": 5.38
+  },
+  {
+    "company": 10,
+    "year": 1949,
+    "invest": 4.21,
+    "mvalue": 71.24,
+    "kstock": 7.39
+  },
+  {
+    "company": 10,
+    "year": 1950,
+    "invest": 3.42,
+    "mvalue": 69.05,
+    "kstock": 8.74
+  },
+  {
+    "company": 10,
+    "year": 1951,
+    "invest": 4.67,
+    "mvalue": 83.04,
+    "kstock": 9.07
+  },
+  {
+    "company": 10,
+    "year": 1952,
+    "invest": 6,
+    "mvalue": 74.42,
+    "kstock": 9.93
+  },
+  {
+    "company": 10,
+    "year": 1953,
+    "invest": 6.53,
+    "mvalue": 63.51,
+    "kstock": 11.68
+  },
+  {
+    "company": 10,
+    "year": 1954,
+    "invest": 5.12,
+    "mvalue": 58.12,
+    "kstock": 14.33
+  }
+]
