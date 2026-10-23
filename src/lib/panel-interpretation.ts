@@ -370,16 +370,46 @@ ${allVars.map(v => `  ${padR(v, 10)} |   ${allVars.map(() => '1.0000 ').join(' '
   const chow = res.selection.chow;
   const hausman = res.selection.hausman;
   const bp = res.selection.breuschPaganLM;
+  const mundlak = res.selection.mundlakCRE;
+
+  const hausmanDiffRows: string[] = [];
+  hausmanDiffRows.push('Test 2: Hausman Specification Test (Fixed vs Random Effects)');
+  hausmanDiffRows.push('                 ---- Coefficients ----');
+  hausmanDiffRows.push('                 (b)          (B)            (b-B)     sqrt(diag(V_b-V_B))');
+  hausmanDiffRows.push('                  fe           re         Difference       S.E.');
+
+  for (const v of xCols) {
+    const b_fe = res.models.fem.coefficients[v]?.b ?? 0;
+    const b_re = res.models.rem.coefficients[v]?.b ?? 0;
+    const diff = b_fe - b_re;
+    const se_fe = res.models.fem.coefficients[v]?.stdError ?? 0;
+    const se_re = res.models.rem.coefficients[v]?.stdError ?? 0;
+    const diffVar = Math.pow(se_fe, 2) - Math.pow(se_re, 2);
+    const seDiff = diffVar > 0 ? Math.sqrt(diffVar) : 0;
+    hausmanDiffRows.push(`      ${padR(v, 8)} |  ${padL(fmt(b_fe, 7), 9)}   ${padL(fmt(b_re, 7), 9)}   ${padL(fmt(diff, 7), 9)}        ${padL(fmt(seDiff, 7), 8)}`);
+  }
+  hausmanDiffRows.push(`  chi2(${hausman.df}) = (b-B)'[(V_b-V_B)^(-1)](b-B) = ${fmt(hausman.chi2, 2)} | Prob > chi2 = ${fmt(hausman.p, 4)}`);
+  hausmanDiffRows.push(`  --> ${hausman.preferred} preferred over ${hausman.preferred === 'FEM' ? 'REM' : 'FEM'} (p ${hausman.p < 0.05 ? '<' : '>='} 0.05)`);
+
+  if (hausman.isNegativeChi2 && mundlak) {
+    hausmanDiffRows.push('');
+    hausmanDiffRows.push('  [Catatan Metodologis: Matriks kovarians selisih tidak positif definit (non-PSD)]');
+    hausmanDiffRows.push(`  Uji Mundlak CRE Auxiliary Regression: Wald chi2(${mundlak.df}) = ${fmt(mundlak.waldChi2, 2)} | Prob > chi2 = ${fmt(mundlak.p, 4)} --> ${mundlak.preferred} preferred`);
+  }
 
   const hausmanTable = [
     'Test 1: Chow Test (Pooled OLS vs Fixed Effects)',
     `  F(${chow.df1}, ${chow.df2}) = ${fmt(chow.stat, 2)} | Prob > F = ${fmt(chow.p, 4)} --> ${chow.preferred} preferred over CEM (p ${chow.p < 0.05 ? '<' : '>='} 0.05)`,
     '',
-    'Test 2: Hausman Specification Test (Fixed vs Random Effects)',
-    `  chi2(${hausman.df}) = ${fmt(hausman.chi2, 2)} | Prob > chi2 = ${fmt(hausman.p, 4)} --> ${hausman.preferred} preferred over ${hausman.preferred === 'FEM' ? 'REM' : 'FEM'} (p ${hausman.p < 0.05 ? '<' : '>='} 0.05)`,
+    ...hausmanDiffRows,
     '',
     'Test 3: Breusch and Pagan Lagrangian Multiplier Test (Pooled OLS vs Random Effects)',
-    `  chibar2(${bp.df}) = ${fmt(bp.chibar2, 2)} | Prob > chibar2 = ${fmt(bp.p, 4)} --> ${bp.preferred} preferred over CEM (p ${bp.p < 0.05 ? '<' : '>='} 0.05)`
+    `  chibar2(${bp.df}) = ${fmt(bp.chibar2, 2)} | Prob > chibar2 = ${fmt(bp.p, 4)} --> ${bp.preferred} preferred over CEM (p ${bp.p < 0.05 ? '<' : '>='} 0.05)`,
+    '',
+    '==============================================================================',
+    `Matriks Keputusan Ekonometrika: Model Terpilih = ${res.selection.selectedModel}`,
+    `Rasional: ${res.selection.selectionReason}`,
+    '=============================================================================='
   ].join('\n');
 
   blocks.push({

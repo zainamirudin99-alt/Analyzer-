@@ -1244,6 +1244,244 @@ export const PanelTab: React.FC = () => {
             </div>
           )}
 
+          {/* Step 9 Model Selection Decision Matrix Card */}
+          {activeStep === 9 && fitResult && (
+            <div
+              style={{
+                marginBottom: '16px',
+                padding: '16px',
+                background: '#ffffff',
+                borderRadius: '12px',
+                border: '1px solid var(--border, #d2e2ca)',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)'
+              }}
+            >
+              <h3
+                style={{
+                  margin: '0 0 12px 0',
+                  fontSize: '15px',
+                  fontWeight: 700,
+                  color: 'var(--bark, #2b221a)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <span>Matriks Keputusan Pemilihan Model</span>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    background: '#e0f2fe',
+                    color: '#0369a1'
+                  }}
+                >
+                  3 Uji Formal
+                </span>
+              </h3>
+
+              {/* Grid 3 Kartu Uji */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                  gap: '12px',
+                  marginBottom: '16px'
+                }}
+              >
+                {/* 1. Uji Chow */}
+                <div
+                  style={{
+                    padding: '12px',
+                    borderRadius: '8px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0'
+                  }}
+                >
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                    1. Uji Chow (F-Test)
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
+                    Pooled OLS vs Fixed Effects
+                  </div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>
+                    F({fitResult.selection.chow.df1}, {fitResult.selection.chow.df2}) = {fitResult.selection.chow.stat}
+                  </div>
+                  <div style={{ fontSize: '12px', color: fitResult.selection.chow.p < 0.05 ? '#16a34a' : '#475569' }}>
+                    Prob &gt; F = {fitResult.selection.chow.p < 0.0001 ? '0.0000' : fitResult.selection.chow.p.toFixed(4)}
+                  </div>
+                  <div style={{ marginTop: '8px' }}>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        background: fitResult.selection.chow.preferred === 'FEM' ? '#dcfce7' : '#f1f5f9',
+                        color: fitResult.selection.chow.preferred === 'FEM' ? '#166534' : '#475569'
+                      }}
+                    >
+                      Pilihan: {fitResult.selection.chow.preferred}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2. Uji Hausman */}
+                <div
+                  style={{
+                    padding: '12px',
+                    borderRadius: '8px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0'
+                  }}
+                >
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                    2. Uji Hausman
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
+                    Fixed vs Random Effects
+                  </div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>
+                    chi2({fitResult.selection.hausman.df}) = {fitResult.selection.hausman.chi2}
+                  </div>
+                  <div style={{ fontSize: '12px', color: fitResult.selection.hausman.p < 0.05 ? '#16a34a' : '#475569' }}>
+                    Prob &gt; chi2 = {fitResult.selection.hausman.p.toFixed(4)}
+                  </div>
+                  <div style={{ marginTop: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        background: fitResult.selection.hausman.preferred === 'REM' ? '#dcfce7' : '#fef3c7',
+                        color: fitResult.selection.hausman.preferred === 'REM' ? '#166534' : '#92400e'
+                      }}
+                    >
+                      Pilihan: {fitResult.selection.hausman.preferred}
+                    </span>
+                    {fitResult.selection.hausman.isNegativeChi2 && (
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          fontWeight: 600,
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          background: '#fee2e2',
+                          color: '#b91c1c'
+                        }}
+                      >
+                        Non-PSD (Mundlak Fallback)
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. Uji Breusch-Pagan LM */}
+                <div
+                  style={{
+                    padding: '12px',
+                    borderRadius: '8px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0'
+                  }}
+                >
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                    3. Uji Breusch-Pagan LM
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
+                    Pooled OLS vs Random Effects
+                  </div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>
+                    chibar2({fitResult.selection.breuschPaganLM.df}) = {fitResult.selection.breuschPaganLM.chibar2}
+                  </div>
+                  <div style={{ fontSize: '12px', color: fitResult.selection.breuschPaganLM.p < 0.05 ? '#16a34a' : '#475569' }}>
+                    Prob &gt; chibar2 = {fitResult.selection.breuschPaganLM.p < 0.0001 ? '0.0000' : fitResult.selection.breuschPaganLM.p.toFixed(4)}
+                  </div>
+                  <div style={{ marginTop: '8px' }}>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        background: fitResult.selection.breuschPaganLM.preferred === 'REM' ? '#dcfce7' : '#f1f5f9',
+                        color: fitResult.selection.breuschPaganLM.preferred === 'REM' ? '#166534' : '#475569'
+                      }}
+                    >
+                      Pilihan: {fitResult.selection.breuschPaganLM.preferred}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Banner Model Rekomendasi Ekonometrika */}
+              <div
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  background: '#ecfdf5',
+                  border: '1px solid #10b981',
+                  color: '#065f46'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <CheckCircle size={18} color="#059669" />
+                  <span style={{ fontSize: '14px', fontWeight: 700 }}>
+                    Model Rekomendasi Ekonometrika: {fitResult.selection.selectedModel} ({fitResult.selection.selectedModel === 'FEM' ? 'Fixed Effects' : fitResult.selection.selectedModel === 'REM' ? 'Random Effects' : 'Pooled OLS'})
+                  </span>
+                </div>
+                <div style={{ fontSize: '13px', lineHeight: 1.5, color: '#047857' }}>
+                  {fitResult.selection.selectionReason}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 10 Selected Model Header Card */}
+          {activeStep === 10 && fitResult && (
+            <div
+              style={{
+                marginBottom: '16px',
+                padding: '14px 18px',
+                background: '#ffffff',
+                borderRadius: '10px',
+                border: '1px solid var(--border, #d2e2ca)',
+                boxShadow: '0 2px 6px rgba(0, 0, 0, 0.03)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '12px'
+              }}
+            >
+              <div>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                  Spesifikasi Model Terpilih:
+                </div>
+                <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--bark, #2b221a)', marginTop: '2px' }}>
+                  Model Terpilih: {fitResult.selection.selectedModel} ({fitResult.selection.selectedModel === 'FEM' ? 'Fixed Effects' : fitResult.selection.selectedModel === 'REM' ? 'Random Effects' : 'Pooled OLS'})
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ textAlign: 'center', padding: '6px 12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b' }}>R² within</div>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>{fitResult.selectedModel.r2.within.toFixed(4)}</div>
+                </div>
+                <div style={{ textAlign: 'center', padding: '6px 12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b' }}>R² between</div>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>{fitResult.selectedModel.r2.between.toFixed(4)}</div>
+                </div>
+                <div style={{ textAlign: 'center', padding: '6px 12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b' }}>R² overall</div>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>{fitResult.selectedModel.r2.overall.toFixed(4)}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {currentBlockToDisplay ? (
             <div>
               <StataConsoleBlock block={currentBlockToDisplay} />
