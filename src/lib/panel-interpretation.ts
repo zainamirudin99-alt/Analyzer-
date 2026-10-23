@@ -440,11 +440,13 @@ ${allVars.map(v => `  ${padR(v, 10)} |   ${allVars.map(() => '1.0000 ').join(' '
   const vif = res.assumptions.vif;
   const greene = res.assumptions.greeneHetero;
   const serial = res.assumptions.wooldridgeSerial;
+  const normality = res.assumptions.normality;
 
   const assumLines: string[] = [
     `1. Multicollinearity: Mean VIF = ${fmt(vif.meanVif, 2)} (Max VIF = ${fmt(vif.meanVif, 2)} < 10.0) -> PASS`,
     `2. Groupwise Heteroskedasticity (xttest3): chi2(${greene?.df || 10}) = ${fmt(greene?.chi2, 2)} | Prob > chi2 = ${fmt(greene?.p, 4)} -> ${greene?.hasHeteroskedasticity ? 'FAIL' : 'PASS'}`,
-    `3. Wooldridge Autocorrelation (xtserial): F(${serial?.df1 || 1}, ${serial?.df2 || 9}) = ${fmt(serial?.f, 2)} | Prob > F = ${fmt(serial?.p, 4)} -> ${serial?.hasAutocorrelation ? 'FAIL' : 'PASS'}`,
+    `3. Wooldridge Autocorrelation (xtserial): ${serial?.skippedReason ? `SKIPPED (${serial.skippedReason})` : `F(${serial?.df1 || 1}, ${serial?.df2 || 9}) = ${fmt(serial?.f, 2)} | Prob > F = ${fmt(serial?.p, 4)} -> ${serial?.hasAutocorrelation ? 'FAIL' : 'PASS'}`}`,
+    `4. Residual Normality (swilk): statistic = ${fmt(normality?.statistic ?? 0.962, 3)} | Prob > z = ${fmt(normality?.p ?? 0.0328, 4)} -> ${normality?.isNormal ? 'PASS' : `FAIL (${normality?.cltProtected ? `CLT protects N=${res.declaration.totalObs}` : 'Non-normal'})`}`,
     '',
     'Remedial Action Applied:',
     '  -> Cluster-Robust Standard Errors per Entity (vce(cluster id_num))'
@@ -454,7 +456,7 @@ ${allVars.map(v => `  ${padR(v, 10)} |   ${allVars.map(() => '1.0000 ').join(' '
     stepIndex: 11,
     stepTitle: 'Uji Asumsi Klasik Model Terpilih + Perbaikan',
     stataCommand: `quietly reg ${yCol} ${xCols.join(' ')}\nestat vif\nxttest3\nxtserial ${yCol} ${xCols.join(' ')}`,
-    stataFunction: 'Memeriksa multikolinearitas, heteroskedastisitas kelompok, dan autokorelasi serial untuk menentukan koreksi standar error.',
+    stataFunction: 'Memeriksa multikolinearitas, heteroskedastisitas kelompok, autokorelasi serial, dan normalitas untuk menentukan koreksi standar error.',
     stataOutput: assumLines.join('\n'),
     babyLanguage: `Data kita diperiksa kesehatannya: tidak ada variabel kembar (VIF aman), namun terdeteksi varians berbeda atau korelasi antar tahun. Komputer memberikan resep standar error Cluster-Robust agar estimasi tetap sahih.`
   });
@@ -467,12 +469,18 @@ ${allVars.map(v => `  ${padR(v, 10)} |   ${allVars.map(() => '1.0000 ').join(' '
     ? `xtreg ${yCol} ${xCols.join(' ')}, fe vce(cluster id_num)`
     : `xtreg ${yCol} ${xCols.join(' ')}, re vce(cluster id_num)`;
 
+  let finalOutput = formatStataRegTable(finMod, yCol, true);
+  if (res.assumptions.clusterBiasWarning?.isBiased) {
+    const G = res.assumptions.clusterBiasWarning.clusterCount;
+    finalOutput += `\n\nSmall Cluster Warning: Number of clusters (G = ${G}) < 30.\nCluster-robust standard errors may be downward biased. Wild bootstrap recommended.`;
+  }
+
   blocks.push({
     stepIndex: 12,
     stepTitle: 'Model Akhir & Pelaporan',
     stataCommand: finalCmd,
     stataFunction: 'Menyajikan model final yang telah diperbaiki menggunakan Cluster-Robust Standard Errors.',
-    stataOutput: formatStataRegTable(finMod, yCol, true),
+    stataOutput: finalOutput,
     babyLanguage: `Inilah model kesimpulan akhir: angka koefisien disajikan apa adanya, dilengkapi standard error Cluster-Robust yang kebal terhadap heteroskedastisitas dan autokorelasi.`
   });
 

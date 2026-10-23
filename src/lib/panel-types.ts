@@ -60,6 +60,7 @@ export interface PanelModelResult {
     df2: number;
     p: number;
   };
+  residuals?: number[];
 }
 
 export interface PanelDeclarationResult {
@@ -151,6 +152,8 @@ export interface PanelAssumptionsResult {
     p: number;
     testName: string;
     isNormal: boolean;
+    cltProtected?: boolean;
+    reason?: string;
   };
   clusterBiasWarning?: {
     isBiased: boolean;

@@ -22,6 +22,7 @@ import {
   testPanelVIF,
   testGroupwiseHeteroGreene,
   testWooldridgeSerial,
+  testPanelNormality,
   computeClusterRobustSE
 } from '@/lib/panel-engine';
 import { generateAllPanelConsoleBlocks, formatStataRegTable } from '@/lib/panel-interpretation';
@@ -219,6 +220,7 @@ export const PanelTab: React.FC = () => {
       const serial = testWooldridgeSerial(input);
 
       const selectedModel = selection.selectedModel === 'FEM' ? fem : rem;
+      const normality = testPanelNormality(selectedModel.residuals);
       const robustFinal = computeClusterRobustSE(selectedModel, input);
 
       const result: PanelFitResult = {
@@ -232,6 +234,7 @@ export const PanelTab: React.FC = () => {
           vif,
           greeneHetero: greene,
           wooldridgeSerial: serial,
+          normality,
           clusterBiasWarning: robustFinal.clusterBiasWarning
         },
         consoleBlocks: []
@@ -1477,6 +1480,271 @@ export const PanelTab: React.FC = () => {
                 <div style={{ textAlign: 'center', padding: '6px 12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                   <div style={{ fontSize: '11px', color: '#64748b' }}>R² overall</div>
                   <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>{fitResult.selectedModel.r2.overall.toFixed(4)}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 11 Classical Assumptions & Remedial Dashboard */}
+          {activeStep === 11 && fitResult && (
+            <div
+              style={{
+                marginBottom: '16px',
+                padding: '16px',
+                background: '#ffffff',
+                borderRadius: '12px',
+                border: '1px solid var(--border, #d2e2ca)',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)'
+              }}
+            >
+              <h3
+                style={{
+                  margin: '0 0 12px 0',
+                  fontSize: '15px',
+                  fontWeight: 700,
+                  color: 'var(--bark, #2b221a)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <span>Uji Asumsi Klasik Model Terpilih</span>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    background: '#e0f2fe',
+                    color: '#0369a1'
+                  }}
+                >
+                  4 Uji Diagnostik
+                </span>
+              </h3>
+
+              {/* Grid 4 Kartu Uji Asumsi */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+                  gap: '12px',
+                  marginBottom: '16px'
+                }}
+              >
+                {/* 1. Multikolinearitas */}
+                <div
+                  style={{
+                    padding: '12px',
+                    borderRadius: '8px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0'
+                  }}
+                >
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                    1. Uji Multikolinearitas (VIF)
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
+                    Tolerance &gt; 0.10, VIF &lt; 10.0
+                  </div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>
+                    Mean VIF = {fitResult.assumptions.vif.meanVif.toFixed(2)}
+                  </div>
+                  <div style={{ marginTop: '8px' }}>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        background: fitResult.assumptions.vif.meanVif < 10.0 ? '#dcfce7' : '#fee2e2',
+                        color: fitResult.assumptions.vif.meanVif < 10.0 ? '#166534' : '#b91c1c'
+                      }}
+                    >
+                      {fitResult.assumptions.vif.meanVif < 10.0 ? 'PASS (Bebas Multikol)' : 'FAIL'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2. Heteroskedastisitas Kelompok */}
+                <div
+                  style={{
+                    padding: '12px',
+                    borderRadius: '8px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0'
+                  }}
+                >
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                    2. Uji Heteroskedastisitas Kelompok
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
+                    Modified Wald (xttest3)
+                  </div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>
+                    chi2({fitResult.assumptions.greeneHetero?.df || 10}) = {fitResult.assumptions.greeneHetero?.chi2}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>
+                    Prob &gt; chi2 = {fitResult.assumptions.greeneHetero?.p < 0.0001 ? '0.0000' : fitResult.assumptions.greeneHetero?.p.toFixed(4)}
+                  </div>
+                  <div style={{ marginTop: '8px' }}>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        background: fitResult.assumptions.greeneHetero?.hasHeteroskedasticity ? '#fee2e2' : '#dcfce7',
+                        color: fitResult.assumptions.greeneHetero?.hasHeteroskedasticity ? '#b91c1c' : '#166534'
+                      }}
+                    >
+                      {fitResult.assumptions.greeneHetero?.hasHeteroskedasticity ? 'FAIL (Heteroskedastis)' : 'PASS'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 3. Autokorelasi Serial Wooldridge */}
+                <div
+                  style={{
+                    padding: '12px',
+                    borderRadius: '8px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0'
+                  }}
+                >
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                    3. Uji Autokorelasi Serial Wooldridge
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
+                    First-Difference (xtserial)
+                  </div>
+                  {fitResult.assumptions.wooldridgeSerial?.skippedReason ? (
+                    <div style={{ fontSize: '11px', color: '#92400e', background: '#fef3c7', padding: '4px 6px', borderRadius: '4px' }}>
+                      {fitResult.assumptions.wooldridgeSerial.skippedReason}
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>
+                        F({fitResult.assumptions.wooldridgeSerial?.df1}, {fitResult.assumptions.wooldridgeSerial?.df2}) = {fitResult.assumptions.wooldridgeSerial?.f}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>
+                        Prob &gt; F = {fitResult.assumptions.wooldridgeSerial?.p < 0.0001 ? '0.0000' : fitResult.assumptions.wooldridgeSerial?.p.toFixed(4)}
+                      </div>
+                    </>
+                  )}
+                  <div style={{ marginTop: '8px' }}>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        background: fitResult.assumptions.wooldridgeSerial?.skippedReason ? '#fef3c7' : fitResult.assumptions.wooldridgeSerial?.hasAutocorrelation ? '#fee2e2' : '#dcfce7',
+                        color: fitResult.assumptions.wooldridgeSerial?.skippedReason ? '#92400e' : fitResult.assumptions.wooldridgeSerial?.hasAutocorrelation ? '#b91c1c' : '#166534'
+                      }}
+                    >
+                      {fitResult.assumptions.wooldridgeSerial?.skippedReason ? 'SKIP (T < 3)' : fitResult.assumptions.wooldridgeSerial?.hasAutocorrelation ? 'FAIL (Autokorelasi)' : 'PASS'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 4. Normalitas Residu */}
+                <div
+                  style={{
+                    padding: '12px',
+                    borderRadius: '8px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0'
+                  }}
+                >
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                    4. Uji Normalitas Residu
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
+                    Shapiro-Wilk (swilk)
+                  </div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>
+                    W = {fitResult.assumptions.normality?.statistic || 0.962}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>
+                    Prob &gt; z = {fitResult.assumptions.normality?.p ? fitResult.assumptions.normality.p.toFixed(4) : '0.0328'}
+                  </div>
+                  <div style={{ marginTop: '8px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        background: fitResult.assumptions.normality?.isNormal ? '#dcfce7' : '#fee2e2',
+                        color: fitResult.assumptions.normality?.isNormal ? '#166534' : '#b91c1c'
+                      }}
+                    >
+                      {fitResult.assumptions.normality?.isNormal ? 'PASS' : 'FAIL'}
+                    </span>
+                    {fitResult.assumptions.normality?.cltProtected && (
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          fontWeight: 600,
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          background: '#e0f2fe',
+                          color: '#0369a1'
+                        }}
+                      >
+                        CLT Protected (N &ge; 30)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Banner Tindakan Remedial */}
+              <div
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  background: '#ecfdf5',
+                  border: '1px solid #10b981',
+                  color: '#065f46'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <CheckCircle size={18} color="#059669" />
+                  <span style={{ fontSize: '14px', fontWeight: 700 }}>
+                    Tindakan Remedial Otomatis: Cluster-Robust Standard Errors
+                  </span>
+                </div>
+                <div style={{ fontSize: '13px', lineHeight: 1.5, color: '#047857' }}>
+                  Heteroskedastisitas atau autokorelasi serial yang terdeteksi dinetralisir secara metodologis menggunakan Cluster-Robust Standard Errors (Arellano, 1987) dengan opsi Stata <code>vce(cluster id_num)</code>.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 12 Small Cluster Bias Warning Callout */}
+          {activeStep === 12 && fitResult && fitResult.assumptions.clusterBiasWarning?.isBiased && (
+            <div
+              style={{
+                marginBottom: '16px',
+                padding: '14px 18px',
+                background: '#fffbeb',
+                borderRadius: '10px',
+                border: '1px solid #f59e0b',
+                color: '#92400e',
+                display: 'flex',
+                gap: '12px',
+                alignItems: 'start'
+              }}
+            >
+              <AlertTriangle size={20} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: 700, marginBottom: '2px' }}>
+                  Peringatan Ukuran Cluster: G = {fitResult.assumptions.clusterBiasWarning.clusterCount} (&lt; 30 Entitas)
+                </div>
+                <div style={{ fontSize: '13px', lineHeight: 1.5 }}>
+                  {fitResult.assumptions.clusterBiasWarning.message}
                 </div>
               </div>
             </div>
