@@ -9,6 +9,8 @@ import {
 import {
   validatePanelStructure,
   validatePanelMappingConfig,
+  inspectAndCleanPanelData,
+  DataCleaningReport,
   fitPanelCEM,
   fitPanelFEM,
   fitPanelREM,
@@ -38,7 +40,11 @@ import {
   XCircle,
   Info,
   RefreshCw,
-  Table
+  Table,
+  Copy,
+  Check,
+  Terminal,
+  ShieldCheck
 } from 'lucide-react';
 import grunfeldFixture from '../../tests/fixtures/panel/grunfeld.json';
 
@@ -83,6 +89,10 @@ export const PanelTab: React.FC = () => {
   const [yCol, setYCol] = useState<string>('invest');
   const [xCols, setXCols] = useState<string[]>(['mvalue', 'kstock']);
 
+  // Data Cleaning & Stata Log State (P2)
+  const [isCopiedLog, setIsCopiedLog] = useState<boolean>(false);
+  const [isStataLogOpen, setIsStataLogOpen] = useState<boolean>(true);
+
   // Stepper & Execution State
   const [activeStep, setActiveStep] = useState<number>(0);
   const [maxReachedStep, setMaxReachedStep] = useState<number>(12);
@@ -110,6 +120,40 @@ export const PanelTab: React.FC = () => {
     }
     return validatePanelMappingConfig(dataRows, idCol, timeCol, yCol, xCols);
   }, [dataRows, idCol, timeCol, yCol, xCols]);
+
+  // Data Cleaning & Inspection Report (P2)
+  const cleaningReport: DataCleaningReport = useMemo(() => {
+    if (!dataRows || dataRows.length === 0 || !idCol || !timeCol || !yCol || xCols.length === 0) {
+      return {
+        totalRawObs: dataRows?.length || 0,
+        validObs: 0,
+        droppedObs: 0,
+        duplicateCount: 0,
+        missingSummary: {},
+        timeInvariantVars: [],
+        entityEncoding: {
+          isEncoded: false,
+          originalCol: idCol,
+          encodedCol: idCol,
+          labelMap: {}
+        },
+        cleanedRows: dataRows || [],
+        stataDoLog: ''
+      };
+    }
+    return inspectAndCleanPanelData(dataRows, idCol, timeCol, yCol, xCols, {
+      dropDuplicates: true,
+      handleMissing: 'listwise'
+    });
+  }, [dataRows, idCol, timeCol, yCol, xCols]);
+
+  // Handle Copy Stata .do Log to Clipboard
+  const handleCopyStataLog = () => {
+    if (!cleaningReport.stataDoLog) return;
+    navigator.clipboard.writeText(cleaningReport.stataDoLog);
+    setIsCopiedLog(true);
+    setTimeout(() => setIsCopiedLog(false), 2500);
+  };
 
   // Jalankan estimasi lengkap
   const runFullEstimation = (
@@ -676,7 +720,7 @@ export const PanelTab: React.FC = () => {
         )}
       </div>
 
-      {/* 3. Kartu Pemetaan Variabel & Invariant Validation (P1) */}
+      {/* 3. Kartu Pemetaan Variabel (P1) */}
       <div
         style={{
           background: 'var(--card, #ffffff)',
@@ -772,7 +816,7 @@ export const PanelTab: React.FC = () => {
         </div>
 
         {/* Kolom X (Multi-Select Checkboxes) */}
-        <div style={{ marginBottom: '20px' }}>
+        <div style={{ marginBottom: '16px' }}>
           <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--stone, #687962)', marginBottom: '8px' }}>
             Variabel Independen (X) — Minimal 1
           </label>
@@ -872,39 +916,194 @@ export const PanelTab: React.FC = () => {
               fontSize: '13px',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
-              marginBottom: '16px'
+              gap: '8px'
             }}
           >
             <CheckCircle size={16} />
             <span>
-              Struktur panel valid: N = {mappingValidation.summary.nEntities} entitas, T = {mappingValidation.summary.nPeriods} periode, {mappingValidation.summary.isBalanced ? 'Panel Seimbang (Balanced)' : 'Panel Tidak Seimbang (Unbalanced)'}. Siap diestimasi.
+              Struktur panel valid: N = {mappingValidation.summary.nEntities} entitas, T = {mappingValidation.summary.nPeriods} periode, {mappingValidation.summary.isBalanced ? 'Panel Seimbang (Balanced)' : 'Panel Tidak Seimbang (Unbalanced)'}.
             </span>
           </div>
         )}
+      </div>
 
-        <button
-          onClick={() => runFullEstimation(dataRows, idCol, timeCol, yCol, xCols)}
-          disabled={isCalculating || !mappingValidation.isValid}
+      {/* 4. Kartu Cek & Pembersihan Data + Log Transformasi Kode Stata (P2) */}
+      <div
+        style={{
+          background: 'var(--card, #ffffff)',
+          border: '1px solid var(--border, #d2e2ca)',
+          borderRadius: 'var(--radius, 16px)',
+          padding: '24px',
+          marginBottom: '24px',
+          boxShadow: 'var(--shadow, 0 4px 20px rgba(30, 61, 20, 0.08))'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+          <div>
+            <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--bark, #2b221a)', margin: 0 }}>
+              Langkah 3: Cek & Pembersihan Data serta Log Sintaks Stata
+            </h3>
+            <p style={{ fontSize: '13px', color: 'var(--stone, #687962)', margin: '4px 0 0 0' }}>
+              Pembersihan otomatis duplikasi, eliminasi nilai kosong (listwise deletion), deteksi variabel time-invariant (Invarian I12), dan pembuatan berkas script .do Stata.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleCopyStataLog}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 18px',
+              minHeight: '44px',
+              borderRadius: '8px',
+              border: '1px solid var(--border, #d2e2ca)',
+              background: isCopiedLog ? 'var(--dew, #eef7eb)' : '#ffffff',
+              color: isCopiedLog ? 'var(--moss, #1e3d14)' : 'var(--bark, #2b221a)',
+              fontWeight: 700,
+              fontSize: '13px',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            {isCopiedLog ? <Check size={16} color="var(--fern, #2e6922)" /> : <Copy size={16} />}
+            <span>{isCopiedLog ? 'Tersalin ke Clipboard!' : 'Salin Kode Stata (.do)'}</span>
+          </button>
+        </div>
+
+        {/* 4 Badges of Inspection */}
+        <div
           style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            background: 'var(--fern, #2e6922)',
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: '10px',
-            padding: '12px 24px',
-            minHeight: '44px',
-            fontWeight: 700,
-            fontSize: '15px',
-            cursor: isCalculating || !mappingValidation.isValid ? 'not-allowed' : 'pointer',
-            opacity: isCalculating || !mappingValidation.isValid ? 0.6 : 1
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '12px',
+            marginBottom: '20px'
           }}
         >
-          <Play size={18} />
-          <span>{isCalculating ? 'Menghitung Model...' : 'Jalankan Regresi Panel (13 Langkah)'}</span>
-        </button>
+          {/* Badge 1: Observasi Bersih */}
+          <div style={{ background: 'var(--sage, #f7faf5)', border: '1px solid var(--border, #d2e2ca)', borderRadius: '10px', padding: '14px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--stone, #687962)' }}>Kualitas Observasi</div>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--moss, #1e3d14)', marginTop: '4px' }}>
+              {cleaningReport.validObs} / {cleaningReport.totalRawObs}
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--stone, #687962)', marginTop: '2px' }}>
+              {cleaningReport.droppedObs === 0 ? 'Lengkap (0 baris dibuang)' : `${cleaningReport.droppedObs} baris dibuang (Missing/Dup)`}
+            </div>
+          </div>
+
+          {/* Badge 2: Duplikasi */}
+          <div style={{ background: 'var(--sage, #f7faf5)', border: '1px solid var(--border, #d2e2ca)', borderRadius: '10px', padding: '14px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--stone, #687962)' }}>Duplikasi ({idCol}, {timeCol})</div>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: cleaningReport.duplicateCount === 0 ? 'var(--moss, #1e3d14)' : '#dc2626', marginTop: '4px' }}>
+              {cleaningReport.duplicateCount} Observasi
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--stone, #687962)', marginTop: '2px' }}>
+              {cleaningReport.duplicateCount === 0 ? 'Unik (Invarian I10 Terpenuhi)' : 'Telah dieleminasi via duplicates drop'}
+            </div>
+          </div>
+
+          {/* Badge 3: Encoding Entitas */}
+          <div style={{ background: 'var(--sage, #f7faf5)', border: '1px solid var(--border, #d2e2ca)', borderRadius: '10px', padding: '14px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--stone, #687962)' }}>Encoding Entitas Stata</div>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--moss, #1e3d14)', marginTop: '4px' }}>
+              {cleaningReport.entityEncoding.isEncoded ? 'String -> id_num' : 'Numerik Asli'}
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--stone, #687962)', marginTop: '2px' }}>
+              {cleaningReport.entityEncoding.isEncoded ? 'Diberi nomor urut 1 s/d N' : 'Siap diproses xtset'}
+            </div>
+          </div>
+
+          {/* Badge 4: Time Invariant Check (I12) */}
+          <div style={{ background: 'var(--sage, #f7faf5)', border: '1px solid var(--border, #d2e2ca)', borderRadius: '10px', padding: '14px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--stone, #687962)' }}>Invarian I12 (Time-Invariant)</div>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: cleaningReport.timeInvariantVars.length === 0 ? 'var(--moss, #1e3d14)' : '#d97706', marginTop: '4px' }}>
+              {cleaningReport.timeInvariantVars.length === 0 ? 'Aman (Variatif)' : `${cleaningReport.timeInvariantVars.length} Terdeteksi`}
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--stone, #687962)', marginTop: '2px' }}>
+              {cleaningReport.timeInvariantVars.length === 0 ? 'Semua X memiliki variasi within' : `Drop di FE: ${cleaningReport.timeInvariantVars.join(', ')}`}
+            </div>
+          </div>
+        </div>
+
+        {/* Stata Do Script Container */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Terminal size={15} color="var(--stone, #687962)" />
+              <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--bark, #2b221a)' }}>
+                Log Transformasi Kode Stata Reproducible (.do)
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsStataLogOpen(prev => !prev)}
+              style={{
+                background: 'none',
+                border: 'none',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: 'var(--fern, #2e6922)',
+                cursor: 'pointer'
+              }}
+            >
+              {isStataLogOpen ? 'Sembunyikan Script' : 'Tampilkan Script'}
+            </button>
+          </div>
+
+          {isStataLogOpen && (
+            <div
+              style={{
+                background: '#1e293b',
+                color: '#e2e8f0',
+                borderRadius: '10px',
+                padding: '16px 20px',
+                fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+                fontSize: '12px',
+                lineHeight: 1.5,
+                maxHeight: '260px',
+                overflowY: 'auto',
+                border: '1px solid #334155'
+              }}
+            >
+              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {cleaningReport.stataDoLog}
+              </pre>
+            </div>
+          )}
+        </div>
+
+        {/* Action Button */}
+        <div style={{ marginTop: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--moss, #1e3d14)', fontSize: '13px', fontWeight: 600 }}>
+            <ShieldCheck size={18} color="var(--fern, #2e6922)" />
+            <span>Data siap dianalisis: {cleaningReport.validObs} observasi valid, bebas duplikasi, siap untuk alur 13 langkah Stata.</span>
+          </div>
+
+          <button
+            onClick={() => runFullEstimation(cleaningReport.cleanedRows, idCol, timeCol, yCol, xCols)}
+            disabled={isCalculating || !mappingValidation.isValid || cleaningReport.validObs < 4}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: 'var(--fern, #2e6922)',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '10px',
+              padding: '12px 24px',
+              minHeight: '44px',
+              fontWeight: 700,
+              fontSize: '15px',
+              cursor: isCalculating || !mappingValidation.isValid ? 'not-allowed' : 'pointer',
+              opacity: isCalculating || !mappingValidation.isValid ? 0.6 : 1,
+              boxShadow: '0 4px 14px rgba(46, 105, 34, 0.25)'
+            }}
+          >
+            <Play size={18} />
+            <span>{isCalculating ? 'Menghitung Model...' : 'Jalankan Regresi Panel (13 Langkah)'}</span>
+          </button>
+        </div>
 
         {calculationError && (
           <div
@@ -923,7 +1122,7 @@ export const PanelTab: React.FC = () => {
         )}
       </div>
 
-      {/* 4. Tata Letak Utama 2 Kolom (Stepper Kiri + Konsol Kanan) */}
+      {/* 5. Tata Letak Utama 2 Kolom (Stepper Kiri + Konsol Kanan) */}
       <div
         className="panel-main-layout"
         style={{

@@ -242,6 +242,207 @@ export function validatePanelMappingConfig(
   };
 }
 
+export interface DataCleaningOptions {
+  dropDuplicates?: boolean;
+  handleMissing?: 'listwise' | 'none';
+}
+
+export interface DataCleaningReport {
+  totalRawObs: number;
+  validObs: number;
+  droppedObs: number;
+  duplicateCount: number;
+  missingSummary: Record<string, number>;
+  timeInvariantVars: string[];
+  entityEncoding: {
+    isEncoded: boolean;
+    originalCol: string;
+    encodedCol: string;
+    labelMap: Record<string, number>;
+  };
+  cleanedRows: Record<string, any>[];
+  stataDoLog: string;
+}
+
+/**
+ * Cek dan pembersihan data panel (Fase P2)
+ * Meliputi deteksi duplikasi, eliminasi missing values (listwise), pengkodean entitas string,
+ * deteksi variabel time-invariant (Invarian I12), dan pembuatan log sintaks Stata .do.
+ */
+export function inspectAndCleanPanelData(
+  rows: Record<string, any>[],
+  idCol: string,
+  timeCol: string,
+  yCol: string,
+  xCols: string[],
+  options?: DataCleaningOptions
+): DataCleaningReport {
+  const totalRawObs = rows.length;
+  const missingSummary: Record<string, number> = {};
+  [yCol, ...xCols].forEach(col => {
+    missingSummary[col] = 0;
+  });
+
+  // 1. Deteksi duplikasi (id, time)
+  const seenKeys = new Set<string>();
+  let duplicateCount = 0;
+  const nonDuplicateRows: Record<string, any>[] = [];
+
+  for (const r of rows) {
+    const idVal = String(r[idCol] ?? '').trim();
+    const timeVal = String(r[timeCol] ?? '').trim();
+    const key = `${idVal}___${timeVal}`;
+
+    if (seenKeys.has(key)) {
+      duplicateCount++;
+      if (!options?.dropDuplicates) {
+        nonDuplicateRows.push(r);
+      }
+    } else {
+      seenKeys.add(key);
+      nonDuplicateRows.push(r);
+    }
+  }
+
+  // 2. Deteksi data hilang (missing values) & listwise deletion
+  const validRows: Record<string, any>[] = [];
+  const requiredCols = [idCol, timeCol, yCol, ...xCols];
+
+  for (const r of nonDuplicateRows) {
+    let hasMissing = false;
+    for (const col of requiredCols) {
+      const val = r[col];
+      if (val === null || val === undefined || val === '' || (typeof val === 'number' && isNaN(val))) {
+        hasMissing = true;
+        if (missingSummary[col] !== undefined) {
+          missingSummary[col]++;
+        }
+      }
+    }
+
+    if (!hasMissing || options?.handleMissing === 'none') {
+      validRows.push(r);
+    }
+  }
+
+  const validObs = validRows.length;
+  const droppedObs = totalRawObs - validObs;
+
+  // 3. Pengkodean entitas jika string (encode company, generate(id_num))
+  const uniqueEntities = Array.from(new Set(validRows.map(r => String(r[idCol] ?? '').trim()))).filter(Boolean);
+  const isStringEntity = uniqueEntities.some(e => isNaN(Number(e)));
+  const labelMap: Record<string, number> = {};
+  uniqueEntities.forEach((ent, idx) => {
+    labelMap[ent] = idx + 1;
+  });
+
+  const cleanedRows = validRows.map(r => {
+    const originalId = String(r[idCol] ?? '').trim();
+    const encodedId = isStringEntity ? labelMap[originalId] : Number(originalId);
+    return {
+      ...r,
+      _id_num: encodedId
+    };
+  });
+
+  // 4. Invarian I12: Deteksi variabel time-invariant
+  const timeInvariantVars: string[] = [];
+  for (const col of xCols) {
+    const entityGroups = new Map<any, number[]>();
+    for (const r of cleanedRows) {
+      const ent = r._id_num;
+      const val = Number(r[col]);
+      if (!entityGroups.has(ent)) {
+        entityGroups.set(ent, []);
+      }
+      entityGroups.get(ent)!.push(val);
+    }
+
+    let isTimeInvariant = true;
+    for (const [_, vals] of entityGroups.entries()) {
+      if (vals.length > 1) {
+        const first = vals[0];
+        const hasDiff = vals.some(v => Math.abs(v - first) > 1e-9);
+        if (hasDiff) {
+          isTimeInvariant = false;
+          break;
+        }
+      }
+    }
+
+    if (isTimeInvariant && cleanedRows.length > 0) {
+      timeInvariantVars.push(col);
+    }
+  }
+
+  // 5. Pembuatan Log Sintaks Stata .do
+  const idVar = isStringEntity ? 'id_num' : idCol;
+  const xList = xCols.join(' ');
+  const invarWarning = timeInvariantVars.length > 0
+    ? `* Catatan Invarian I12: Variabel time-invariant terdeteksi (${timeInvariantVars.join(', ')}). Stata akan otomatis mendrop variabel ini pada Fixed Effects.\n`
+    : '';
+
+  const stataDoLog = `* ============================================================
+* REPRODUCIBLE STATA LOG: DATA CLEANING & PANEL ESTIMATION
+* Modul: Regresi Data Panel Stata (CED Analyzer)
+* ============================================================
+
+* 1. Deteksi dan eliminasi duplikasi
+duplicates report ${idCol} ${timeCol}
+${options?.dropDuplicates || duplicateCount > 0 ? `duplicates drop ${idCol} ${timeCol}, force\n` : ''}
+* 2. Ringkasan data hilang (missing values)
+misstable summarize ${yCol} ${xList}
+
+* 3. Pengkodean entitas jika berupa teks
+${isStringEntity ? `encode ${idCol}, generate(id_num)` : `* Kolom ${idCol} sudah numerik, tidak perlu encode`}
+
+* 4. Deklarasi struktur panel
+xtset ${idVar} ${timeCol}
+
+* 5. Ringkasan statistik tiga dimensi
+xtsum ${yCol} ${xList}
+
+* 6. Korelasi matriks
+pwcorr ${yCol} ${xList}, star(0.05) sig
+spearman ${yCol} ${xList}, star(0.05)
+
+${invarWarning}* 7. Estimasi Model Panel (CEM, FEM, REM)
+reg ${yCol} ${xList}
+xtreg ${yCol} ${xList}, fe
+estimates store fe_model
+xtreg ${yCol} ${xList}, re
+estimates store re_model
+
+* 8. Uji Pemilihan Model
+hausman fe_model re_model
+xttest0
+
+* 9. Uji Asumsi Klasik
+xttest3
+xtserial ${yCol} ${xList}
+
+* 10. Estimasi Model Akhir Cluster-Robust SE
+xtreg ${yCol} ${xList}, fe vce(cluster ${idVar})
+`;
+
+  return {
+    totalRawObs,
+    validObs,
+    droppedObs,
+    duplicateCount,
+    missingSummary,
+    timeInvariantVars,
+    entityEncoding: {
+      isEncoded: isStringEntity,
+      originalCol: idCol,
+      encodedCol: isStringEntity ? 'id_num' : idCol,
+      labelMap
+    },
+    cleanedRows,
+    stataDoLog
+  };
+}
+
 /**
  * Helper menghitung korelasi Pearson antara dua array
  */
