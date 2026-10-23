@@ -22,6 +22,36 @@ import {
 } from './regression-engine';
 
 /**
+ * Inversi matriks aman dengan regularisasi Ridge / Tikhonov fallback
+ * jika matriks singular atau berpivot mendekati nol (kolinear).
+ */
+export function safeMatInverse(A: number[][], lambda = 1e-9): number[][] {
+  const n = A.length;
+  if (n === 0) return [];
+  try {
+    return matInverse(A);
+  } catch {
+    try {
+      const reg1 = A.map((row, i) =>
+        row.map((val, j) => (i === j ? val + lambda : val))
+      );
+      return matInverse(reg1);
+    } catch {
+      try {
+        const reg2 = A.map((row, i) =>
+          row.map((val, j) => (i === j ? val + 1e-5 : val))
+        );
+        return matInverse(reg2);
+      } catch {
+        return Array.from({ length: n }, (_, i) =>
+          Array.from({ length: n }, (_, j) => (i === j ? (Math.abs(A[i][i]) > 1e-12 ? 1 / A[i][i] : 0) : 0))
+        );
+      }
+    }
+  }
+}
+
+/**
  * Validasi dan deklarasi struktur data panel (Gaya Stata `xtset`)
  */
 export function validatePanelStructure(
@@ -483,7 +513,7 @@ export function fitPanelCEM(input: PanelFitInput): PanelModelResult {
 
   const XT = matTranspose(X);
   const XTX = matMul(XT, X);
-  const invXTX = matInverse(XTX);
+  const invXTX = safeMatInverse(XTX);
   const XTY = matMul(XT, Y_mat);
   const betaMat = matMul(invXTX, XTY);
   const beta = betaMat.map(row => row[0]);
@@ -635,15 +665,52 @@ export function fitPanelFEM(input: PanelFitInput): PanelModelResult {
     X_tilde.push(rowX);
   }
 
-  // 4. OLS pada data terpusat (Within Regression tanpa konstanta)
-  const XT = matTranspose(X_tilde);
-  const XTX = matMul(XT, X_tilde);
-  const invXTX = matInverse(XTX);
-  const XTY = matMul(XT, y_tilde);
-  const betaMat = matMul(invXTX, XTY);
-  const beta = betaMat.map(row => row[0]);
+  // 4. Deteksi Variabel Time-Invariant (Invarian I12 & Standar Stata xtreg, fe)
+  // Hitung within-variance untuk setiap prediktor X_k
+  const withinVariances: number[] = new Array(K).fill(0);
+  for (let i = 0; i < N; i++) {
+    for (let k = 0; k < K; k++) {
+      withinVariances[k] += Math.pow(X_tilde[i][k], 2);
+    }
+  }
+  for (let k = 0; k < K; k++) {
+    withinVariances[k] /= N;
+  }
 
-  // 5. Hitung residu within dan derajat bebas Stata
+  const activeVarIndices: number[] = [];
+  const omittedVarIndices: number[] = [];
+  for (let k = 0; k < K; k++) {
+    if (withinVariances[k] > 1e-7) {
+      activeVarIndices.push(k);
+    } else {
+      omittedVarIndices.push(k);
+    }
+  }
+
+  const K_active = activeVarIndices.length;
+
+  // 5. OLS pada data terpusat (Within Regression) hanya untuk variabel time-varying
+  let betaActive: number[] = [];
+  let invXTX: number[][] = [];
+  let V_betaActive: number[][] = [];
+
+  if (K_active > 0) {
+    const X_tilde_active = X_tilde.map(row => activeVarIndices.map(idx => row[idx]));
+    const XT = matTranspose(X_tilde_active);
+    const XTX = matMul(XT, X_tilde_active);
+    invXTX = safeMatInverse(XTX);
+    const XTY = matMul(XT, y_tilde);
+    const betaMat = matMul(invXTX, XTY);
+    betaActive = betaMat.map(row => row[0]);
+  }
+
+  // Petakan beta kembali ke dimensi penuh K
+  const beta = new Array(K).fill(0);
+  for (let i = 0; i < K_active; i++) {
+    beta[activeVarIndices[i]] = betaActive[i];
+  }
+
+  // 6. Hitung residu within dan derajat bebas Stata
   let sseWithin = 0;
   const residualsWithin: number[] = [];
   const yPredWithin: number[] = [];
@@ -659,29 +726,33 @@ export function fitPanelFEM(input: PanelFitInput): PanelModelResult {
     sseWithin += res * res;
   }
 
-  const dfResidual = N - nEntities - K; // 200 - 10 - 2 = 188
+  const dfResidual = Math.max(1, N - nEntities - K_active); // Stata: N - n - K_active
   const sigma_e2 = sseWithin / dfResidual;
   const sigma_e = Math.sqrt(sigma_e2);
 
-  // 6. Konstanta Stata: cons = grandMeanY - sum(beta_k * grandMeanX_k)
+  // 7. Konstanta Stata: cons = grandMeanY - sum(beta_k * grandMeanX_k)
   let beta0 = grandMeanY;
   for (let k = 0; k < K; k++) {
     beta0 -= beta[k] * grandMeanX[k];
   }
 
-  // Varians konsisten Stata untuk _cons: sigma_e^2 / N + X_bar' * V_beta * X_bar
-  const V_beta = invXTX.map(row => row.map(val => val * sigma_e2));
+  if (K_active > 0) {
+    V_betaActive = invXTX.map(row => row.map(val => val * sigma_e2));
+  }
+
+  // Varians konsisten Stata untuk _cons: sigma_e^2 / N + X_bar' * V_beta * X_bar (hanya pada active vars)
   let xBarVxBar = 0;
-  for (let i = 0; i < K; i++) {
-    for (let j = 0; j < K; j++) {
-      xBarVxBar += grandMeanX[i] * V_beta[i][j] * grandMeanX[j];
+  for (let i = 0; i < K_active; i++) {
+    for (let j = 0; j < K_active; j++) {
+      const idxI = activeVarIndices[i];
+      const idxJ = activeVarIndices[j];
+      xBarVxBar += grandMeanX[idxI] * V_betaActive[i][j] * grandMeanX[idxJ];
     }
   }
   const varCons = sigma_e2 / N + xBarVxBar;
   const seCons = Math.sqrt(Math.max(0, varCons));
 
-  // 7. Estimasi komponen varians FEM sigma_u (Gaya Stata xtreg, fe)
-  // Di Stata, sigma_u adalah deviasi standar sampel dari efek tetap entitas alpha_i terhadap intersep rata-rata
+  // 8. Estimasi komponen varians FEM sigma_u (Gaya Stata xtreg, fe)
   const entityIds = Array.from(entityMeans.keys());
   const entityAlpha: number[] = [];
   for (const id of entityIds) {
@@ -701,15 +772,13 @@ export function fitPanelFEM(input: PanelFitInput): PanelModelResult {
   const sigma_u = Math.sqrt(sigma_u2);
   const rho = (sigma_u2 + sigma_e2) > 0 ? sigma_u2 / (sigma_u2 + sigma_e2) : 0;
 
-  // 8. R-squared (Within, Between, Overall)
-  // R2 within: korelasi kuadrat antara y_tilde dan yPredWithin
+  // 9. R-squared (Within, Between, Overall)
   let ssDemeanedY = 0;
   for (let i = 0; i < N; i++) {
     ssDemeanedY += Math.pow(y_tilde[i][0], 2);
   }
   const r2Within = ssDemeanedY > 0 ? 1 - sseWithin / ssDemeanedY : 0;
 
-  // R2 between: korelasi kuadrat antara y_between dan pred_between
   const yPredBetween: number[] = [];
   const yActualBetween: number[] = [];
   for (const id of entityIds) {
@@ -724,7 +793,6 @@ export function fitPanelFEM(input: PanelFitInput): PanelModelResult {
   const corrBetween = pearsonCorrelation(yActualBetween, yPredBetween);
   const r2Between = Math.pow(corrBetween, 2);
 
-  // R2 overall: korelasi kuadrat antara y asli dan prediksi model
   const yPredOverall: number[] = [];
   for (let i = 0; i < N; i++) {
     let p = beta0;
@@ -736,36 +804,53 @@ export function fitPanelFEM(input: PanelFitInput): PanelModelResult {
   const corrOverall = pearsonCorrelation(y_original, yPredOverall);
   const r2Overall = Math.pow(corrOverall, 2);
 
-  // Model F-test: F(K, dfResidual)
-  const fStat = (r2Within / K) / ((1 - r2Within) / dfResidual);
-  const fPVal = fPValue(fStat, K, dfResidual);
+  // Model F-test: F(K_active, dfResidual)
+  const fStat = K_active > 0 ? (r2Within / K_active) / ((1 - r2Within) / dfResidual) : 0;
+  const fPVal = K_active > 0 ? fPValue(fStat, K_active, dfResidual) : 1.0;
 
   // Chow F-test (Uji F bahwa semua u_i = 0)
-  // Membandingkan dengan SSE dari Pooled OLS
   const cemModel = fitPanelCEM(input);
   const ssePooled = Math.pow(cemModel.sigma_e, 2) * cemModel.dfResidual;
   const dfChowNum = nEntities - 1;
   const chowFStat = ((ssePooled - sseWithin) / dfChowNum) / (sseWithin / dfResidual);
   const chowPVal = fPValue(chowFStat, dfChowNum, dfResidual);
 
-  // 9. Koefisien
+  // 10. Koefisien
   const coefficients: Record<string, PanelCoefficientRow> = {};
   for (let k = 0; k < K; k++) {
-    const b = beta[k];
-    const se = Math.sqrt(Math.max(0, V_beta[k][k]));
-    const t = se === 0 ? 0 : b / se;
-    const p = tPValue(t, dfResidual);
-    const zCrit = 1.95996;
-    coefficients[xCols[k]] = {
-      variable: xCols[k],
-      b,
-      stdError: se,
-      tOrZ: t,
-      statType: 't',
-      sig: p,
-      ciLower: b - zCrit * se,
-      ciUpper: b + zCrit * se
-    };
+    const varName = xCols[k];
+    if (omittedVarIndices.includes(k)) {
+      coefficients[varName] = {
+        variable: varName,
+        b: 0,
+        stdError: 0,
+        tOrZ: 0,
+        statType: 't',
+        sig: 1.0,
+        ciLower: 0,
+        ciUpper: 0,
+        isOmitted: true,
+        omittedReason: 'omitted because of collinearity with fixed effects'
+      };
+    } else {
+      const actIdx = activeVarIndices.indexOf(k);
+      const b = betaActive[actIdx];
+      const se = Math.sqrt(Math.max(0, V_betaActive[actIdx][actIdx]));
+      const t = se === 0 ? 0 : b / se;
+      const p = tPValue(t, dfResidual);
+      const zCrit = 1.95996;
+      coefficients[varName] = {
+        variable: varName,
+        b,
+        stdError: se,
+        tOrZ: t,
+        statType: 't',
+        sig: p,
+        ciLower: b - zCrit * se,
+        ciUpper: b + zCrit * se,
+        isOmitted: false
+      };
+    }
   }
 
   const tCons = seCons === 0 ? 0 : beta0 / seCons;
@@ -778,7 +863,8 @@ export function fitPanelFEM(input: PanelFitInput): PanelModelResult {
     statType: 't',
     sig: pCons,
     ciLower: beta0 - 1.95996 * seCons,
-    ciUpper: beta0 + 1.95996 * seCons
+    ciUpper: beta0 + 1.95996 * seCons,
+    isOmitted: false
   };
 
   return {
@@ -794,7 +880,7 @@ export function fitPanelFEM(input: PanelFitInput): PanelModelResult {
     rho: Number(rho.toFixed(8)),
     fStat: Number(fStat.toFixed(2)),
     fPValue: fPVal,
-    dfModel: K,
+    dfModel: K_active,
     dfResidual,
     nEntities,
     nPeriods,
@@ -853,7 +939,7 @@ export function fitPanelREM(input: PanelFitInput): PanelModelResult {
   }
 
   const XBT = matTranspose(X_between);
-  const XBinv = matInverse(matMul(XBT, X_between));
+  const XBinv = safeMatInverse(matMul(XBT, X_between));
   const betaBetween = matMul(XBinv, matMul(XBT, y_between)).map(r => r[0]);
 
   let sseBetween = 0;
@@ -924,7 +1010,7 @@ export function fitPanelREM(input: PanelFitInput): PanelModelResult {
   // 4. OLS pada data quasi-demeaned
   const XT = matTranspose(X_star);
   const XTX = matMul(XT, X_star);
-  const invXTX = matInverse(XTX);
+  const invXTX = safeMatInverse(XTX);
   const XTY = matMul(XT, y_star);
   const betaMat = matMul(invXTX, XTY);
   const beta = betaMat.map(row => row[0]);
@@ -935,7 +1021,7 @@ export function fitPanelREM(input: PanelFitInput): PanelModelResult {
   // 5. Wald Chi-Square untuk uji simultan slope: beta_slope' * V_slope^(-1) * beta_slope
   const betaSlope = beta.slice(0, K);
   const VSlope = V_beta.slice(0, K).map(r => r.slice(0, K));
-  const invVSlope = matInverse(VSlope);
+  const invVSlope = safeMatInverse(VSlope);
 
   let waldChi2 = 0;
   for (let i = 0; i < K; i++) {
@@ -1043,23 +1129,36 @@ export function testHausman(
   input?: PanelFitInput,
   alpha = 0.05
 ): { chi2: number; df: number; p: number; preferred: 'FEM' | 'REM'; isNegativeChi2: boolean } {
-  const slopeVars = Object.keys(fem.coefficients).filter(v => v !== '_cons');
+  // Hanya uji koefisien slope yang diestimasi di FEM (tidak di-omit karena time-invariant)
+  const slopeVars = Object.keys(fem.coefficients).filter(
+    v => v !== '_cons' && !fem.coefficients[v]?.isOmitted
+  );
   const K = slopeVars.length;
+
+  if (K === 0) {
+    return {
+      chi2: 0,
+      df: 0,
+      p: 1.0,
+      preferred: 'REM',
+      isNegativeChi2: false
+    };
+  }
 
   const dBeta: number[] = [];
   for (let i = 0; i < K; i++) {
     const varName = slopeVars[i];
-    dBeta.push(fem.coefficients[varName].b - rem.coefficients[varName].b);
+    dBeta.push(fem.coefficients[varName].b - (rem.coefficients[varName]?.b ?? 0));
   }
 
   let V_diff: number[][] = Array.from({ length: K }, () => new Array(K).fill(0));
   let isNegativeChi2 = false;
 
   if (input && typeof input === 'object' && Array.isArray((input as any).rows)) {
-    const { rows, idCol, xCols } = input;
+    const { rows, idCol } = input;
     const N = rows.length;
 
-    // Entity means
+    // Entity means hanya untuk slopeVars
     const entityMap = new Map<any, Record<string, any>[]>();
     for (const r of rows) {
       const id = r[idCol];
@@ -1071,28 +1170,28 @@ export function testHausman(
       const count = eRows.length;
       const sumX = new Array(K).fill(0);
       for (const r of eRows) {
-        for (let k = 0; k < K; k++) sumX[k] += Number(r[xCols[k]]);
+        for (let k = 0; k < K; k++) sumX[k] += Number(r[slopeVars[k]]);
       }
       entityMeans.set(id, sumX.map(v => v / count));
     }
 
-    // Demeaned X_tilde
+    // Demeaned X_tilde hanya untuk slopeVars
     const X_tilde = rows.map(r => {
       const em = entityMeans.get(r[idCol])!;
-      return xCols.map((c, k) => Number(r[c]) - em[k]);
+      return slopeVars.map((c, k) => Number(r[c]) - em[k]);
     });
-    const invXTX_fe = matInverse(matMul(matTranspose(X_tilde), X_tilde));
+    const invXTX_fe = safeMatInverse(matMul(matTranspose(X_tilde), X_tilde));
     const sigma_e2 = Math.pow(fem.sigma_e, 2);
     const V_FE = invXTX_fe.map(r => r.map(v => v * sigma_e2));
 
-    // Quasi-demeaned X_star
+    // Quasi-demeaned X_star hanya untuk slopeVars
     const theta = rem.theta || 0.8614;
     const X_star = rows.map(r => {
       const em = entityMeans.get(r[idCol])!;
-      const rowX = xCols.map((c, k) => Number(r[c]) - theta * em[k]);
+      const rowX = slopeVars.map((c, k) => Number(r[c]) - theta * em[k]);
       return [...rowX, 1 - theta];
     });
-    const invXTX_re = matInverse(matMul(matTranspose(X_star), X_star));
+    const invXTX_re = safeMatInverse(matMul(matTranspose(X_star), X_star));
     const V_RE = invXTX_re.slice(0, K).map(r => r.slice(0, K).map(v => v * sigma_e2));
 
     for (let i = 0; i < K; i++) {
@@ -1105,7 +1204,7 @@ export function testHausman(
     for (let i = 0; i < K; i++) {
       const varName = slopeVars[i];
       const se_fe = fem.coefficients[varName].stdError;
-      const se_re = rem.coefficients[varName].stdError;
+      const se_re = rem.coefficients[varName]?.stdError ?? 0;
       V_diff[i][i] = Math.pow(se_fe, 2) - Math.pow(se_re, 2);
     }
   }
@@ -1118,7 +1217,7 @@ export function testHausman(
   let chi2 = 0;
   if (!isNegativeChi2) {
     try {
-      const invV = matInverse(V_diff);
+      const invV = safeMatInverse(V_diff);
       for (let i = 0; i < K; i++) {
         for (let j = 0; j < K; j++) {
           chi2 += dBeta[i] * invV[i][j] * dBeta[j];
@@ -1158,7 +1257,6 @@ export function testMundlakCRE(
   const K = xCols.length;
   const N = rows.length;
 
-  // 1. Hitung entity means untuk prediktor
   const entityMap = new Map<any, Record<string, any>[]>();
   for (const row of rows) {
     const id = row[idCol];
@@ -1166,17 +1264,47 @@ export function testMundlakCRE(
     entityMap.get(id)!.push(row);
   }
 
+  // Identifikasi prediktor yang time-varying
+  const varyingCols: string[] = [];
+  for (const c of xCols) {
+    let hasVarianceWithin = false;
+    for (const [, eRows] of entityMap) {
+      const firstVal = Number(eRows[0][c]);
+      for (let i = 1; i < eRows.length; i++) {
+        if (Math.abs(Number(eRows[i][c]) - firstVal) > 1e-7) {
+          hasVarianceWithin = true;
+          break;
+        }
+      }
+      if (hasVarianceWithin) break;
+    }
+    if (hasVarianceWithin) {
+      varyingCols.push(c);
+    }
+  }
+
+  const K_varying = varyingCols.length;
+  if (K_varying === 0) {
+    return {
+      waldChi2: 0,
+      df: 0,
+      p: 1.0,
+      preferred: 'REM'
+    };
+  }
+
+  // 1. Hitung entity means HANYA untuk prediktor yang time-varying
   const entityMeans = new Map<any, number[]>();
   for (const [id, eRows] of entityMap.entries()) {
     const count = eRows.length;
-    const sumX = new Array(K).fill(0);
+    const sumX = new Array(K_varying).fill(0);
     for (const r of eRows) {
-      for (let k = 0; k < K; k++) sumX[k] += Number(r[xCols[k]]);
+      for (let k = 0; k < K_varying; k++) sumX[k] += Number(r[varyingCols[k]]);
     }
     entityMeans.set(id, sumX.map(v => v / count));
   }
 
-  // 2. Bentuk matriks X_mundlak: [X_1, ..., X_K, Xbar_1, ..., Xbar_K, 1]
+  // 2. Bentuk matriks X_mundlak: [all_xCols, ...varying_entity_means, 1]
   const X_m: number[][] = rows.map(r => {
     const id = r[idCol];
     const em = entityMeans.get(id)!;
@@ -1187,40 +1315,41 @@ export function testMundlakCRE(
 
   // 3. Estimasi OLS auxiliary
   const XT = matTranspose(X_m);
-  const invXTX = matInverse(matMul(XT, X_m));
+  const invXTX = safeMatInverse(matMul(XT, X_m));
   const beta = matMul(invXTX, matMul(XT, y_m)).map(r => r[0]);
 
+  const numParams = K + K_varying + 1;
   let sse = 0;
   for (let i = 0; i < N; i++) {
     let p = 0;
-    for (let j = 0; j < 2 * K + 1; j++) p += X_m[i][j] * beta[j];
+    for (let j = 0; j < numParams; j++) p += X_m[i][j] * beta[j];
     sse += Math.pow(y_m[i][0] - p, 2);
   }
-  const s2 = sse / (N - (2 * K + 1));
+  const s2 = sse / Math.max(1, N - numParams);
 
   // 4. Submatriks kovarians gamma (koefisien entity means)
-  const gamma = beta.slice(K, 2 * K);
-  const V_gamma: number[][] = Array.from({ length: K }, () => new Array(K).fill(0));
-  for (let i = 0; i < K; i++) {
-    for (let j = 0; j < K; j++) {
+  const gamma = beta.slice(K, K + K_varying);
+  const V_gamma: number[][] = Array.from({ length: K_varying }, () => new Array(K_varying).fill(0));
+  for (let i = 0; i < K_varying; i++) {
+    for (let j = 0; j < K_varying; j++) {
       V_gamma[i][j] = invXTX[K + i][K + j] * s2;
     }
   }
 
-  const invV_gamma = matInverse(V_gamma);
+  const invV_gamma = safeMatInverse(V_gamma);
   let waldChi2 = 0;
-  for (let i = 0; i < K; i++) {
-    for (let j = 0; j < K; j++) {
+  for (let i = 0; i < K_varying; i++) {
+    for (let j = 0; j < K_varying; j++) {
       waldChi2 += gamma[i] * invV_gamma[i][j] * gamma[j];
     }
   }
 
-  const p = chiSquarePValue(waldChi2, K);
+  const p = chiSquarePValue(waldChi2, K_varying);
   const preferred = p < alpha ? 'FEM' : 'REM';
 
   return {
     waldChi2: Number(waldChi2.toFixed(2)),
-    df: K,
+    df: K_varying,
     p,
     preferred
   };
@@ -1241,7 +1370,7 @@ export function testBreuschPaganLM(
   const X: number[][] = rows.map(r => [...xCols.map(c => Number(r[c])), 1]);
   const y: number[][] = rows.map(r => [Number(r[yCol])]);
   const XT = matTranspose(X);
-  const beta = matMul(matInverse(matMul(XT, X)), matMul(XT, y)).map(r => r[0]);
+  const beta = matMul(safeMatInverse(matMul(XT, X)), matMul(XT, y)).map(r => r[0]);
 
   const entityRes = new Map<any, number[]>();
   let totalSSE = 0;
@@ -1384,7 +1513,7 @@ export function testPanelVIF(input: PanelFitInput): {
 
     const XT = matTranspose(X_j);
     const XTX = matMul(XT, X_j);
-    const iXTX = matInverse(XTX);
+    const iXTX = safeMatInverse(XTX);
     const beta = matMul(iXTX, matMul(XT, y_j)).map(r => r[0]);
 
     // R^2 calculation
@@ -1613,29 +1742,42 @@ export function testWooldridgeSerial(
     }
   }
 
-  if (dRows.length < K + 2) {
+  // Filter variabel yang bervariasi pada selisih pertama
+  const varyingColIndices: number[] = [];
+  for (let j = 0; j < K; j++) {
+    let sumSq = 0;
+    for (const r of dRows) {
+      sumSq += r.dX[j] * r.dX[j];
+    }
+    if (sumSq > 1e-7) {
+      varyingColIndices.push(j);
+    }
+  }
+
+  const K_d = varyingColIndices.length;
+  if (K_d === 0 || dRows.length < K_d + 2) {
     return {
       df1: 1,
       df2: 0,
       f: 0,
       p: 1.0,
       hasAutocorrelation: false,
-      skippedReason: 'Jumlah observasi selisih pertama tidak mencukupi untuk regresi.'
+      skippedReason: 'Jumlah observasi selisih pertama tidak mencukupi atau tidak ada prediktor time-varying.'
     };
   }
 
-  // Regresi OLS nocons: dY pada dX
-  const dX_mat: number[][] = dRows.map(r => r.dX);
+  // Regresi OLS nocons: dY pada dX (hanya kolom bervariasi)
+  const dX_mat: number[][] = dRows.map(r => varyingColIndices.map(j => r.dX[j]));
   const dY_mat: number[][] = dRows.map(r => [r.dY]);
   const dXT = matTranspose(dX_mat);
-  const beta_d = matMul(matInverse(matMul(dXT, dX_mat)), matMul(dXT, dY_mat)).map(r => r[0]);
+  const beta_d = matMul(safeMatInverse(matMul(dXT, dX_mat)), matMul(dXT, dY_mat)).map(r => r[0]);
 
   // Residu tahap 1: res_it = dY_it - sum(beta_k * dX_kit)
   const resByEntity = new Map<any, { year: number; res: number }[]>();
   for (let i = 0; i < dRows.length; i++) {
     const r = dRows[i];
     let fit = 0;
-    for (let j = 0; j < K; j++) fit += r.dX[j] * beta_d[j];
+    for (let j = 0; j < K_d; j++) fit += dX_mat[i][j] * beta_d[j];
     const res = r.dY - fit;
     if (!resByEntity.has(r.company)) resByEntity.set(r.company, []);
     resByEntity.get(r.company)!.push({ year: r.year, res });
@@ -1744,14 +1886,16 @@ export function computeClusterRobustSE(
   let paramNames: string[] = [];
 
   if (modelType === 'FEM') {
-    paramNames = [...xCols];
+    // Hanya sertakan variabel yang tidak di-omit pada model FEM
+    const activeCols = xCols.filter(c => !model.coefficients[c]?.isOmitted);
+    paramNames = [...activeCols];
     for (const [id, obsList] of entityObs) {
       const Ti = obsList.length;
       const yMean = obsList.reduce((acc, o) => acc + o.y, 0) / Ti;
-      const xMean = xCols.map((_, j) => obsList.reduce((acc, o) => acc + o.x[j], 0) / Ti);
+      const xMean = activeCols.map(c => obsList.reduce((acc, o) => acc + Number(o.x[xCols.indexOf(c)]), 0) / Ti);
       for (const o of obsList) {
         Ystar.push([o.y - yMean]);
-        Xstar.push(o.x.map((val, j) => val - xMean[j]));
+        Xstar.push(activeCols.map((c, j) => Number(o.x[xCols.indexOf(c)]) - xMean[j]));
         compIndices.push(id);
       }
     }
@@ -1782,7 +1926,7 @@ export function computeClusterRobustSE(
 
   const numParams = paramNames.length;
   const XT = matTranspose(Xstar);
-  const bread = matInverse(matMul(XT, Xstar));
+  const bread = safeMatInverse(matMul(XT, Xstar));
 
   // Residu
   const beta = paramNames.map(p => model.coefficients[p].b);

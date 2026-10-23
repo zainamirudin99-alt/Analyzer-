@@ -24,6 +24,8 @@ export interface PanelCoefficientRow {
   sig: number;
   ciLower: number;
   ciUpper: number;
+  isOmitted?: boolean;
+  omittedReason?: string;
 }
 
 export interface PanelModelResult {

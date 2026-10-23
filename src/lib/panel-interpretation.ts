@@ -170,6 +170,10 @@ export function formatStataRegTable(
 
   for (const [varName, row] of Object.entries(model.coefficients)) {
     const cName = varName === '_cons' ? '_cons' : varName;
+    if (row.isOmitted) {
+      lines.push(`${padR(cName, 12)} |          0  (omitted)`);
+      continue;
+    }
     const bStr = padL(fmt(row.b, 7), 10);
     const seStr = padL(fmt(row.stdError, 7), 10);
     const tStr = padL(fmt(row.tOrZ, 2), 7);
@@ -524,6 +528,10 @@ export function formatPanelClipboardSummary(
 
   for (const [vName, cRow] of Object.entries(finalModel.coefficients)) {
     const padVar = (vName + '              ').slice(0, 14);
+    if (cRow.isOmitted) {
+      lines.push(`${padVar} | 0 (omitted)    | -                 | -        | -             | -`);
+      continue;
+    }
     const padB = (cRow.b.toFixed(6) + '              ').slice(0, 14);
     const padSe = (cRow.stdError.toFixed(6) + '                 ').slice(0, 17);
     const padT = (cRow.tOrZ.toFixed(2) + '        ').slice(0, 8);

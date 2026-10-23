@@ -149,12 +149,12 @@ export async function generatePanelDocx(options: PanelDocxExportOptions): Promis
     new TableRow({
       children: [
         new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: vName, bold: true, size: 18 })] })] }),
-        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: cRow.b.toFixed(6), size: 18 })], alignment: AlignmentType.RIGHT })] }),
-        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: cRow.stdError.toFixed(6), size: 18 })], alignment: AlignmentType.RIGHT })] }),
-        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: cRow.tOrZ.toFixed(2), size: 18 })], alignment: AlignmentType.RIGHT })] }),
-        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: cRow.sig.toFixed(4), size: 18 })], alignment: AlignmentType.RIGHT })] }),
-        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: cRow.ciLower.toFixed(6), size: 18 })], alignment: AlignmentType.RIGHT })] }),
-        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: cRow.ciUpper.toFixed(6), size: 18 })], alignment: AlignmentType.RIGHT })] })
+        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: cRow.isOmitted ? '0 (omitted)' : cRow.b.toFixed(6), size: 18 })], alignment: AlignmentType.RIGHT })] }),
+        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: cRow.isOmitted ? '-' : cRow.stdError.toFixed(6), size: 18 })], alignment: AlignmentType.RIGHT })] }),
+        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: cRow.isOmitted ? '-' : cRow.tOrZ.toFixed(2), size: 18 })], alignment: AlignmentType.RIGHT })] }),
+        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: cRow.isOmitted ? '-' : cRow.sig.toFixed(4), size: 18 })], alignment: AlignmentType.RIGHT })] }),
+        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: cRow.isOmitted ? '-' : cRow.ciLower.toFixed(6), size: 18 })], alignment: AlignmentType.RIGHT })] }),
+        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: cRow.isOmitted ? '-' : cRow.ciUpper.toFixed(6), size: 18 })], alignment: AlignmentType.RIGHT })] })
       ]
     })
   );

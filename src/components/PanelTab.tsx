@@ -222,7 +222,7 @@ export const PanelTab: React.FC = () => {
       const rem = fitPanelREM(input);
 
       const chow = testChow(cem, fem);
-      const hausman = testHausman(fem, rem);
+      const hausman = testHausman(fem, rem, input);
       const mundlak = testMundlakCRE(input);
       const bp = testBreuschPaganLM(input);
       const selection = selectOptimalPanelModel(chow, hausman, mundlak, bp);
