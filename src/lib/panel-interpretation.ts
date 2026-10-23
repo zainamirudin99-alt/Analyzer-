@@ -52,7 +52,7 @@ interface XtsumStat {
   within: { sd: number; min: number; max: number; tBar: number };
 }
 
-function computeXtsum(
+export function computeXtsum(
   rows: Record<string, any>[],
   idCol: string,
   varName: string
@@ -114,7 +114,7 @@ function computeXtsum(
     }
   }
 
-  const withinSd = N > n ? Math.sqrt(wSumSqDev / (N - n)) : 0;
+  const withinSd = N > 1 ? Math.sqrt(wSumSqDev / (N - 1)) : 0;
   const tBar = n > 0 ? Number((N / n).toFixed(2)) : 0;
 
   return {
@@ -128,7 +128,7 @@ function computeXtsum(
 /**
  * Format tabel regresi gaya Stata
  */
-function formatStataRegTable(
+export function formatStataRegTable(
   model: PanelModelResult,
   yCol: string,
   isRobust = false

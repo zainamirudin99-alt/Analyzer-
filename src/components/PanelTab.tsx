@@ -24,7 +24,7 @@ import {
   testWooldridgeSerial,
   computeClusterRobustSE
 } from '@/lib/panel-engine';
-import { generateAllPanelConsoleBlocks } from '@/lib/panel-interpretation';
+import { generateAllPanelConsoleBlocks, formatStataRegTable } from '@/lib/panel-interpretation';
 import { PanelStepper } from './PanelStepper';
 import { StataConsoleBlock } from './StataConsoleBlock';
 import {
@@ -96,6 +96,7 @@ export const PanelTab: React.FC = () => {
   // Stepper & Execution State
   const [activeStep, setActiveStep] = useState<number>(0);
   const [maxReachedStep, setMaxReachedStep] = useState<number>(12);
+  const [step8ActiveModel, setStep8ActiveModel] = useState<'fem' | 'rem' | 'cem'>('fem');
   const [fitResult, setFitResult] = useState<PanelFitResult | null>(null);
   const [consoleBlocks, setConsoleBlocks] = useState<StataConsoleBlockData[]>([]);
   const [isCalculating, setIsCalculating] = useState<boolean>(false);
@@ -146,6 +147,28 @@ export const PanelTab: React.FC = () => {
       handleMissing: 'listwise'
     });
   }, [dataRows, idCol, timeCol, yCol, xCols]);
+
+  // Dynamic Stata console block to display (supports model switching in Step 8)
+  const currentBlockToDisplay = useMemo(() => {
+    if (!consoleBlocks || consoleBlocks.length === 0 || !consoleBlocks[activeStep]) {
+      return null;
+    }
+    const baseBlock = consoleBlocks[activeStep];
+    if (activeStep === 8 && fitResult) {
+      const model = fitResult.models[step8ActiveModel];
+      const cmd = step8ActiveModel === 'cem'
+        ? `reg ${yCol} ${xCols.join(' ')}`
+        : step8ActiveModel === 'fem'
+        ? `xtreg ${yCol} ${xCols.join(' ')}, fe`
+        : `xtreg ${yCol} ${xCols.join(' ')}, re`;
+      return {
+        ...baseBlock,
+        stataCommand: cmd,
+        stataOutput: formatStataRegTable(model, yCol)
+      };
+    }
+    return baseBlock;
+  }, [consoleBlocks, activeStep, fitResult, step8ActiveModel, yCol, xCols]);
 
   // Handle Copy Stata .do Log to Clipboard
   const handleCopyStataLog = () => {
@@ -1143,9 +1166,87 @@ export const PanelTab: React.FC = () => {
 
         {/* Kolom Kanan: Output Blok Stata Aktif */}
         <div>
-          {consoleBlocks.length > 0 && consoleBlocks[activeStep] ? (
+          {/* Step 8 Model Switcher Buttons: CEM | FEM | REM */}
+          {activeStep === 8 && fitResult && (
+            <div
+              style={{
+                display: 'flex',
+                gap: '8px',
+                marginBottom: '16px',
+                padding: '10px 14px',
+                background: '#f8fafc',
+                borderRadius: '8px',
+                border: '1px solid var(--border, #d2e2ca)',
+                alignItems: 'center',
+                flexWrap: 'wrap'
+              }}
+            >
+              <span style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginRight: '6px' }}>
+                Pilih Tampilan Model:
+              </span>
+              <button
+                type="button"
+                onClick={() => setStep8ActiveModel('fem')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  border: step8ActiveModel === 'fem' ? '2px solid var(--fern, #2e6922)' : '1px solid #cbd5e1',
+                  background: step8ActiveModel === 'fem' ? 'var(--fern, #2e6922)' : '#ffffff',
+                  color: step8ActiveModel === 'fem' ? '#ffffff' : '#334155',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  minHeight: '44px'
+                }}
+              >
+                FEM (Fixed Effects)
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep8ActiveModel('rem')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  border: step8ActiveModel === 'rem' ? '2px solid var(--fern, #2e6922)' : '1px solid #cbd5e1',
+                  background: step8ActiveModel === 'rem' ? 'var(--fern, #2e6922)' : '#ffffff',
+                  color: step8ActiveModel === 'rem' ? '#ffffff' : '#334155',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  minHeight: '44px'
+                }}
+              >
+                REM (Random Effects)
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep8ActiveModel('cem')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  border: step8ActiveModel === 'cem' ? '2px solid var(--fern, #2e6922)' : '1px solid #cbd5e1',
+                  background: step8ActiveModel === 'cem' ? 'var(--fern, #2e6922)' : '#ffffff',
+                  color: step8ActiveModel === 'cem' ? '#ffffff' : '#334155',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  minHeight: '44px'
+                }}
+              >
+                CEM (Pooled OLS)
+              </button>
+            </div>
+          )}
+
+          {currentBlockToDisplay ? (
             <div>
-              <StataConsoleBlock block={consoleBlocks[activeStep]} />
+              <StataConsoleBlock block={currentBlockToDisplay} />
 
               {/* Navigasi Bawah */}
               <div
