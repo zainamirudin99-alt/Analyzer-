@@ -3,7 +3,7 @@ import { extractTextFromPdf } from '@/lib/pdf-parser';
 import { analyzeWithGemini } from '@/lib/gemini';
 import { analyzeWithOpenAI } from '@/lib/openai';
 import { analyzeWithClaude, ClaudeEffortLevel } from '@/lib/claude';
-import { calculateDisclosureLevel, calculateTotalScore } from '@/lib/types';
+import { calculateDisclosureLevel, calculateTotalScore, IndicatorItem, INDICATOR_KEYS } from '@/lib/types';
 import { getSupabaseServerClient } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
@@ -22,6 +22,19 @@ export async function POST(req: NextRequest) {
     const customModel = ((formData.get('model') as string) || '').trim();
     const customBaseUrl = ((formData.get('baseUrl') as string) || '').trim();
     const customEffort = (((formData.get('effort') as string) || 'medium').trim()) as ClaudeEffortLevel;
+    const presetId = ((formData.get('presetId') as string) || 'default_ced_18').trim();
+    const presetName = ((formData.get('presetName') as string) || '').trim();
+    const skillContent = ((formData.get('skillContent') as string) || '').trim();
+    const indicatorsJson = (formData.get('indicatorsJson') as string) || '';
+
+    let parsedIndicators: IndicatorItem[] | undefined;
+    if (indicatorsJson) {
+      try {
+        parsedIndicators = JSON.parse(indicatorsJson);
+      } catch (parseErr) {
+        console.warn('[Analyze] Gagal parse indicatorsJson:', parseErr);
+      }
+    }
 
     if (!companyCode) {
       return NextResponse.json({ success: false, error: 'Kode emiten/perusahaan wajib diisi.' }, { status: 400 });
@@ -60,7 +73,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'File PDF atau teks dokumen wajib diberikan.' }, { status: 400 });
     }
 
-    // 2. Analisis 18 Indikator CED dengan Multi-AI Provider (Claude, OpenAI, atau Gemini)
+    // 2. Analisis Indikator dengan Multi-AI Provider (Claude, OpenAI, atau Gemini)
     let aiResult: { success: boolean; scores: any; modelUsed: string; rawResponse?: string };
     if (provider === 'claude') {
       console.log(`[Analyze] Mengirim ke Anthropic Claude (${customModel || 'claude-3-7-sonnet-20250219'}, Effort: ${customEffort}) untuk analisis ${companyCode} ${fiscalYear}...`);
@@ -71,7 +84,9 @@ export async function POST(req: NextRequest) {
         apiKey: customApiKey || undefined,
         model: customModel || undefined,
         baseUrl: customBaseUrl || undefined,
-        effort: customEffort
+        effort: customEffort,
+        indicators: parsedIndicators,
+        skillContent: skillContent || undefined
       });
     } else if (provider === 'openai') {
       console.log(`[Analyze] Mengirim ke OpenAI / Compatible (${customModel || 'gpt-4o-mini'}) untuk analisis ${companyCode} ${fiscalYear}...`);
@@ -81,7 +96,9 @@ export async function POST(req: NextRequest) {
         pdfText: textToAnalyze.length >= 50 ? textToAnalyze : undefined,
         apiKey: customApiKey || undefined,
         model: customModel || undefined,
-        baseUrl: customBaseUrl || undefined
+        baseUrl: customBaseUrl || undefined,
+        indicators: parsedIndicators,
+        skillContent: skillContent || undefined
       });
     } else {
       console.log(`[Analyze] Mengirim ke Gemini AI untuk analisis ${companyCode} ${fiscalYear}...`);
@@ -91,12 +108,33 @@ export async function POST(req: NextRequest) {
         pdfText: textToAnalyze.length >= 50 ? textToAnalyze : undefined,
         pdfBase64: base64Fallback,
         apiKey: customApiKey || undefined,
-        preferredModel: customModel || undefined
+        preferredModel: customModel || undefined,
+        indicators: parsedIndicators,
+        skillContent: skillContent || undefined
       });
     }
 
-    const totalScore = calculateTotalScore(aiResult.scores);
-    const disclosureLevel = calculateDisclosureLevel(totalScore);
+    // Hitung total skor & level secara dinamis atau standar
+    let totalScore = 0;
+    let disclosureLevel = 'Sangat Rendah';
+
+    if (parsedIndicators && parsedIndicators.length > 0) {
+      const indicatorCount = parsedIndicators.length;
+      const maxScore = indicatorCount * 5;
+      totalScore = Object.values(aiResult.scores as Record<string, number>).reduce(
+        (acc, val) => acc + (typeof val === 'number' && !isNaN(val) ? val : 0),
+        0
+      );
+      const ratio = maxScore > 0 ? totalScore / maxScore : 0;
+      if (ratio >= 0.8) disclosureLevel = 'Sangat Tinggi';
+      else if (ratio >= 0.6) disclosureLevel = 'Tinggi';
+      else if (ratio >= 0.4) disclosureLevel = 'Sedang';
+      else if (ratio >= 0.2) disclosureLevel = 'Rendah';
+      else disclosureLevel = 'Sangat Rendah';
+    } else {
+      totalScore = calculateTotalScore(aiResult.scores);
+      disclosureLevel = calculateDisclosureLevel(totalScore);
+    }
 
     // 3. Simpan Hasil ke Database Supabase
     let savedInDb = false;
@@ -106,13 +144,19 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseServerClient();
     if (supabase) {
       try {
+        // Ambil hanya kolom-kolom yang ada di tabel standar ced_results agar tidak error pada kolom kustom
+        const standardScoreCols: Record<string, number> = {};
+        INDICATOR_KEYS.forEach(k => {
+          standardScoreCols[k] = typeof aiResult.scores[k] === 'number' ? aiResult.scores[k] : 0;
+        });
+
         const recordData = {
           company_code: companyCode,
           fiscal_year: fiscalYear,
           file_name: fileName,
           notes,
           status: 'completed',
-          ...aiResult.scores,
+          ...standardScoreCols,
           disclosure_level: disclosureLevel,
           model_used: aiResult.modelUsed,
           updated_at: new Date().toISOString()
@@ -150,6 +194,8 @@ export async function POST(req: NextRequest) {
         total_score: totalScore,
         disclosure_level: disclosureLevel,
         model_used: aiResult.modelUsed,
+        preset_id: presetId,
+        preset_name: presetName,
         created_at: new Date().toISOString(),
         extraction_summary: {
           page_count: pageCount,

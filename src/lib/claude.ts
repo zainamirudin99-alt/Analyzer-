@@ -4,8 +4,8 @@
  * Extended Thinking workload levels (Low, Medium, Hard, Extra), and custom Base URL endpoints.
  */
 
-import { CEDScores } from './types';
-import { buildCEDPrompt, extractAndParseJSON, normalizeScores, preprocessTextForCED } from './gemini';
+import { CEDScores, IndicatorItem } from './types';
+import { buildAnalysisPrompt, buildCEDPrompt, extractAndParseJSON, normalizeScores, preprocessTextForCED } from './gemini';
 
 export type ClaudeEffortLevel = 'low' | 'medium' | 'hard' | 'extra';
 
@@ -98,11 +98,13 @@ export interface ClaudeAnalysisOptions {
   model?: string;
   baseUrl?: string;
   effort?: ClaudeEffortLevel;
+  indicators?: IndicatorItem[];
+  skillContent?: string;
 }
 
 export interface ClaudeAnalysisResult {
   success: boolean;
-  scores: CEDScores;
+  scores: Record<string, number>;
   modelUsed: string;
   rawResponse?: string;
   error?: string;
@@ -217,7 +219,13 @@ export async function analyzeWithClaude(options: ClaudeAnalysisOptions): Promise
   const effortLevel = options.effort || 'medium';
   const effortConfig = CLAUDE_EFFORT_CONFIGS[effortLevel] || CLAUDE_EFFORT_CONFIGS.medium;
 
-  const prompt = buildCEDPrompt(options.companyCode, options.fiscalYear);
+  const prompt = buildAnalysisPrompt({
+    companyCode: options.companyCode,
+    fiscalYear: options.fiscalYear,
+    indicators: options.indicators,
+    skillContent: options.skillContent
+  });
+  const customKeys = options.indicators?.map(i => i.code);
   const processedText = options.pdfText ? preprocessTextForCED(options.pdfText, 45000) : '';
 
   const userContent = processedText
@@ -225,9 +233,8 @@ export async function analyzeWithClaude(options: ClaudeAnalysisOptions): Promise
     : prompt;
 
   const systemPrompt =
-    'You are an expert Indonesian ESG and Carbon Emission Disclosure (CED) auditor. ' +
-    'You strictly evaluate the report and return ONLY a valid JSON object containing all 18 CED indicator scores ' +
-    '(cc1, cc2, ghg1, ghg2, ghg3, ghg4, ghg5, ghg6, ghg7, ec1, ec2, ec3, rc1, rc2, rc3, rc4, acc1, acc2) each scored from 0 to 5, ' +
+    'You are an expert auditor for sustainability and disclosure indicators. ' +
+    'You strictly evaluate the report and return ONLY a valid JSON object containing indicator scores each scored from 0 to 5, ' +
     'plus notes explaining key findings. Do not include markdown codeblock wrappers like ```json if possible, just the raw JSON.';
 
   const executeRequest = async (useThinking: boolean) => {
@@ -289,8 +296,8 @@ export async function analyzeWithClaude(options: ClaudeAnalysisOptions): Promise
     throw new Error(`Respons teks dari model Claude ${model} kosong atau gagal diproses.`);
   }
 
-  const parsedRaw = extractAndParseJSON(rawText);
-  const scores = normalizeScores(parsedRaw);
+  const parsedRaw = extractAndParseJSON(rawText, customKeys);
+  const scores = normalizeScores(parsedRaw, customKeys);
 
   return {
     success: true,

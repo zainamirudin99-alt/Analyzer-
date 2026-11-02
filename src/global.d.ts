@@ -168,6 +168,13 @@ declare module 'lucide-react' {
   export const CheckCircle: any;
   export const Menu: any;
   export const ChevronRight: any;
+  export const Plus: any;
+  export const Edit2: any;
+  export const Edit: any;
+  export const Pencil: any;
+  export const Filter: any;
+  export const Upload: any;
+  export const Settings2: any;
 
   const icons: any;
   export default icons;

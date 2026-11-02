@@ -3,7 +3,7 @@
 // Multi-Model Auto-Discovery (Gemini 1.5 to 3.7 & 3.1 Pro)
 // ============================================================
 
-import { CEDScores, INDICATOR_KEYS } from './types';
+import { CEDScores, INDICATOR_KEYS, IndicatorItem } from './types';
 
 export interface ModelCategory {
   category: string;
@@ -51,20 +51,38 @@ export interface GeminiAnalysisOptions {
   pdfBase64?: string;
   apiKey?: string;
   preferredModel?: string;
+  indicators?: IndicatorItem[];
+  skillContent?: string;
 }
 
 export interface GeminiAnalysisResult {
   success: boolean;
-  scores: CEDScores;
+  scores: Record<string, number>;
   modelUsed: string;
   rawResponse?: string;
   error?: string;
 }
 
-export function buildCEDPrompt(companyCode: string, fiscalYear: string): string {
-  return `Saya adalah peneliti yang ingin mengidentifikasi mengenai carbon emission disclosure pada perusahaan tambang di negara Indonesia. Saya ingin mengidentifikai carbon emission disclosure dengan menggunakan Indikator berikut! Terdapat 18 indikator yaitu:
+export function buildAnalysisPrompt(params: {
+  companyCode: string;
+  fiscalYear: string;
+  indicators?: IndicatorItem[];
+  skillContent?: string;
+}): string {
+  const { companyCode, fiscalYear, indicators, skillContent } = params;
 
-1. CC1 – Penilaian/deskripsi dari risiko (peraturan/regulasi baik khusus maupun umum) yang berhubungan dengan perubahan iklim dan aksi yang dilakukan atau aksi yang dilakukan untuk mengatasi risiko tersebut.
+  let indicatorsText = '';
+  let sampleJsonObj: Record<string, number> = {};
+
+  if (indicators && indicators.length > 0) {
+    indicatorsText = indicators
+      .map((ind, idx) => `${idx + 1}. ${ind.code} – ${ind.title}: ${ind.fullDesc}`)
+      .join('\n');
+    indicators.forEach(ind => {
+      sampleJsonObj[ind.code] = 0;
+    });
+  } else {
+    indicatorsText = `1. CC1 – Penilaian/deskripsi dari risiko (peraturan/regulasi baik khusus maupun umum) yang berhubungan dengan perubahan iklim dan aksi yang dilakukan atau aksi yang dilakukan untuk mengatasi risiko tersebut.
 2. CC2 – Penilaian/deskripsi saat ini (dan masa depan) dari implikasi keuangan, implikasi bisnis dan peluang dari perubahan iklim.
 3. GHG1 – Deskripsi tentang metodologi yang digunakan untuk mengkalkulasi (menghitung) emisi GRK (gas rumah kaca atau ISO).
 4. GHG2 – Keberadaan verifikasi dari pihak eksternal dalam mengukur jumlah emisi GRK oleh siapa dan pada dasar apa.
@@ -81,24 +99,44 @@ export function buildCEDPrompt(companyCode: string, fiscalYear: string): string 
 15. RC3 – Pengurangan emisi dan biaya atau tabungan (cost or saving) yang dicapai saat ini sebagai akibat dari rencana pengurangan emisi karbon.
 16. RC4 – Biaya dari biaya emisi masa depan yang diperhitungkan dalam perencanaan belanja modal (capital expenditure planning).
 17. ACC1 – Indikasi dari dewan komite (atau badan eksekutif lainnya) yang memiliki tanggungjawab atas tindakan yang berhubungan dengan perubahan iklim.
-18. ACC2 – Deskripsi dari mekanisme dimana dewan (atau suatu badan eksekutif lain) melakukan peninjauan kemajuan perusahaan mengenai perubahan iklim.
+18. ACC2 – Deskripsi dari mekanisme dimana dewan (atau suatu badan eksekutif lain) melakukan peninjauan kemajuan perusahaan mengenai perubahan iklim.`;
+    sampleJsonObj = {
+      CC1: 0, CC2: 0,
+      GHG1: 0, GHG2: 0, GHG3: 0, GHG4: 0, GHG5: 0, GHG6: 0, GHG7: 0,
+      EC1: 0, EC2: 0, EC3: 0,
+      RC1: 0, RC2: 0, RC3: 0, RC4: 0,
+      ACC1: 0, ACC2: 0
+    };
+  }
 
-Indikator di atas dinilai dengan berdasarkan ketentuan poin 0-5, yang berisikan kriteria berikut!
-Scoring
-Each indicator was scored on a scale from 0 to 5 based on the extent of disclosure.
+  const skillPromptBlock = skillContent && skillContent.trim()
+    ? `\n\n=== PANDUAN & KEAHLIAN AUDIT TAMBAHAN (CUSTOM AI SKILL) ===\n${skillContent.trim()}\nPetunjuk: Gunakan panduan keahlian di atas sebagai acuan penilaian mendalam saat mengevaluasi dokumen.`
+    : '';
+
+  return `Saya adalah peneliti yang ingin mengidentifikasi dan menilai pengungkapan indikator pada dokumen laporan perusahaan di Indonesia.
+Saya ingin mengidentifikasi tingkat pengungkapan menggunakan daftar indikator berikut:
+
+${indicatorsText}
+
+Indikator di atas dinilai dengan berdasarkan ketentuan poin 0-5, yang berisikan kriteria berikut:
+Scoring Rubric (Skala 0 sampai 5):
 0: No disclosure (Tidak ada pengungkapan sama sekali).
 1: Disclosed in fewer than three sentences (Diungkapkan dalam kurang dari 3 kalimat).
 2: Disclosed in three sentences or one paragraph, no more than half a page (Diungkapkan dalam 3 kalimat atau 1 paragraf, tidak lebih dari 1/2 halaman).
 3: Disclosed in at least half a page but less than one A4 page (Diungkapkan minimal 1/2 halaman tetapi kurang dari 1 halaman A4).
 4: Disclosed on a full A4 page (Diungkapkan pada 1 halaman A4 penuh).
-5: Disclosed on more than one A4 page (Diungkapkan lebih dari 1 halaman A4).
+5: Disclosed on more than one A4 page (Diungkapkan lebih dari 1 halaman A4).${skillPromptBlock}
 
-Berikut terlampir dokumen laporan tahunan / laporan keberlanjutan perusahaan "${companyCode}" untuk tahun fiskal "${fiscalYear}".
-Bantulah untuk mengidentifikasi ke-18 indikator di atas yang berada pada dokumen dengan nilai skor 0 sampai 5.
+Berikut terlampir dokumen laporan tahunan / keberlanjutan perusahaan "${companyCode}" untuk tahun fiskal "${fiscalYear}".
+Bantulah untuk mengidentifikasi dan memberi nilai skor 0 sampai 5 untuk setiap indikator di atas secara objektif, ketat, dan apa adanya.
 
 INSTRUKSI OUTPUT WAJIB:
 Kembalikan HANYA objek JSON murni tanpa markdown, tanpa teks pembuka atau penutup:
-{"CC1":0,"CC2":0,"GHG1":0,"GHG2":0,"GHG3":0,"GHG4":0,"GHG5":0,"GHG6":0,"GHG7":0,"EC1":0,"EC2":0,"EC3":0,"RC1":0,"RC2":0,"RC3":0,"RC4":0,"ACC1":0,"ACC2":0}`;
+${JSON.stringify(sampleJsonObj)}`;
+}
+
+export function buildCEDPrompt(companyCode: string, fiscalYear: string): string {
+  return buildAnalysisPrompt({ companyCode, fiscalYear });
 }
 
 /**
@@ -167,7 +205,7 @@ export function preprocessTextForCED(rawText: string, maxChars = 250000): string
 /**
  * Ekstraktor JSON yang tangguh (robust JSON parser)
  */
-export function extractAndParseJSON(rawText: string): Record<string, number> {
+export function extractAndParseJSON(rawText: string, expectedKeys?: string[]): Record<string, number> {
   const cleaned = rawText
     .replace(/```json\s*/gi, '')
     .replace(/```\s*/gi, '')
@@ -200,25 +238,41 @@ export function extractAndParseJSON(rawText: string): Record<string, number> {
   }
 
   const fallbackScores: Record<string, number> = {};
-  const regex = /"?(CC[12]|GHG[1-7]|EC[123]|RC[1-4]|ACC[12])"?\s*:\s*([0-5])/gi;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(rawText)) !== null) {
-    const key = match[1].toUpperCase();
-    const val = parseInt(match[2], 10);
-    fallbackScores[key] = isNaN(val) ? 0 : Math.max(0, Math.min(5, val));
+  if (expectedKeys && expectedKeys.length > 0) {
+    const escaped = expectedKeys.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+    const regex = new RegExp(`"?(${escaped})"?\\s*:\\s*([0-5])`, 'gi');
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(rawText)) !== null) {
+      const key = match[1].toUpperCase();
+      const val = parseInt(match[2], 10);
+      fallbackScores[key] = isNaN(val) ? 0 : Math.max(0, Math.min(5, val));
+    }
+  } else {
+    const regex = /"?(CC[12]|GHG[1-7]|EC[123]|RC[1-4]|ACC[12])"?\s*:\s*([0-5])/gi;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(rawText)) !== null) {
+      const key = match[1].toUpperCase();
+      const val = parseInt(match[2], 10);
+      fallbackScores[key] = isNaN(val) ? 0 : Math.max(0, Math.min(5, val));
+    }
   }
 
   return fallbackScores;
 }
 
-export function normalizeScores(rawObj: Record<string, any>): CEDScores {
-  const result: CEDScores = {
-    cc1: 0, cc2: 0,
-    ghg1: 0, ghg2: 0, ghg3: 0, ghg4: 0, ghg5: 0, ghg6: 0, ghg7: 0,
-    ec1: 0, ec2: 0, ec3: 0,
-    rc1: 0, rc2: 0, rc3: 0, rc4: 0,
-    acc1: 0, acc2: 0
-  };
+export function normalizeScores(rawObj: Record<string, any>, customKeys?: string[]): Record<string, number> {
+  const result: Record<string, number> = {};
+
+  if (customKeys && customKeys.length > 0) {
+    customKeys.forEach(k => {
+      const lower = k.toLowerCase();
+      const upper = k.toUpperCase();
+      const val = rawObj[upper] ?? rawObj[lower] ?? rawObj[k] ?? 0;
+      const num = parseInt(String(val), 10);
+      result[lower] = isNaN(num) ? 0 : Math.max(0, Math.min(5, num));
+    });
+    return result;
+  }
 
   INDICATOR_KEYS.forEach((k) => {
     const upper = k.toUpperCase();
@@ -227,7 +281,7 @@ export function normalizeScores(rawObj: Record<string, any>): CEDScores {
     result[k] = isNaN(num) ? 0 : Math.max(0, Math.min(5, num));
   });
 
-  return result;
+  return result as CEDScores;
 }
 
 /**
@@ -348,7 +402,13 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
     ...ALL_SUPPORTED_MODELS.filter(m => !m.includes('8b'))
   ]));
 
-  const prompt = buildCEDPrompt(options.companyCode, options.fiscalYear);
+  const prompt = buildAnalysisPrompt({
+    companyCode: options.companyCode,
+    fiscalYear: options.fiscalYear,
+    indicators: options.indicators,
+    skillContent: options.skillContent
+  });
+  const customKeys = options.indicators?.map(i => i.code);
   const modelErrors: { model: string; message: string; status?: number }[] = [];
 
   // 2. Preprocessing teks dokumen untuk efisiensi token & kecepatan
@@ -405,8 +465,8 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
           throw new Error(`Respons dari model ${model} kosong atau di-filter oleh Google Safety Settings.`);
         }
 
-        const parsedRaw = extractAndParseJSON(rawText);
-        const scores = normalizeScores(parsedRaw);
+        const parsedRaw = extractAndParseJSON(rawText, customKeys);
+        const scores = normalizeScores(parsedRaw, customKeys);
 
         return {
           success: true,

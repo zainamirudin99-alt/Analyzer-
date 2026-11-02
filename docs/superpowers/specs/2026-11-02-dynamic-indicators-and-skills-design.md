@@ -114,3 +114,4 @@ export interface CustomAISkill {
 3. Verifikasi Sinkronisasi Model AI: Mengubah provider/model di UploadTab tercermin di SettingsTab dan sebaliknya.
 4. Verifikasi Custom Skill: Mengunggah file `.md`/`.txt`, memilih skill di UploadTab, dan memastikan instruksi terinjeksi ke payload `/api/analyze`.
 5. Verifikasi Zero-Regression: Analisis dengan 18 Indikator CED standar tetap berfungsi 100% tanpa error.
+

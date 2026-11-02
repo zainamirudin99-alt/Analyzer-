@@ -3,8 +3,19 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useState, useRef, useEffect, FC, DragEvent } from 'react';
-import { UploadCloud, FileText, CheckCircle2, Sparkles, RefreshCw, ArrowRight, Copy, Check, Eye, Download, X } from 'lucide-react';
-import { CEDScores, INDICATOR_KEYS, CEDResultRecord } from '@/lib/types';
+import { UploadCloud, FileText, CheckCircle2, Sparkles, RefreshCw, ArrowRight, Copy, Check, Eye, Download, X, Settings2, Sliders, Cpu } from 'lucide-react';
+import { CEDScores, INDICATOR_KEYS, CEDResultRecord, IndicatorPreset, CustomAISkill } from '@/lib/types';
+import {
+  getStoredPresets,
+  getActivePresetId,
+  setActivePresetId,
+  getActivePreset,
+  getStoredSkills,
+  getActiveSkillId,
+  setActiveSkillId,
+  getActiveSkill,
+  DEFAULT_PRESET_ID
+} from '@/lib/indicators-storage';
 
 interface UploadTabProps {
   onSuccessAnalysis: () => void;
@@ -43,10 +54,12 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
   const [scoreResult, setScoreResult] = useState<{
     code: string;
     year: string;
-    scores: CEDScores;
+    scores: Record<string, number>;
     totalScore: number;
     disclosureLevel: string;
     modelUsed: string;
+    presetId?: string;
+    presetName?: string;
     extraction?: { page_count: number; total_characters: number; is_scanned: boolean };
     savedInDb: boolean;
   } | null>(null);
@@ -54,28 +67,98 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
   const [activeProvider, setActiveProvider] = useState<'gemini' | 'openai' | 'claude'>('gemini');
   const [activeModel, setActiveModel] = useState<string>('gemini-3.7-flash');
 
+  // Preset Indikator & Custom Skills State
+  const [presets, setPresets] = useState<IndicatorPreset[]>([]);
+  const [activePresetId, setActivePresetIdState] = useState<string>(DEFAULT_PRESET_ID);
+  const [skills, setSkills] = useState<CustomAISkill[]>([]);
+  const [activeSkillId, setActiveSkillIdState] = useState<string>('none');
+
+  const syncAllState = () => {
+    // 1. Sinkronisasi Model AI
+    const provider = (typeof window !== 'undefined' ? localStorage.getItem('custom_ai_provider') || 'gemini' : 'gemini') as 'gemini' | 'openai' | 'claude';
+    setActiveProvider(provider);
+    if (provider === 'claude') {
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('custom_claude_model') || 'claude-3-7-sonnet-20250219' : 'claude-3-7-sonnet-20250219';
+      setActiveModel(stored);
+    } else if (provider === 'openai') {
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('custom_openai_model') || 'gpt-4o-mini' : 'gpt-4o-mini';
+      setActiveModel(stored);
+    } else {
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') || 'gemini-3.7-flash' : 'gemini-3.7-flash';
+      setActiveModel(stored);
+    }
+
+    // 2. Sinkronisasi Preset Indikator
+    const storedPresets = getStoredPresets();
+    const currentActivePreset = getActivePresetId();
+    setPresets(storedPresets);
+    setActivePresetIdState(currentActivePreset);
+
+    // 3. Sinkronisasi Custom AI Skills
+    const storedSkills = getStoredSkills();
+    const currentSkillId = getActiveSkillId();
+    setSkills(storedSkills);
+    setActiveSkillIdState(currentSkillId);
+  };
+
   useEffect(() => {
-    const syncModel = () => {
-      const provider = (typeof window !== 'undefined' ? localStorage.getItem('custom_ai_provider') || 'gemini' : 'gemini') as 'gemini' | 'openai' | 'claude';
-      setActiveProvider(provider);
-      if (provider === 'claude') {
-        const stored = typeof window !== 'undefined' ? localStorage.getItem('custom_claude_model') || 'claude-3-7-sonnet-20250219' : 'claude-3-7-sonnet-20250219';
-        const effort = typeof window !== 'undefined' ? localStorage.getItem('custom_claude_effort') || 'medium' : 'medium';
-        setActiveModel(`${stored} [${effort.toUpperCase()}]`);
-      } else if (provider === 'openai') {
-        const stored = typeof window !== 'undefined' ? localStorage.getItem('custom_openai_model') || 'gpt-4o-mini' : 'gpt-4o-mini';
-        setActiveModel(stored);
-      } else {
-        const stored = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') || 'gemini-3.7-flash' : 'gemini-3.7-flash';
-        setActiveModel(stored);
-      }
-    };
-    syncModel();
+    syncAllState();
     if (typeof window !== 'undefined') {
-      window.addEventListener('storage', syncModel);
-      return () => window.removeEventListener('storage', syncModel);
+      window.addEventListener('storage', syncAllState);
+      window.addEventListener('analyzer_presets_changed', syncAllState);
+      window.addEventListener('analyzer_active_preset_changed', syncAllState);
+      window.addEventListener('analyzer_skills_changed', syncAllState);
+      window.addEventListener('analyzer_active_skill_changed', syncAllState);
+      return () => {
+        window.removeEventListener('storage', syncAllState);
+        window.removeEventListener('analyzer_presets_changed', syncAllState);
+        window.removeEventListener('analyzer_active_preset_changed', syncAllState);
+        window.removeEventListener('analyzer_skills_changed', syncAllState);
+        window.removeEventListener('analyzer_active_skill_changed', syncAllState);
+      };
     }
   }, []);
+
+  const handleProviderChange = (newProvider: 'gemini' | 'openai' | 'claude') => {
+    setActiveProvider(newProvider);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('custom_ai_provider', newProvider);
+      let defModel = 'gemini-3.7-flash';
+      if (newProvider === 'claude') {
+        defModel = localStorage.getItem('custom_claude_model') || 'claude-3-7-sonnet-20250219';
+      } else if (newProvider === 'openai') {
+        defModel = localStorage.getItem('custom_openai_model') || 'gpt-4o-mini';
+      } else {
+        defModel = localStorage.getItem('custom_gemini_model') || 'gemini-3.7-flash';
+      }
+      setActiveModel(defModel);
+      window.dispatchEvent(new Event('storage'));
+    }
+  };
+
+  const handleModelChange = (newModel: string) => {
+    setActiveModel(newModel);
+    if (typeof window !== 'undefined') {
+      if (activeProvider === 'claude') {
+        localStorage.setItem('custom_claude_model', newModel);
+      } else if (activeProvider === 'openai') {
+        localStorage.setItem('custom_openai_model', newModel);
+      } else {
+        localStorage.setItem('custom_gemini_model', newModel);
+      }
+      window.dispatchEvent(new Event('storage'));
+    }
+  };
+
+  const handlePresetChange = (newPresetId: string) => {
+    setActivePresetId(newPresetId);
+    setActivePresetIdState(newPresetId);
+  };
+
+  const handleSkillChange = (newSkillId: string) => {
+    setActiveSkillId(newSkillId);
+    setActiveSkillIdState(newSkillId);
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -320,6 +403,17 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
       if (storedModel) formData.append('model', storedModel.trim());
     }
 
+    // Lampirkan Preset Indikator Aktif & Custom Skill (jika ada)
+    const activePreset = getActivePreset();
+    formData.append('presetId', activePreset.id);
+    formData.append('presetName', activePreset.name);
+    formData.append('indicatorsJson', JSON.stringify(activePreset.indicators));
+
+    const activeSkill = getActiveSkill();
+    if (activeSkill) {
+      formData.append('skillContent', activeSkill.content);
+    }
+
     try {
       const res = await fetch('/api/analyze', {
         method: 'POST',
@@ -352,6 +446,8 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
         totalScore: data.total_score,
         disclosureLevel: data.disclosure_level,
         modelUsed: data.model_used,
+        presetId: data.preset_id || activePreset.id,
+        presetName: data.preset_name || activePreset.name,
         extraction: data.extraction_summary,
         savedInDb: data.saved_in_supabase
       };
@@ -368,6 +464,8 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
             file_name: data.file_name,
             notes: data.notes,
             status: 'completed',
+            preset_id: data.preset_id || activePreset.id,
+            preset_name: data.preset_name || activePreset.name,
             ...data.scores,
             total_score: data.total_score,
             disclosure_level: data.disclosure_level,
@@ -416,29 +514,41 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // 1. SALIN HANYA 18 SKOR (CC1 s/d ACC2) -> TANPA KODE & TANPA TAHUN
+  // Helper ambil keys indikator aktif
+  const getActiveIndicatorCodes = (): string[] => {
+    const activePreset = getActivePreset();
+    if (activePreset?.indicators && activePreset.indicators.length > 0) {
+      return activePreset.indicators.map(i => i.code.toLowerCase());
+    }
+    return INDICATOR_KEYS;
+  };
+
+  // 1. SALIN HANYA SKOR (Indikator Aktif) -> TANPA KODE & TANPA TAHUN
   const copyScoresOnly = () => {
     if (!scoreResult) return;
-    const scoresTsv = INDICATOR_KEYS.map(k => scoreResult.scores[k] ?? 0).join('\t');
+    const keys = getActiveIndicatorCodes();
+    const scoresTsv = keys.map(k => scoreResult.scores[k] ?? scoreResult.scores[k.toUpperCase()] ?? 0).join('\t');
     navigator.clipboard.writeText(scoresTsv);
     setCopiedType('scores_only');
     setTimeout(() => setCopiedType(null), 3000);
   };
 
-  // 2. SALIN 18 SKOR + TOTAL -> TANPA KODE & TANPA TAHUN
+  // 2. SALIN SKOR + TOTAL -> TANPA KODE & TANPA TAHUN
   const copyScoresAndTotal = () => {
     if (!scoreResult) return;
-    const scoresArray = INDICATOR_KEYS.map(k => scoreResult.scores[k] ?? 0);
+    const keys = getActiveIndicatorCodes();
+    const scoresArray = keys.map(k => scoreResult.scores[k] ?? scoreResult.scores[k.toUpperCase()] ?? 0);
     const scoresTsv = [...scoresArray, scoreResult.totalScore].join('\t');
     navigator.clipboard.writeText(scoresTsv);
     setCopiedType('scores_total');
     setTimeout(() => setCopiedType(null), 3000);
   };
 
-  // 3. SALIN BARIS LENGKAP (Code, Year, 18 Skor, Total)
+  // 3. SALIN BARIS LENGKAP (Code, Year, Skor, Total)
   const copyFullRow = () => {
     if (!scoreResult) return;
-    const scoresArray = INDICATOR_KEYS.map(k => scoreResult.scores[k] ?? 0);
+    const keys = getActiveIndicatorCodes();
+    const scoresArray = keys.map(k => scoreResult.scores[k] ?? scoreResult.scores[k.toUpperCase()] ?? 0);
     const rowTsv = [
       scoreResult.code,
       scoreResult.year,
@@ -609,25 +719,166 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
           </div>
         )}
 
-        {/* Status Mesin AI Aktif */}
+        {/* KONTROL KONFIGURASI: PRESET INDIKATOR, MODEL AI, & CUSTOM SKILL */}
         <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
           background: 'var(--dew, #eef7eb)',
-          border: '1px solid var(--border)',
-          borderRadius: '8px',
-          padding: '8px 12px',
-          marginTop: '12px',
-          fontSize: '12px'
+          border: '1.5px solid var(--border)',
+          borderRadius: '12px',
+          padding: '14px',
+          marginTop: '14px',
+          marginBottom: '6px'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--moss)' }}>
-            <span>{activeProvider === 'claude' ? '🎭' : activeProvider === 'openai' ? '⚡' : '🌿'}</span>
-            <span>Mesin Analisis: <strong>{activeProvider === 'claude' ? 'Anthropic Claude' : activeProvider === 'openai' ? 'OpenAI / ChatGPT' : 'Google Gemini'}</strong> ({activeModel})</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800, fontSize: '13.5px', color: 'var(--moss)' }}>
+              <Sliders size={16} />
+              <span>Konfigurasi Indikator & Model Analisis</span>
+            </div>
+            <span style={{ fontSize: '11px', color: 'var(--stone)' }}>
+              Tersinkronisasi Otomatis
+            </span>
           </div>
-          <span style={{ fontSize: '11px', color: 'var(--stone)' }}>
-            Dikonfigurasi di Tab Pengaturan
-          </span>
+
+          <div className="grid-2" style={{ gap: '10px', marginBottom: '12px' }}>
+            {/* 1. Pemilih Preset Indikator */}
+            <div>
+              <label className="form-label" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--bark)', marginBottom: '4px' }}>
+                🌱 Pilihan Indikator Digunakan
+              </label>
+              <select
+                className="form-select font-mono"
+                value={activePresetId}
+                onChange={e => handlePresetChange(e.target.value)}
+                disabled={isAnalyzing || isExtracting}
+                style={{ background: '#ffffff', fontSize: '12.5px', padding: '7px 10px' }}
+              >
+                {presets.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.indicators.length} Indikator)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* 2. Pemilih Bantuan AI Skill */}
+            <div>
+              <label className="form-label" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--bark)', marginBottom: '4px' }}>
+                🧠 Skill Bantuan AI (Custom Skill)
+              </label>
+              <select
+                className="form-select"
+                value={activeSkillId}
+                onChange={e => handleSkillChange(e.target.value)}
+                disabled={isAnalyzing || isExtracting}
+                style={{ background: '#ffffff', fontSize: '12.5px', padding: '7px 10px' }}
+              >
+                <option value="none">Tanpa Skill Tambahan (Bawaan)</option>
+                {skills.map(s => (
+                  <option key={s.id} value={s.id}>
+                    ✨ {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* 3. Pemilih Mesin & Model AI Dua Arah */}
+          <div>
+            <label className="form-label" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--bark)', marginBottom: '6px' }}>
+              🤖 Mesin & Model AI (Sinkron Dua Arah dengan Pengaturan)
+            </label>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ display: 'flex', background: 'rgba(0,0,0,0.06)', borderRadius: '8px', padding: '3px' }}>
+                <button
+                  type="button"
+                  style={{
+                    padding: '6px 10px',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: activeProvider === 'gemini' ? 700 : 500,
+                    background: activeProvider === 'gemini' ? '#ffffff' : 'transparent',
+                    color: activeProvider === 'gemini' ? 'var(--fern)' : 'var(--stone)',
+                    cursor: 'pointer',
+                    boxShadow: activeProvider === 'gemini' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none'
+                  }}
+                  onClick={() => handleProviderChange('gemini')}
+                >
+                  🌿 Gemini
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    padding: '6px 10px',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: activeProvider === 'openai' ? 700 : 500,
+                    background: activeProvider === 'openai' ? '#ffffff' : 'transparent',
+                    color: activeProvider === 'openai' ? 'var(--fern)' : 'var(--stone)',
+                    cursor: 'pointer',
+                    boxShadow: activeProvider === 'openai' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none'
+                  }}
+                  onClick={() => handleProviderChange('openai')}
+                >
+                  ⚡ OpenAI
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    padding: '6px 10px',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: activeProvider === 'claude' ? 700 : 500,
+                    background: activeProvider === 'claude' ? '#ffffff' : 'transparent',
+                    color: activeProvider === 'claude' ? 'var(--fern)' : 'var(--stone)',
+                    cursor: 'pointer',
+                    boxShadow: activeProvider === 'claude' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none'
+                  }}
+                  onClick={() => handleProviderChange('claude')}
+                >
+                  🎭 Claude
+                </button>
+              </div>
+
+              <select
+                className="form-select font-mono"
+                style={{ flex: 1, minWidth: '180px', background: '#ffffff', padding: '6px 10px', fontSize: '12px' }}
+                value={activeModel.split(' ')[0]}
+                onChange={e => handleModelChange(e.target.value)}
+                disabled={isAnalyzing || isExtracting}
+              >
+                {activeProvider === 'gemini' && (
+                  <>
+                    <option value="gemini-3.7-flash">gemini-3.7-flash ⭐ (Next-Gen High-Speed)</option>
+                    <option value="gemini-3.7-pro">gemini-3.7-pro (Next-Gen Flagship)</option>
+                    <option value="gemini-3.1-pro">gemini-3.1-pro (Deep Reasoning)</option>
+                    <option value="gemini-2.5-flash">gemini-2.5-flash (Enhanced 2.5)</option>
+                    <option value="gemini-2.0-flash">gemini-2.0-flash (Multimodal 2.0)</option>
+                    <option value="gemini-1.5-flash">gemini-1.5-flash (Stabil, 1M Context)</option>
+                    <option value="gemini-1.5-pro">gemini-1.5-pro (Penalaran Kompleks)</option>
+                  </>
+                )}
+                {activeProvider === 'openai' && (
+                  <>
+                    <option value="gpt-4o">gpt-4o ⭐ (Flagship Multimodal)</option>
+                    <option value="gpt-4o-mini">gpt-4o-mini (Ringan & Cepat)</option>
+                    <option value="gpt-4-turbo">gpt-4-turbo (High Accuracy)</option>
+                    <option value="o1-mini">o1-mini (Reasoning)</option>
+                  </>
+                )}
+                {activeProvider === 'claude' && (
+                  <>
+                    <option value="claude-3-7-sonnet-20250219">Claude 3.7 Sonnet (Hybrid Reasoning)</option>
+                    <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+                    <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku</option>
+                    <option value="claude-3-opus-20240229">Claude 3 Opus</option>
+                    <option value="claude-fable-5-1">Claude Fable 5.1 (Riset)</option>
+                  </>
+                )}
+              </select>
+            </div>
+          </div>
         </div>
 
         {/* Action Buttons: 2-Step Workflow */}
@@ -781,13 +1032,13 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
           </div>
 
           <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--stone)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-            Rincian 18 Indikator (Skala 0 – 5):
+            Rincian Indikator (Skala 0 – 5):
           </div>
 
           <div className="ind-grid">
-            {INDICATOR_KEYS.map(k => {
+            {getActiveIndicatorCodes().map(k => {
               const upper = k.toUpperCase();
-              const score = scoreResult.scores[k] || 0;
+              const score = scoreResult.scores[k] ?? scoreResult.scores[upper] ?? 0;
               return (
                 <div key={k} className="ind-item">
                   <div className="ind-code">{upper}</div>

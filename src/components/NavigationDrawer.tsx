@@ -19,7 +19,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
   toggleButtonRef
 }) => {
   // Grup Analyze SR otomatis terbuka jika salah satu anaknya aktif
-  const isChildOfAnalyze = ['upload', 'results', 'guide'].includes(activeTab);
+  const isChildOfAnalyze = ['guide', 'upload', 'results'].includes(activeTab);
   const [isAnalyzeOpen, setIsAnalyzeOpen] = useState<boolean>(true);
 
   useEffect(() => {
@@ -105,18 +105,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
         </div>
 
         <nav className="drawer-nav-list" aria-label="Daftar Menu">
-          {/* 1. Pengaturan & Database */}
-          <button
-            type="button"
-            className={`drawer-nav-item ${activeTab === 'settings' ? 'active' : ''}`}
-            onClick={() => handleItemClick('settings')}
-            data-testid="nav-item-settings"
-          >
-            <span className="nav-item-icon">⚙️</span>
-            <span className="nav-item-label">Pengaturan & Database</span>
-          </button>
-
-          {/* 2. Analyze SR (Grup yang bisa dilipat) */}
+          {/* 1. Analyze SR (Grup Analisis Berkelanjutan) */}
           <div className="drawer-group" data-testid="drawer-group-analyze-sr">
             <button
               type="button"
@@ -128,7 +117,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
             >
               <div className="group-header-left">
                 <span className="nav-item-icon">📑</span>
-                <span className="group-title">Analyze SR</span>
+                <span className="group-title">Analyze SR (Sustainability)</span>
               </div>
               <span className="group-chevron">
                 {isAnalyzeOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
@@ -137,6 +126,17 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
 
             {isAnalyzeOpen && (
               <div id="analyze-sr-subitems" className="drawer-subgroup" data-testid="analyze-sr-subitems">
+                {/* Opsi Pertama: Pilihan Indikator */}
+                <button
+                  type="button"
+                  className={`drawer-sub-item ${activeTab === 'guide' ? 'active' : ''}`}
+                  onClick={() => handleItemClick('guide')}
+                  data-testid="nav-item-guide"
+                >
+                  <span className="nav-item-icon">🌱</span>
+                  <span className="nav-item-label">Pilihan Indikator</span>
+                </button>
+
                 <button
                   type="button"
                   className={`drawer-sub-item ${activeTab === 'upload' ? 'active' : ''}`}
@@ -156,19 +156,20 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
                   <span className="nav-item-icon">📋</span>
                   <span className="nav-item-label">Tabel Hasil Analisis</span>
                 </button>
-
-                <button
-                  type="button"
-                  className={`drawer-sub-item ${activeTab === 'guide' ? 'active' : ''}`}
-                  onClick={() => handleItemClick('guide')}
-                  data-testid="nav-item-guide"
-                >
-                  <span className="nav-item-icon">🌱</span>
-                  <span className="nav-item-label">Panduan 18 Indikator</span>
-                </button>
               </div>
             )}
           </div>
+
+          {/* 2. Pengaturan & Database */}
+          <button
+            type="button"
+            className={`drawer-nav-item ${activeTab === 'settings' ? 'active' : ''}`}
+            onClick={() => handleItemClick('settings')}
+            data-testid="nav-item-settings"
+          >
+            <span className="nav-item-icon">⚙️</span>
+            <span className="nav-item-label">Pengaturan & Database</span>
+          </button>
 
           {/* 3. Analisis Regresi Statistik */}
           <button
@@ -181,7 +182,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
             <span className="nav-item-label">Analisis Regresi Statistik</span>
           </button>
 
-          {/* 4. Regresi Data Panel Stata (BARU) */}
+          {/* 4. Regresi Data Panel Stata */}
           <button
             type="button"
             className={`drawer-nav-item ${activeTab === 'panel' ? 'active' : ''}`}

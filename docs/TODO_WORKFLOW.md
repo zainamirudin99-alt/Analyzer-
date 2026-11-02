@@ -120,3 +120,15 @@ Dokumen ini memuat daftar tugas operasional dari Tahap 1 hingga Tahap 3 beserta 
 - [ ] Ekspor laporan: Word (`.docx`), PDF, dan Excel (`.xlsx`) dengan proteksi formula injection.
 - [ ] Skrip pembersihan berkala data usang (`expires_at`).
 - [ ] **Gerbang G3**: Audit kepatuhan pelaporan jujur, uji ekspor dokumen, evaluasi akhir pengguna.
+
+
+---
+
+## Tahap 4: Dynamic Indicators, Sinkronisasi Multi-Model AI, & Custom AI Skills
+- [x] **T4.1**: Hapus bilah tab horizontal atas di Header (`Header.tsx`), navigasi terpusat di Sidebar Drawer.
+- [x] **T4.2**: Reorganisasi urutan Drawer dengan menu **"Pilihan Indikator"** di posisi pertama.
+- [x] **T4.3**: Implementasi tata letak split 2 kolom pada Pilihan Indikator, mendukung pembuatan preset kustom, duplikasi dari 18 CED, serta tambah/edit/hapus indikator manual.
+- [x] **T4.4**: Sinkronisasi dua arah pemilihan Provider & Model AI serta pemilihan Preset Indikator & Skill di menu **Upload & Analisis**.
+- [x] **T4.5**: Modul **Manajemen Custom AI Skills** di menu **Pengaturan & Database** (unggah file `.md`/`.txt` atau input manual).
+- [x] **T4.6**: Adaptasi kolom dinamis, filter preset, salin spreadsheet, dan ekspor CSV pada **Tabel Hasil Analisis**.
+- [x] **Gerbang G4**: Verifikasi kompilasi TypeScript (`tsc --noEmit`) dan build produksi (`next build`) lulus 100%.

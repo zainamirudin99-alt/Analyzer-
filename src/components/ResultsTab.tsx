@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Download, Search, Trash2, Printer, Copy, Check, Table } from 'lucide-react';
-import { CEDResultRecord, INDICATOR_KEYS } from '@/lib/types';
+import { RefreshCw, Download, Search, Trash2, Printer, Copy, Check, Table, Filter } from 'lucide-react';
+import { CEDResultRecord, INDICATOR_KEYS, IndicatorPreset, IndicatorItem } from '@/lib/types';
+import { getStoredPresets, getActivePresetId, DEFAULT_PRESET_ID } from '@/lib/indicators-storage';
 
 interface ResultsTabProps {
   refreshTrigger: number;
@@ -10,6 +11,8 @@ interface ResultsTabProps {
 
 export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
   const [results, setResults] = useState<CEDResultRecord[]>([]);
+  const [presets, setPresets] = useState<IndicatorPreset[]>([]);
+  const [filterPreset, setFilterPreset] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(false);
   const [filterCode, setFilterCode] = useState('');
   const [filterYear, setFilterYear] = useState('');
@@ -75,8 +78,22 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     setIsLoading(false);
   };
 
+  const loadPresets = () => {
+    const p = getStoredPresets();
+    setPresets(p);
+  };
+
   useEffect(() => {
     fetchResults();
+    loadPresets();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('analyzer_presets_changed', loadPresets);
+      window.addEventListener('analyzer_active_preset_changed', loadPresets);
+      return () => {
+        window.removeEventListener('analyzer_presets_changed', loadPresets);
+        window.removeEventListener('analyzer_active_preset_changed', loadPresets);
+      };
+    }
   }, [refreshTrigger]);
 
   const handleDelete = async (record: CEDResultRecord) => {
@@ -105,21 +122,41 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     setMessage({ type: 'success', text: `Data ${record.company_code} (${record.fiscal_year}) berhasil dihapus.` });
   };
 
-  // 1. SALIN HANYA 18 NILAI SKOR (CC1 s/d ACC2) -> TANPA KODE & TAHUN
+  const selectedPresetObj = presets.find(p => p.id === filterPreset);
+  const activePresetId = getActivePresetId();
+  const activePresetObj = presets.find(p => p.id === activePresetId);
+  const currentPresetForColumns = selectedPresetObj || activePresetObj;
+
+  const displayIndicatorItems: { code: string; title: string }[] =
+    currentPresetForColumns && currentPresetForColumns.indicators.length > 0
+      ? currentPresetForColumns.indicators.map(i => ({ code: i.code, title: i.title }))
+      : INDICATOR_KEYS.map(k => ({ code: k.toUpperCase(), title: k.toUpperCase() }));
+
+  // 1. SALIN HANYA NILAI SKOR
   const handleCopyScoresOnly = (row: CEDResultRecord, idKey: string) => {
-    const scoresTsv = INDICATOR_KEYS.map(k => (row as any)[k] ?? 0).join('\t');
+    const scoresTsv = displayIndicatorItems.map(ind => {
+      const lower = ind.code.toLowerCase();
+      const upper = ind.code.toUpperCase();
+      return (row as any)[lower] ?? (row as any)[upper] ?? 0;
+    }).join('\t');
+
     navigator.clipboard.writeText(scoresTsv);
     setCopiedId(`scores_${idKey}`);
     setMessage({
       type: 'success',
-      text: `18 Nilai skor untuk ${row.company_code} (${row.fiscal_year}) tersalin ke clipboard! Siap di-paste (Ctrl+V) ke spreadsheet.`
+      text: `Nilai skor untuk ${row.company_code} (${row.fiscal_year}) tersalin ke clipboard! Siap di-paste (Ctrl+V) ke spreadsheet.`
     });
     setTimeout(() => setCopiedId(null), 2500);
   };
 
   // 2. SALIN 1 BARIS LENGKAP (+Kode & Tahun)
   const handleCopyRow = (row: CEDResultRecord, idKey: string) => {
-    const scores = INDICATOR_KEYS.map(k => (row as any)[k] ?? 0);
+    const scores = displayIndicatorItems.map(ind => {
+      const lower = ind.code.toLowerCase();
+      const upper = ind.code.toUpperCase();
+      return (row as any)[lower] ?? (row as any)[upper] ?? 0;
+    });
+
     const rowTsv = [
       row.company_code,
       row.fiscal_year,
@@ -140,9 +177,13 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
   const handleCopyAllTable = () => {
     if (filteredResults.length === 0) return;
 
-    const headers = ['Code', 'Years', ...INDICATOR_KEYS.map(k => k.toUpperCase()), 'TOTAL'];
+    const headers = ['Code', 'Years', ...displayIndicatorItems.map(i => i.code), 'TOTAL'];
     const rows = filteredResults.map(r => {
-      const scores = INDICATOR_KEYS.map(k => (r as any)[k] ?? 0);
+      const scores = displayIndicatorItems.map(ind => {
+        const lower = ind.code.toLowerCase();
+        const upper = ind.code.toUpperCase();
+        return (r as any)[lower] ?? (r as any)[upper] ?? 0;
+      });
       return [r.company_code, r.fiscal_year, ...scores, r.total_score ?? 0].join('\t');
     });
 
@@ -164,28 +205,27 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
 
     const headers = [
       'Company Code', 'Fiscal Year', 'File Name',
-      'CC1', 'CC2',
-      'GHG1', 'GHG2', 'GHG3', 'GHG4', 'GHG5', 'GHG6', 'GHG7',
-      'EC1', 'EC2', 'EC3',
-      'RC1', 'RC2', 'RC3', 'RC4',
-      'ACC1', 'ACC2',
-      'Total Score (Max 90)', 'Disclosure Level', 'Model Used', 'Created At'
+      ...displayIndicatorItems.map(i => i.code),
+      'Total Score', 'Disclosure Level', 'Model Used', 'Created At'
     ];
 
-    const rows = filteredResults.map(r => [
-      `"${r.company_code}"`,
-      `"${r.fiscal_year}"`,
-      `"${(r.file_name || '').replace(/"/g, '""')}"`,
-      r.cc1 ?? 0, r.cc2 ?? 0,
-      r.ghg1 ?? 0, r.ghg2 ?? 0, r.ghg3 ?? 0, r.ghg4 ?? 0, r.ghg5 ?? 0, r.ghg6 ?? 0, r.ghg7 ?? 0,
-      r.ec1 ?? 0, r.ec2 ?? 0, r.ec3 ?? 0,
-      r.rc1 ?? 0, r.rc2 ?? 0, r.rc3 ?? 0, r.rc4 ?? 0,
-      r.acc1 ?? 0, r.acc2 ?? 0,
-      r.total_score ?? 0,
-      `"${r.disclosure_level || ''}"`,
-      `"${r.model_used || ''}"`,
-      `"${r.created_at || ''}"`
-    ]);
+    const rows = filteredResults.map(r => {
+      const scores = displayIndicatorItems.map(ind => {
+        const lower = ind.code.toLowerCase();
+        const upper = ind.code.toUpperCase();
+        return (r as any)[lower] ?? (r as any)[upper] ?? 0;
+      });
+      return [
+        `"${r.company_code}"`,
+        `"${r.fiscal_year}"`,
+        `"${(r.file_name || '').replace(/"/g, '""')}"`,
+        ...scores,
+        r.total_score ?? 0,
+        `"${r.disclosure_level || ''}"`,
+        `"${r.model_used || ''}"`,
+        `"${r.created_at || ''}"`
+      ];
+    });
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -200,7 +240,8 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
   const filteredResults = results.filter(item => {
     const matchCode = !filterCode || item.company_code.toLowerCase().includes(filterCode.toLowerCase());
     const matchYear = !filterYear || item.fiscal_year === filterYear;
-    return matchCode && matchYear;
+    const matchPreset = filterPreset === 'all' || (item.preset_id ? item.preset_id === filterPreset : filterPreset === DEFAULT_PRESET_ID);
+    return matchCode && matchYear && matchPreset;
   });
 
   const totalCount = filteredResults.length;
@@ -274,6 +315,21 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
               <option value="FY 2020">FY 2020</option>
             </select>
 
+            <select
+              className="form-select font-mono"
+              style={{ width: '160px' }}
+              value={filterPreset}
+              onChange={e => setFilterPreset(e.target.value)}
+              title="Filter hasil berdasarkan pilihan indikator yang digunakan"
+            >
+              <option value="all">Semua Indikator</option>
+              {presets.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name.length > 22 ? `${p.name.slice(0, 22)}...` : p.name}
+                </option>
+              ))}
+            </select>
+
             <button className="btn btn-outline btn-sm" onClick={fetchResults} disabled={isLoading}>
               <RefreshCw size={13} className={isLoading ? 'spinner' : ''} />
               <span>Refresh</span>
@@ -310,11 +366,9 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
               <tr>
                 <th style={{ textAlign: 'left', minWidth: '90px' }}>Code</th>
                 <th style={{ minWidth: '90px' }}>Years</th>
-                <th>CC1</th><th>CC2</th>
-                <th>GHG1</th><th>GHG2</th><th>GHG3</th><th>GHG4</th><th>GHG5</th><th>GHG6</th><th>GHG7</th>
-                <th>EC1</th><th>EC2</th><th>EC3</th>
-                <th>RC1</th><th>RC2</th><th>RC3</th><th>RC4</th>
-                <th>ACC1</th><th>ACC2</th>
+                {displayIndicatorItems.map(ind => (
+                  <th key={ind.code} title={ind.title}>{ind.code}</th>
+                ))}
                 <th style={{ minWidth: '70px' }}>TOTAL</th>
                 <th style={{ minWidth: '100px' }}>Level</th>
                 <th style={{ minWidth: '190px' }}>Salin & Aksi</th>
@@ -323,7 +377,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={24} style={{ padding: '36px', color: 'var(--text-muted)' }}>
+                  <td colSpan={displayIndicatorItems.length + 5} style={{ padding: '36px', color: 'var(--text-muted)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                       <span className="spinner" style={{ borderColor: 'rgba(0,0,0,0.15)', borderTopColor: 'var(--primary)' }} />
                       <span>Memuat data hasil analisis...</span>
@@ -332,7 +386,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
                 </tr>
               ) : filteredResults.length === 0 ? (
                 <tr>
-                  <td colSpan={24} style={{ padding: '48px 20px', color: 'var(--stone)', fontStyle: 'italic' }}>
+                  <td colSpan={displayIndicatorItems.length + 5} style={{ padding: '48px 20px', color: 'var(--stone)', fontStyle: 'italic' }}>
                     🌿 Belum ada data analisis. Silakan upload laporan tahunan pada tab <strong>"Upload & Analisis"</strong>.
                   </td>
                 </tr>
@@ -347,10 +401,12 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
                       <td className="td-code">{row.company_code}</td>
                       <td className="td-year">{row.fiscal_year}</td>
                       
-                      {INDICATOR_KEYS.map(k => {
-                        const score = (row as any)[k] ?? 0;
+                      {displayIndicatorItems.map(ind => {
+                        const lower = ind.code.toLowerCase();
+                        const upper = ind.code.toUpperCase();
+                        const score = (row as any)[lower] ?? (row as any)[upper] ?? (row.dynamic_scores ? row.dynamic_scores[lower] : 0) ?? 0;
                         return (
-                          <td key={k}>
+                          <td key={ind.code}>
                             <span className={`score-badge score-${score}`}>{score}</span>
                           </td>
                         );
@@ -365,11 +421,11 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
                           <button
                             className="btn btn-primary btn-sm"
                             style={{ padding: '4px 8px', fontSize: '11.5px', fontWeight: 700 }}
-                            title="Salin HANYA 18 Nilai Skor (CC1 s/d ACC2) untuk paste ke spreadsheet"
+                            title="Salin Nilai Skor untuk paste ke spreadsheet"
                             onClick={() => handleCopyScoresOnly(row, rowKey)}
                           >
                             {isCopiedScores ? <Check size={12} /> : <Table size={12} />}
-                            <span>{isCopiedScores ? 'Tersalin!' : '📋 18 Skor'}</span>
+                            <span>{isCopiedScores ? 'Tersalin!' : `📋 ${displayIndicatorItems.length} Skor`}</span>
                           </button>
 
                           <button

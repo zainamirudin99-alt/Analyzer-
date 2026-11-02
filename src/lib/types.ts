@@ -27,7 +27,34 @@ export const INDICATOR_KEYS_UPPER = [
 
 export type CEDScores = Record<CEDIndicatorKey, number>;
 
-export interface CEDResultRecord extends CEDScores {
+export interface IndicatorItem {
+  id: string;          // misal: 'cc1', 'water1'
+  code: string;        // kode kapital, misal: 'CC1', 'WATER1'
+  title: string;       // judul indikator
+  fullDesc: string;    // deskripsi kriteria penilaian
+  group: string;       // nama kelompok/grup
+}
+
+export interface IndicatorPreset {
+  id: string;          // 'default_ced_18' atau string unik
+  name: string;        // nama preset
+  description?: string;
+  isDefault: boolean;  // true untuk bawaan 18 CED
+  indicators: IndicatorItem[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CustomAISkill {
+  id: string;          // id unik skill
+  name: string;        // nama skill
+  fileName?: string;   // nama file saat diunggah (.md/.txt)
+  content: string;     // instruksi pedoman auditing/persona
+  createdAt: string;
+}
+
+export interface CEDResultRecord extends Partial<CEDScores> {
+  [key: string]: any;
   id?: string;
   company_code: string;
   fiscal_year: string;
@@ -37,6 +64,9 @@ export interface CEDResultRecord extends CEDScores {
   total_score?: number;
   disclosure_level?: string;
   model_used?: string;
+  preset_id?: string;
+  preset_name?: string;
+  dynamic_scores?: Record<string, number>;
   created_at?: string;
   updated_at?: string;
 }

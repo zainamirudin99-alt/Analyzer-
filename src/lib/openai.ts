@@ -3,8 +3,8 @@
  * Supports custom models (e.g. GPT Luna, GPT Pro, gpt-4o, etc.) and custom Base URL endpoints.
  */
 
-import { CEDScores } from './types';
-import { buildCEDPrompt, extractAndParseJSON, normalizeScores, preprocessTextForCED } from './gemini';
+import { CEDScores, IndicatorItem } from './types';
+import { buildAnalysisPrompt, buildCEDPrompt, extractAndParseJSON, normalizeScores, preprocessTextForCED } from './gemini';
 
 export interface OpenAIAnalysisOptions {
   companyCode: string;
@@ -13,11 +13,13 @@ export interface OpenAIAnalysisOptions {
   apiKey?: string;
   model?: string;
   baseUrl?: string;
+  indicators?: IndicatorItem[];
+  skillContent?: string;
 }
 
 export interface OpenAIAnalysisResult {
   success: boolean;
-  scores: CEDScores;
+  scores: Record<string, number>;
   modelUsed: string;
   rawResponse?: string;
   error?: string;
@@ -97,7 +99,13 @@ export async function analyzeWithOpenAI(options: OpenAIAnalysisOptions): Promise
   const rootUrl = getCleanBaseUrl(options.baseUrl || (typeof process !== 'undefined' ? process.env.OPENAI_BASE_URL : ''));
   const endpoint = `${rootUrl}/chat/completions`;
 
-  const prompt = buildCEDPrompt(options.companyCode, options.fiscalYear);
+  const prompt = buildAnalysisPrompt({
+    companyCode: options.companyCode,
+    fiscalYear: options.fiscalYear,
+    indicators: options.indicators,
+    skillContent: options.skillContent
+  });
+  const customKeys = options.indicators?.map(i => i.code);
   const processedText = options.pdfText ? preprocessTextForCED(options.pdfText, 45000) : '';
 
   const userContent = processedText
@@ -115,7 +123,7 @@ export async function analyzeWithOpenAI(options: OpenAIAnalysisOptions): Promise
       messages: [
         {
           role: 'system',
-          content: 'You are an expert Indonesian ESG and Carbon Emission Disclosure (CED) auditor. You strictly output valid JSON with 18 CED indicators (cc1-cc2, ghg1-ghg7, ec1-ec3, rc1-rc4, acc1-acc2) scored 0 to 5.'
+          content: 'You are an expert auditor for sustainability and disclosure indicators. You strictly output valid JSON with indicators scored 0 to 5.'
         },
         {
           role: 'user',
@@ -139,8 +147,8 @@ export async function analyzeWithOpenAI(options: OpenAIAnalysisOptions): Promise
     throw new Error(`Respons dari model ${model} kosong atau gagal diproses.`);
   }
 
-  const parsedRaw = extractAndParseJSON(rawText);
-  const scores = normalizeScores(parsedRaw);
+  const parsedRaw = extractAndParseJSON(rawText, customKeys);
+  const scores = normalizeScores(parsedRaw, customKeys);
 
   return {
     success: true,

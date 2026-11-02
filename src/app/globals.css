@@ -1198,3 +1198,58 @@ table.result-table {
   text-align: center;
 }
 
+
+/* ============================================================
+   PILIHAN INDIKATOR & PRESET LAYOUT (SPLIT 2 KOLOM)
+   ============================================================ */
+.indicators-layout {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .indicators-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.preset-card-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  margin-bottom: 10px;
+  background: var(--white);
+  transition: var(--transition);
+  cursor: pointer;
+}
+
+.preset-card-item:hover {
+  border-color: var(--sage);
+  background: var(--dew);
+}
+
+.preset-card-item.selected {
+  border-color: var(--fern);
+  background: var(--dew);
+  box-shadow: 0 2px 10px rgba(46, 105, 34, 0.12);
+}
+
+.preset-card-item.is-active-preset {
+  border-left: 4px solid var(--fern);
+}
+
+.indicator-edit-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin-bottom: 12px;
+  background: var(--white);
+  transition: var(--transition);
+}
+
+.indicator-edit-card:hover {
+  border-color: var(--sage);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}

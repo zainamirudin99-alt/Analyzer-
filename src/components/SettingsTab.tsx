@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Database, Key, Copy, ExternalLink, RefreshCw, Activity, Sparkles } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Database, Key, Copy, ExternalLink, RefreshCw, Activity, Sparkles, Upload, FileText, Trash2, Eye, Plus, Check, X, BookOpen, Edit2 } from 'lucide-react';
+import { CustomAISkill } from '@/lib/types';
+import { getStoredSkills, saveStoredSkills } from '@/lib/indicators-storage';
 import { SUPPORTED_MODEL_CATEGORIES, ALL_SUPPORTED_MODELS } from '@/lib/gemini';
 import { DEFAULT_OPENAI_MODELS } from '@/lib/openai';
 import {
@@ -79,7 +81,28 @@ BEGIN
         status = 'active_keepalive'
     RETURNING public.ced_heartbeat.last_ping, public.ced_heartbeat.ping_count, public.ced_heartbeat.status;
 END;
-$$;`;
+$$;
+
+-- (Opsional) Tabel Kustom Preset Indikator & Custom AI Skills:
+CREATE TABLE IF NOT EXISTS public.custom_indicator_presets (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    indicators JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+ALTER TABLE public.custom_indicator_presets ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public Presets" ON public.custom_indicator_presets FOR ALL USING (true) WITH CHECK (true);
+
+CREATE TABLE IF NOT EXISTS public.custom_ai_skills (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    file_name TEXT,
+    content TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+ALTER TABLE public.custom_ai_skills ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public Skills" ON public.custom_ai_skills FOR ALL USING (true) WITH CHECK (true);`;
 
 const getTabButtonStyle = (isActive: boolean): React.CSSProperties => ({
   flex: 1,
@@ -136,6 +159,109 @@ export const SettingsTab: React.FC = () => {
   const [copiedSql, setCopiedSql] = useState<boolean>(false);
   const [isPinging, setIsPinging] = useState<boolean>(false);
   const [pingMessage, setPingMessage] = useState<string | null>(null);
+
+  // Custom AI Skills State
+  const [skills, setSkills] = useState<CustomAISkill[]>([]);
+  const [showSkillModal, setShowSkillModal] = useState<boolean>(false);
+  const [previewingSkill, setPreviewingSkill] = useState<CustomAISkill | null>(null);
+  const [editingSkill, setEditingSkill] = useState<CustomAISkill | null>(null);
+  const [skillFormName, setSkillFormName] = useState<string>('');
+  const [skillFormContent, setSkillFormContent] = useState<string>('');
+  const [skillNotice, setSkillNotice] = useState<{ type: 'success' | 'warn'; text: string } | null>(null);
+  const skillFileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadSkillsData = () => {
+    const loaded = getStoredSkills();
+    setSkills(loaded);
+  };
+
+  const handleSkillFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.md') && !file.name.endsWith('.txt')) {
+      alert('Hanya mendukung file format Markdown (.md) atau Teks (.txt).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (!text || !text.trim()) {
+        alert('File kosong atau tidak dapat dibaca.');
+        return;
+      }
+
+      const cleanName = file.name.replace(/\.(md|txt)$/i, '');
+      const newSkill: CustomAISkill = {
+        id: `skill_${Date.now()}`,
+        name: cleanName,
+        fileName: file.name,
+        content: text.trim(),
+        createdAt: new Date().toISOString()
+      };
+
+      const updated = [newSkill, ...skills.filter(s => s.name !== cleanName)];
+      setSkills(updated);
+      saveStoredSkills(updated);
+      setSkillNotice({ type: 'success', text: `Skill "${file.name}" berhasil diunggah dan disimpan!` });
+      setTimeout(() => setSkillNotice(null), 4000);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleOpenSkillModal = (skill?: CustomAISkill) => {
+    if (skill) {
+      setEditingSkill(skill);
+      setSkillFormName(skill.name);
+      setSkillFormContent(skill.content);
+    } else {
+      setEditingSkill(null);
+      setSkillFormName('');
+      setSkillFormContent('');
+    }
+    setShowSkillModal(true);
+  };
+
+  const handleSaveSkillManual = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!skillFormName.trim() || !skillFormContent.trim()) return;
+
+    if (editingSkill) {
+      const updated = skills.map(s => s.id === editingSkill.id ? {
+        ...s,
+        name: skillFormName.trim(),
+        content: skillFormContent.trim()
+      } : s);
+      setSkills(updated);
+      saveStoredSkills(updated);
+      setSkillNotice({ type: 'success', text: `Skill "${skillFormName.trim()}" berhasil diperbarui.` });
+    } else {
+      const newSkill: CustomAISkill = {
+        id: `skill_${Date.now()}`,
+        name: skillFormName.trim(),
+        content: skillFormContent.trim(),
+        createdAt: new Date().toISOString()
+      };
+      const updated = [newSkill, ...skills];
+      setSkills(updated);
+      saveStoredSkills(updated);
+      setSkillNotice({ type: 'success', text: `Skill baru "${newSkill.name}" berhasil ditambahkan.` });
+    }
+
+    setShowSkillModal(false);
+    setTimeout(() => setSkillNotice(null), 4000);
+  };
+
+  const handleDeleteSkill = (skillId: string, skillName: string) => {
+    if (!confirm(`Hapus skill "${skillName}"?`)) return;
+    const updated = skills.filter(s => s.id !== skillId);
+    setSkills(updated);
+    saveStoredSkills(updated);
+    setSkillNotice({ type: 'warn', text: `Skill "${skillName}" telah dihapus.` });
+    setTimeout(() => setSkillNotice(null), 4000);
+  };
 
   const handleManualKeepalivePing = async () => {
     setIsPinging(true);
@@ -237,6 +363,7 @@ export const SettingsTab: React.FC = () => {
     }
 
     checkSystemStatus();
+    loadSkillsData();
   }, []);
 
   const checkSystemStatus = async () => {
@@ -1131,6 +1258,218 @@ export const SettingsTab: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* SECTION: MANAJEMEN CUSTOM AI SKILLS */}
+      <div className="card" style={{ gridColumn: '1 / -1', marginTop: '10px' }}>
+        <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="ct-icon">🧠</div>
+            <span>Manajemen Custom AI Skills (Bantuan Analisis)</span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <input
+              type="file"
+              ref={skillFileInputRef}
+              accept=".md,.txt"
+              style={{ display: 'none' }}
+              onChange={handleSkillFileUpload}
+            />
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={() => skillFileInputRef.current?.click()}
+            >
+              <Upload size={14} />
+              <span>Unggah File Skill (.md / .txt)</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => handleOpenSkillModal()}
+            >
+              <Plus size={14} />
+              <span>Tulis Skill Manual</span>
+            </button>
+          </div>
+        </div>
+
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+          Unggah instruksi pedoman auditing, regulasi spesifik (misal: POJK 51, Standar GRI, taksonomi hijau), atau panduan industri dalam format Markdown (<code>.md</code>) atau Teks (<code>.txt</code>). Skill yang tersimpan dapat dipilih pada tab <strong>Upload & Analisis</strong> untuk memperdalam evaluasi AI.
+        </p>
+
+        {skillNotice && (
+          <div className={`alert alert-${skillNotice.type}`} style={{ marginBottom: '14px' }}>
+            <span>{skillNotice.type === 'success' ? '🌿' : '⚠️'}</span>
+            <span>{skillNotice.text}</span>
+          </div>
+        )}
+
+        {/* Daftar Skill Tersimpan */}
+        {skills.length === 0 ? (
+          <div style={{ padding: '32px 16px', textAlign: 'center', background: 'var(--dew)', borderRadius: '12px', border: '1px dashed var(--border)', color: 'var(--stone)' }}>
+            <BookOpen size={28} style={{ opacity: 0.6, marginBottom: '6px' }} />
+            <div style={{ fontWeight: 700, fontSize: '13.5px', color: 'var(--text)' }}>Belum ada skill yang diunggah</div>
+            <div style={{ fontSize: '12px', marginTop: '4px' }}>
+              Klik tombol <strong>"Unggah File Skill (.md / .txt)"</strong> di atas untuk menambahkan dokumen keahlian bantuan analisis pertama Anda.
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
+            {skills.map(s => (
+              <div
+                key={s.id}
+                style={{
+                  background: 'var(--white)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '12px',
+                  padding: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '6px' }}>
+                    <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)' }}>
+                      ✨ {s.name}
+                    </div>
+                    {s.fileName && (
+                      <span className="badge" style={{ fontSize: '10px', background: 'var(--dew)', color: 'var(--moss)' }}>
+                        {s.fileName.endsWith('.md') ? '.MD' : '.TXT'}
+                      </span>
+                    )}
+                  </div>
+                  <p style={{ fontSize: '12px', color: 'var(--stone)', lineHeight: '1.45', height: '36px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                    {s.content}
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--border-light)' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--stone)' }}>
+                    {new Date(s.createdAt).toLocaleDateString('id-ID')}
+                  </span>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      style={{ padding: '3px 8px', fontSize: '11px' }}
+                      onClick={() => setPreviewingSkill(s)}
+                      title="Pratinjau Teks Skill"
+                    >
+                      <Eye size={12} /> Pratinjau
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      style={{ padding: '3px 8px', fontSize: '11px' }}
+                      onClick={() => handleOpenSkillModal(s)}
+                      title="Edit Skill"
+                    >
+                      <Edit2 size={12} /> Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      style={{ padding: '3px 8px', fontSize: '11px', color: 'var(--danger)', borderColor: 'var(--border)' }}
+                      onClick={() => handleDeleteSkill(s.id, s.name)}
+                      title="Hapus Skill"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* MODAL EDIT / TAMBAH SKILL */}
+      {showSkillModal && (
+        <div className="modal-backdrop" onClick={() => setShowSkillModal(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '20px' }}>🧠</span>
+                <h3 style={{ fontSize: '16px', fontWeight: 800 }}>
+                  {editingSkill ? `Edit Skill: ${editingSkill.name}` : 'Tambah Custom AI Skill Baru'}
+                </h3>
+              </div>
+              <button type="button" className="drawer-close-btn" onClick={() => setShowSkillModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSkillManual}>
+              <div style={{ marginBottom: '14px' }}>
+                <label className="form-label" style={{ fontWeight: 700, fontSize: '13px' }}>Nama Skill</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Misal: POJK 51 ESG Auditor atau Panduan Sektor Pertambangan"
+                  value={skillFormName}
+                  onChange={e => setSkillFormName(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div style={{ marginBottom: '18px' }}>
+                <label className="form-label" style={{ fontWeight: 700, fontSize: '13px' }}>
+                  Konten Instruksi Pedoman (Prompt Tambahan untuk AI)
+                </label>
+                <textarea
+                  className="form-textarea font-mono"
+                  rows={8}
+                  style={{ fontSize: '12px', lineHeight: '1.5' }}
+                  placeholder="Ketik atau paste instruksi panduan audit, terminologi, atau kriteria penilaian khusus di sini..."
+                  value={skillFormContent}
+                  onChange={e => setSkillFormContent(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => setShowSkillModal(false)}>
+                  Batal
+                </button>
+                <button type="submit" className="btn btn-primary btn-sm">
+                  {editingSkill ? 'Simpan Perubahan' : 'Simpan Skill'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PRATINJAU SKILL */}
+      {previewingSkill && (
+        <div className="modal-backdrop" onClick={() => setPreviewingSkill(null)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '650px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '20px' }}>📄</span>
+                <h3 style={{ fontSize: '16px', fontWeight: 800 }}>Pratinjau Skill: {previewingSkill.name}</h3>
+              </div>
+              <button type="button" className="drawer-close-btn" onClick={() => setPreviewingSkill(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ maxHeight: '350px', overflowY: 'auto', background: 'var(--dew)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '12.5px', whiteSpace: 'pre-wrap', lineHeight: '1.6', fontFamily: 'monospace' }}>
+              {previewingSkill.content}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => setPreviewingSkill(null)}>
+                Tutup Pratinjau
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
