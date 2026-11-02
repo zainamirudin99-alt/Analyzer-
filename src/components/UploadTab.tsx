@@ -2,7 +2,7 @@
 /* eslint-disable react/no-unescaped-entities */
 /* eslint-disable @next/next/no-img-element */
 
-import React, { useState, useRef, useEffect, FC, DragEvent } from 'react';
+import { useState, useRef, useEffect, FC, DragEvent } from 'react';
 import { UploadCloud, FileText, CheckCircle2, Sparkles, RefreshCw, ArrowRight, Copy, Check, Eye, Download, X } from 'lucide-react';
 import { CEDScores, INDICATOR_KEYS, CEDResultRecord } from '@/lib/types';
 
@@ -51,14 +51,18 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
     savedInDb: boolean;
   } | null>(null);
 
-  const [activeProvider, setActiveProvider] = useState<'gemini' | 'openai'>('gemini');
+  const [activeProvider, setActiveProvider] = useState<'gemini' | 'openai' | 'claude'>('gemini');
   const [activeModel, setActiveModel] = useState<string>('gemini-3.7-flash');
 
   useEffect(() => {
     const syncModel = () => {
-      const provider = (typeof window !== 'undefined' ? localStorage.getItem('custom_ai_provider') || 'gemini' : 'gemini') as 'gemini' | 'openai';
+      const provider = (typeof window !== 'undefined' ? localStorage.getItem('custom_ai_provider') || 'gemini' : 'gemini') as 'gemini' | 'openai' | 'claude';
       setActiveProvider(provider);
-      if (provider === 'openai') {
+      if (provider === 'claude') {
+        const stored = typeof window !== 'undefined' ? localStorage.getItem('custom_claude_model') || 'claude-3-7-sonnet-20250219' : 'claude-3-7-sonnet-20250219';
+        const effort = typeof window !== 'undefined' ? localStorage.getItem('custom_claude_effort') || 'medium' : 'medium';
+        setActiveModel(`${stored} [${effort.toUpperCase()}]`);
+      } else if (provider === 'openai') {
         const stored = typeof window !== 'undefined' ? localStorage.getItem('custom_openai_model') || 'gpt-4o-mini' : 'gpt-4o-mini';
         setActiveModel(stored);
       } else {
@@ -293,7 +297,16 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
     const provider = typeof window !== 'undefined' ? localStorage.getItem('custom_ai_provider') || 'gemini' : 'gemini';
     formData.append('provider', provider);
 
-    if (provider === 'openai') {
+    if (provider === 'claude') {
+      const storedKey = typeof window !== 'undefined' ? localStorage.getItem('custom_claude_key') : null;
+      const storedModel = (typeof window !== 'undefined' ? localStorage.getItem('custom_claude_model') : null) || 'claude-3-7-sonnet-20250219';
+      const storedBaseUrl = typeof window !== 'undefined' ? localStorage.getItem('custom_claude_base_url') : null;
+      const storedEffort = typeof window !== 'undefined' ? localStorage.getItem('custom_claude_effort') || 'medium' : 'medium';
+      if (storedKey) formData.append('apiKey', storedKey.trim());
+      if (storedModel) formData.append('model', storedModel.trim());
+      if (storedBaseUrl) formData.append('baseUrl', storedBaseUrl.trim());
+      formData.append('effort', storedEffort);
+    } else if (provider === 'openai') {
       const storedKey = typeof window !== 'undefined' ? localStorage.getItem('custom_openai_key') : null;
       const storedModel = (typeof window !== 'undefined' ? localStorage.getItem('custom_openai_model') : null) || activeModel || 'gpt-4o-mini';
       const storedBaseUrl = typeof window !== 'undefined' ? localStorage.getItem('custom_openai_base_url') : null;
@@ -609,8 +622,8 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
           fontSize: '12px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--moss)' }}>
-            <span>{activeProvider === 'openai' ? '⚡' : '🌿'}</span>
-            <span>Mesin Analisis: <strong>{activeProvider === 'openai' ? 'OpenAI / ChatGPT' : 'Google Gemini'}</strong> ({activeModel})</span>
+            <span>{activeProvider === 'claude' ? '🎭' : activeProvider === 'openai' ? '⚡' : '🌿'}</span>
+            <span>Mesin Analisis: <strong>{activeProvider === 'claude' ? 'Anthropic Claude' : activeProvider === 'openai' ? 'OpenAI / ChatGPT' : 'Google Gemini'}</strong> ({activeModel})</span>
           </div>
           <span style={{ fontSize: '11px', color: 'var(--stone)' }}>
             Dikonfigurasi di Tab Pengaturan

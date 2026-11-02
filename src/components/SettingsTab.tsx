@@ -1,9 +1,15 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Database, Key, Copy, ExternalLink, RefreshCw, Activity, Sparkles, X } from 'lucide-react';
+import { Database, Key, Copy, ExternalLink, RefreshCw, Activity, Sparkles } from 'lucide-react';
 import { SUPPORTED_MODEL_CATEGORIES, ALL_SUPPORTED_MODELS } from '@/lib/gemini';
 import { DEFAULT_OPENAI_MODELS } from '@/lib/openai';
+import {
+  CLAUDE_MODEL_CATEGORIES,
+  ALL_CLAUDE_MODELS,
+  CLAUDE_EFFORT_CONFIGS,
+  ClaudeEffortLevel
+} from '@/lib/claude';
 
 const SQL_SETUP_SCRIPT = `-- Jalankan ini di Supabase SQL Editor:
 CREATE TABLE IF NOT EXISTS public.ced_results (
@@ -95,7 +101,7 @@ const getTabButtonStyle = (isActive: boolean): React.CSSProperties => ({
 
 export const SettingsTab: React.FC = () => {
   // Provider Selection
-  const [activeProvider, setActiveProvider] = useState<'gemini' | 'openai'>('gemini');
+  const [activeProvider, setActiveProvider] = useState<'gemini' | 'openai' | 'claude'>('gemini');
 
   // Gemini State
   const [apiKey, setApiKey] = useState<string>('');
@@ -111,6 +117,16 @@ export const SettingsTab: React.FC = () => {
   const [newModelInput, setNewModelInput] = useState<string>('');
   const [isOpenaiManualMode, setIsOpenaiManualMode] = useState<boolean>(false);
   const [openaiManualInput, setOpenaiManualInput] = useState<string>('');
+
+  // Claude State
+  const [claudeKey, setClaudeKey] = useState<string>('');
+  const [claudeBaseUrl, setClaudeBaseUrl] = useState<string>('');
+  const [claudeModel, setClaudeModel] = useState<string>('claude-3-7-sonnet-20250219');
+  const [claudeEffort, setClaudeEffort] = useState<ClaudeEffortLevel>('medium');
+  const [claudeCustomModels, setClaudeCustomModels] = useState<string[]>([]);
+  const [newClaudeModelInput, setNewClaudeModelInput] = useState<string>('');
+  const [isClaudeManualMode, setIsClaudeManualMode] = useState<boolean>(false);
+  const [claudeManualInput, setClaudeManualInput] = useState<string>('');
 
   // Status & Test State
   const [isTestingKey, setIsTestingKey] = useState<boolean>(false);
@@ -144,7 +160,7 @@ export const SettingsTab: React.FC = () => {
     if (typeof window === 'undefined') return;
 
     // Load active provider
-    const storedProvider = (localStorage.getItem('custom_ai_provider') || 'gemini') as 'gemini' | 'openai';
+    const storedProvider = (localStorage.getItem('custom_ai_provider') || 'gemini') as 'gemini' | 'openai' | 'claude';
     setActiveProvider(storedProvider);
 
     // Load Gemini settings
@@ -190,6 +206,36 @@ export const SettingsTab: React.FC = () => {
       setIsOpenaiManualMode(false);
     }
 
+    // Load Claude settings
+    const storedClaudeKey = localStorage.getItem('custom_claude_key') || '';
+    const storedClaudeBaseUrl = localStorage.getItem('custom_claude_base_url') || '';
+    const storedClaudeModel = localStorage.getItem('custom_claude_model') || 'claude-3-7-sonnet-20250219';
+    const storedClaudeEffort = (localStorage.getItem('custom_claude_effort') || 'medium') as ClaudeEffortLevel;
+    setClaudeKey(storedClaudeKey);
+    setClaudeBaseUrl(storedClaudeBaseUrl);
+    if (storedClaudeEffort in CLAUDE_EFFORT_CONFIGS) {
+      setClaudeEffort(storedClaudeEffort);
+    }
+
+    const storedClaudeCustomRaw = localStorage.getItem('custom_claude_custom_models');
+    if (storedClaudeCustomRaw) {
+      try {
+        const parsed = JSON.parse(storedClaudeCustomRaw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setClaudeCustomModels(parsed);
+        }
+      } catch {}
+    }
+
+    const defaultClaudeIds = ALL_CLAUDE_MODELS.map(m => m.id);
+    if (defaultClaudeIds.includes(storedClaudeModel)) {
+      setClaudeModel(storedClaudeModel);
+      setIsClaudeManualMode(false);
+    } else if (storedClaudeModel) {
+      setClaudeModel(storedClaudeModel);
+      setIsClaudeManualMode(false);
+    }
+
     checkSystemStatus();
   }, []);
 
@@ -217,6 +263,13 @@ export const SettingsTab: React.FC = () => {
       return openaiManualInput.trim() || 'gpt-4o-mini';
     }
     return openaiModel || 'gpt-4o-mini';
+  };
+
+  const getEffectiveClaudeModel = (): string => {
+    if (isClaudeManualMode || claudeModel === 'manual') {
+      return claudeManualInput.trim() || 'claude-3-7-sonnet-20250219';
+    }
+    return claudeModel || 'claude-3-7-sonnet-20250219';
   };
 
   const handleAddCustomModel = () => {
@@ -248,9 +301,39 @@ export const SettingsTab: React.FC = () => {
     }
   };
 
+  const handleAddClaudeCustomModel = () => {
+    const trimmed = newClaudeModelInput.trim();
+    if (!trimmed) return;
+    if (!claudeCustomModels.includes(trimmed)) {
+      const updated = [...claudeCustomModels, trimmed];
+      setClaudeCustomModels(updated);
+      setClaudeModel(trimmed);
+      setIsClaudeManualMode(false);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('custom_claude_custom_models', JSON.stringify(updated));
+      }
+    } else {
+      setClaudeModel(trimmed);
+      setIsClaudeManualMode(false);
+    }
+    setNewClaudeModelInput('');
+  };
+
+  const handleDeleteClaudeCustomModel = (modelToRemove: string) => {
+    const updated = claudeCustomModels.filter(m => m !== modelToRemove);
+    setClaudeCustomModels(updated);
+    if (claudeModel === modelToRemove) {
+      setClaudeModel('claude-3-7-sonnet-20250219');
+    }
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('custom_claude_custom_models', JSON.stringify(updated));
+    }
+  };
+
   const handleSaveLocalSettings = () => {
     const effectiveGemini = getEffectiveGeminiModel();
     const effectiveOpenai = getEffectiveOpenAIModel();
+    const effectiveClaude = getEffectiveClaudeModel();
 
     if (typeof window !== 'undefined') {
       localStorage.setItem('custom_ai_provider', activeProvider);
@@ -262,10 +345,22 @@ export const SettingsTab: React.FC = () => {
       localStorage.setItem('custom_openai_model', effectiveOpenai);
       localStorage.setItem('custom_openai_custom_models', JSON.stringify(openaiCustomModels));
 
+      localStorage.setItem('custom_claude_key', claudeKey.trim());
+      localStorage.setItem('custom_claude_base_url', claudeBaseUrl.trim());
+      localStorage.setItem('custom_claude_model', effectiveClaude);
+      localStorage.setItem('custom_claude_effort', claudeEffort);
+      localStorage.setItem('custom_claude_custom_models', JSON.stringify(claudeCustomModels));
+
       window.dispatchEvent(new Event('storage'));
     }
 
-    const currentProviderLabel = activeProvider === 'openai' ? `OpenAI / Compatible (${effectiveOpenai})` : `Google Gemini (${effectiveGemini})`;
+    let currentProviderLabel = `Google Gemini (${effectiveGemini})`;
+    if (activeProvider === 'openai') {
+      currentProviderLabel = `OpenAI / Compatible (${effectiveOpenai})`;
+    } else if (activeProvider === 'claude') {
+      currentProviderLabel = `Anthropic Claude (${effectiveClaude} - ${CLAUDE_EFFORT_CONFIGS[claudeEffort]?.label || claudeEffort})`;
+    }
+
     setTestResult({
       success: true,
       message: `Pengaturan Provider Utama (${currentProviderLabel}) berhasil disimpan ke browser dan langsung aktif di menu Upload & Analisis.`
@@ -276,9 +371,19 @@ export const SettingsTab: React.FC = () => {
     setIsTestingKey(true);
     setTestResult(null);
 
-    const isOAI = activeProvider === 'openai';
-    const effectiveModel = isOAI ? getEffectiveOpenAIModel() : getEffectiveGeminiModel();
-    const activeKey = isOAI ? openaiKey.trim() : apiKey.trim();
+    let effectiveModel = getEffectiveGeminiModel();
+    let activeKey = apiKey.trim();
+    let baseUrl: string | undefined = undefined;
+
+    if (activeProvider === 'openai') {
+      effectiveModel = getEffectiveOpenAIModel();
+      activeKey = openaiKey.trim();
+      baseUrl = openaiBaseUrl.trim() || undefined;
+    } else if (activeProvider === 'claude') {
+      effectiveModel = getEffectiveClaudeModel();
+      activeKey = claudeKey.trim();
+      baseUrl = claudeBaseUrl.trim() || undefined;
+    }
 
     try {
       const res = await fetch('/api/settings', {
@@ -288,7 +393,8 @@ export const SettingsTab: React.FC = () => {
           provider: activeProvider,
           apiKey: activeKey,
           model: effectiveModel,
-          baseUrl: isOAI ? openaiBaseUrl.trim() : undefined
+          baseUrl,
+          effort: activeProvider === 'claude' ? claudeEffort : undefined
         })
       });
       const json = await res.json();
@@ -319,7 +425,12 @@ export const SettingsTab: React.FC = () => {
     }
   };
 
-  const activeModelDisplay = activeProvider === 'openai' ? getEffectiveOpenAIModel() : getEffectiveGeminiModel();
+  let activeModelDisplay = getEffectiveGeminiModel();
+  if (activeProvider === 'openai') {
+    activeModelDisplay = getEffectiveOpenAIModel();
+  } else if (activeProvider === 'claude') {
+    activeModelDisplay = `${getEffectiveClaudeModel()} [${claudeEffort.toUpperCase()}]`;
+  }
 
   return (
     <div className="grid-2">
@@ -332,7 +443,7 @@ export const SettingsTab: React.FC = () => {
               <span>Konfigurasi Mesin AI (Multi-Model)</span>
             </div>
             <span style={{ fontSize: '12px', background: 'var(--dew)', color: 'var(--moss)', padding: '2px 8px', borderRadius: '12px', fontWeight: 600 }}>
-              {activeProvider === 'openai' ? '⚡ OpenAI / ChatGPT' : '🌿 Google Gemini'}
+              {activeProvider === 'claude' ? '🎭 Anthropic Claude' : activeProvider === 'openai' ? '⚡ OpenAI / ChatGPT' : '🌿 Google Gemini'}
             </span>
           </div>
 
@@ -361,6 +472,14 @@ export const SettingsTab: React.FC = () => {
             >
               <span>⚡</span>
               <span>OpenAI / ChatGPT</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setActiveProvider('claude'); setTestResult(null); }}
+              style={getTabButtonStyle(activeProvider === 'claude')}
+            >
+              <span>🎭</span>
+              <span>Anthropic Claude</span>
             </button>
           </div>
 
@@ -639,9 +758,263 @@ export const SettingsTab: React.FC = () => {
             </div>
           )}
 
+          {/* TAB CONTENT: ANTHROPIC CLAUDE */}
+          {activeProvider === 'claude' && (
+            <div>
+              <div className="alert alert-info" style={{ fontSize: '13px', marginBottom: '14px' }}>
+                <span>🎭</span>
+                <span>
+                  Mendukung <strong>Anthropic Claude</strong> resmi (Opus, Sonnet, Haiku, Fable) serta server proxy Claude. API Key dapat diperoleh di{' '}
+                  <a
+                    href="https://console.anthropic.com/settings/keys"
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: 'var(--accent)', fontWeight: 700, textDecoration: 'underline' }}
+                  >
+                    Anthropic Console <ExternalLink size={12} style={{ display: 'inline' }} />
+                  </a>
+                </span>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Claude API Key</label>
+                <input
+                  type="password"
+                  className="form-input font-mono"
+                  placeholder="sk-ant-api03-... (dari Anthropic Console)"
+                  value={claudeKey}
+                  onChange={e => setClaudeKey(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label className="form-label">Pilih Model Claude AI</label>
+                </div>
+                <select
+                  className="form-select font-mono"
+                  value={isClaudeManualMode ? 'manual' : claudeModel}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (val === 'manual') {
+                      setIsClaudeManualMode(true);
+                      setClaudeModel('manual');
+                    } else {
+                      setIsClaudeManualMode(false);
+                      setClaudeModel(val);
+                    }
+                  }}
+                >
+                  {CLAUDE_MODEL_CATEGORIES.map(cat => (
+                    <optgroup key={cat.category} label={cat.category}>
+                      {cat.models.map(m => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                  {claudeCustomModels.length > 0 && (
+                    <optgroup label="✨ Model Kustom / Tambahan Pengguna">
+                      {claudeCustomModels.map(m => (
+                        <option key={m} value={m}>🤖 {m}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="✍️ Kustomisasi Langsung">
+                    <option value="manual">-- Ketik Nama Model Lain Secara Manual --</option>
+                  </optgroup>
+                </select>
+
+                {/* Input Manual Kustom Model Claude */}
+                {(isClaudeManualMode || claudeModel === 'manual') && (
+                  <div style={{ marginTop: '10px', background: '#f8faf9', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                    <label className="form-label" style={{ fontSize: '12px', fontWeight: 700 }}>
+                      Ketik Nama Model Claude Manual:
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input font-mono"
+                      placeholder="Contoh: claude-3-7-sonnet-20250219, claude-opus-5-5, claude-fable-5-1"
+                      value={claudeManualInput}
+                      onChange={e => setClaudeManualInput(e.target.value.trim())}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Tingkat Kerja (Extended Thinking Budget) */}
+              <div className="form-group" style={{ marginBottom: '16px' }}>
+                <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Tingkat Kerja (Extended Thinking Budget)</span>
+                  <span style={{ fontSize: '11px', color: 'var(--moss)', fontWeight: 600 }}>
+                    Token Reasoning
+                  </span>
+                </label>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(4, 1fr)',
+                  gap: '6px',
+                  marginBottom: '8px'
+                }}>
+                  {(['low', 'medium', 'hard', 'extra'] as ClaudeEffortLevel[]).map(lvl => {
+                    const cfg = CLAUDE_EFFORT_CONFIGS[lvl];
+                    const isSelected = claudeEffort === lvl;
+                    return (
+                      <button
+                        key={lvl}
+                        type="button"
+                        onClick={() => setClaudeEffort(lvl)}
+                        style={{
+                          padding: '8px 4px',
+                          borderRadius: '8px',
+                          border: isSelected ? '1.5px solid var(--fern)' : '1px solid var(--border)',
+                          background: isSelected ? 'var(--dew, #eef7eb)' : '#ffffff',
+                          color: isSelected ? 'var(--fern)' : 'var(--bark)',
+                          fontWeight: isSelected ? 700 : 500,
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '2px',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <span style={{ textTransform: 'capitalize', fontWeight: 700 }}>
+                          {lvl === 'medium' ? 'Medium ⭐' : lvl}
+                        </span>
+                        <span style={{ fontSize: '10.5px', color: isSelected ? 'var(--fern)' : 'var(--stone)' }}>
+                          {(cfg.budgetTokens / 1024).toFixed(0)}k tkns
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: '11.5px', color: 'var(--stone)', background: '#fafbfc', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                  💡 <strong>{CLAUDE_EFFORT_CONFIGS[claudeEffort]?.label}</strong>: {CLAUDE_EFFORT_CONFIGS[claudeEffort]?.description}
+                </div>
+              </div>
+
+              {/* Box Tambah & Kelola Model Kustom Claude */}
+              <div style={{
+                background: 'var(--dew, #f4faf2)',
+                border: '1px dashed var(--leaf, #489333)',
+                borderRadius: '8px',
+                padding: '12px',
+                marginBottom: '16px'
+              }}>
+                <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--fern, #2e6922)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Sparkles size={14} />
+                  <span>Tambah Model Claude Kustom (Contoh: claude-custom-proxy, dll)</span>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                  <input
+                    type="text"
+                    className="form-input font-mono"
+                    placeholder="Ketik slug model (misal: claude-opus-next)"
+                    value={newClaudeModelInput}
+                    onChange={e => setNewClaudeModelInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddClaudeCustomModel();
+                      }
+                    }}
+                    style={{ fontSize: '13px', background: '#ffffff' }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={handleAddClaudeCustomModel}
+                    style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    <span style={{ fontSize: '15px', fontWeight: 800 }}>+</span>
+                    <span>Tambah Model</span>
+                  </button>
+                </div>
+
+                {/* Daftar Model Kustom Terdaftar */}
+                {claudeCustomModels.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: '11.5px', color: 'var(--stone)', marginBottom: '4px' }}>
+                      Model kustom tersimpan di browser:
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {claudeCustomModels.map(m => (
+                        <span
+                          key={m}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            background: claudeModel === m ? 'var(--fern)' : '#ffffff',
+                            color: claudeModel === m ? '#ffffff' : 'var(--bark)',
+                            border: '1px solid var(--border)',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            fontSize: '11.5px',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => {
+                            setClaudeModel(m);
+                            setIsClaudeManualMode(false);
+                          }}
+                          title={`Klik untuk memilih ${m}`}
+                        >
+                          <span>🤖 {m}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteClaudeCustomModel(m);
+                            }}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: claudeModel === m ? '#ffffff' : 'var(--danger)',
+                              cursor: 'pointer',
+                              padding: 0,
+                              display: 'inline-flex',
+                              alignItems: 'center'
+                            }}
+                            title={`Hapus model ${m}`}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Base URL (Opsional) */}
+              <div className="form-group" style={{ marginBottom: '10px' }}>
+                <label className="form-label" style={{ fontSize: '12px' }}>
+                  Base URL Endpoint (Opsional / Claude Proxy)
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    className="form-input font-mono"
+                    placeholder="https://api.anthropic.com/v1 (kosongkan jika resmi)"
+                    value={claudeBaseUrl}
+                    onChange={e => setClaudeBaseUrl(e.target.value.trim())}
+                    style={{ fontSize: '12px' }}
+                  />
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--stone)', marginTop: '4px' }}>
+                  💡 Kosongkan untuk Anthropic standar, atau isi jika menggunakan server proxy gateway Claude kustom Anda.
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Indikator Model Aktif */}
           <div style={{ fontSize: '12px', color: 'var(--stone)', marginTop: '6px', lineHeight: '1.5' }}>
-            💡 Prioritas Aktif: <strong>{activeProvider === 'openai' ? 'OpenAI / ChatGPT' : 'Google Gemini'}</strong> (Model: <strong>{activeModelDisplay}</strong>). Pengaturan ini otomatis dipakai di menu <strong>Upload & Analisis</strong>.
+            💡 Prioritas Aktif: <strong>{activeProvider === 'claude' ? 'Anthropic Claude' : activeProvider === 'openai' ? 'OpenAI / ChatGPT' : 'Google Gemini'}</strong> (Model: <strong>{activeModelDisplay}</strong>). Pengaturan ini otomatis dipakai di menu <strong>Upload & Analisis</strong>.
           </div>
 
           {/* Alert Hasil Uji / Simpan */}

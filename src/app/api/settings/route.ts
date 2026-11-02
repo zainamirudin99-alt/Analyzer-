@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase';
 import { ALL_SUPPORTED_MODELS, executeGeminiRequest, getAvailableModelsFromApi } from '@/lib/gemini';
 import { testOpenAIConnection, DEFAULT_OPENAI_MODELS } from '@/lib/openai';
+import { testClaudeConnection, ALL_CLAUDE_MODELS, CLAUDE_EFFORT_CONFIGS, ClaudeEffortLevel } from '@/lib/claude';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +12,7 @@ export async function GET(_req: NextRequest) {
     const defaultModel = (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-3.7-flash';
     const hasServerGeminiKey = Boolean(typeof process !== 'undefined' && process.env.GEMINI_API_KEY);
     const hasServerOpenAIKey = Boolean(typeof process !== 'undefined' && process.env.OPENAI_API_KEY);
+    const hasServerClaudeKey = Boolean(typeof process !== 'undefined' && process.env.ANTHROPIC_API_KEY);
 
     const supabaseStatus = {
       configured: isSupabaseConfigured,
@@ -59,6 +61,17 @@ export async function GET(_req: NextRequest) {
           hasKey: hasServerOpenAIKey,
           defaultModel: 'gpt-4o-mini',
           availableModels: DEFAULT_OPENAI_MODELS.map(m => m.id)
+        },
+        claude: {
+          hasKey: hasServerClaudeKey,
+          defaultModel: 'claude-3-7-sonnet-20250219',
+          availableModels: ALL_CLAUDE_MODELS.map(m => m.id),
+          defaultEffort: 'medium',
+          availableEfforts: Object.values(CLAUDE_EFFORT_CONFIGS).map(e => ({
+            id: e.id,
+            label: e.label,
+            description: e.description
+          }))
         }
       }
     });
@@ -70,7 +83,7 @@ export async function GET(_req: NextRequest) {
   }
 }
 
-// POST: Uji coba API Key dari client (Gemini atau OpenAI / Compatible)
+// POST: Uji coba API Key dari client (Gemini, OpenAI, atau Claude)
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -78,8 +91,29 @@ export async function POST(req: NextRequest) {
     const apiKey = body?.apiKey;
     const model = body?.model;
     const baseUrl = body?.baseUrl;
+    const effort = body?.effort as ClaudeEffortLevel | undefined;
 
-    // 1. Jalur Pengujian OpenAI / Compatible
+    // 1. Jalur Pengujian Anthropic Claude
+    if (provider === 'claude') {
+      const testKey = (apiKey || (typeof process !== 'undefined' ? process.env.ANTHROPIC_API_KEY : '') || '').trim();
+      if (!testKey) {
+        return NextResponse.json({
+          success: false,
+          error: 'API Key Claude belum diisi. Masukkan API Key dari Anthropic Console.'
+        }, { status: 400 });
+      }
+
+      const result = await testClaudeConnection({
+        apiKey: testKey,
+        model: model || 'claude-3-7-sonnet-20250219',
+        baseUrl: baseUrl || undefined,
+        effort: effort || 'medium'
+      });
+
+      return NextResponse.json(result, { status: result.success ? 200 : 400 });
+    }
+
+    // 2. Jalur Pengujian OpenAI / Compatible
     if (provider === 'openai') {
       const testKey = (apiKey || (typeof process !== 'undefined' ? process.env.OPENAI_API_KEY : '') || '').trim();
       if (!testKey) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { extractTextFromPdf } from '@/lib/pdf-parser';
 import { analyzeWithGemini } from '@/lib/gemini';
 import { analyzeWithOpenAI } from '@/lib/openai';
+import { analyzeWithClaude, ClaudeEffortLevel } from '@/lib/claude';
 import { calculateDisclosureLevel, calculateTotalScore } from '@/lib/types';
 import { getSupabaseServerClient } from '@/lib/supabase';
 
@@ -20,6 +21,7 @@ export async function POST(req: NextRequest) {
     const customApiKey = ((formData.get('apiKey') as string) || '').trim();
     const customModel = ((formData.get('model') as string) || '').trim();
     const customBaseUrl = ((formData.get('baseUrl') as string) || '').trim();
+    const customEffort = (((formData.get('effort') as string) || 'medium').trim()) as ClaudeEffortLevel;
 
     if (!companyCode) {
       return NextResponse.json({ success: false, error: 'Kode emiten/perusahaan wajib diisi.' }, { status: 400 });
@@ -58,9 +60,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'File PDF atau teks dokumen wajib diberikan.' }, { status: 400 });
     }
 
-    // 2. Analisis 18 Indikator CED dengan Multi-AI Provider (Gemini atau OpenAI)
+    // 2. Analisis 18 Indikator CED dengan Multi-AI Provider (Claude, OpenAI, atau Gemini)
     let aiResult: { success: boolean; scores: any; modelUsed: string; rawResponse?: string };
-    if (provider === 'openai') {
+    if (provider === 'claude') {
+      console.log(`[Analyze] Mengirim ke Anthropic Claude (${customModel || 'claude-3-7-sonnet-20250219'}, Effort: ${customEffort}) untuk analisis ${companyCode} ${fiscalYear}...`);
+      aiResult = await analyzeWithClaude({
+        companyCode,
+        fiscalYear,
+        pdfText: textToAnalyze.length >= 50 ? textToAnalyze : undefined,
+        apiKey: customApiKey || undefined,
+        model: customModel || undefined,
+        baseUrl: customBaseUrl || undefined,
+        effort: customEffort
+      });
+    } else if (provider === 'openai') {
       console.log(`[Analyze] Mengirim ke OpenAI / Compatible (${customModel || 'gpt-4o-mini'}) untuk analisis ${companyCode} ${fiscalYear}...`);
       aiResult = await analyzeWithOpenAI({
         companyCode,
