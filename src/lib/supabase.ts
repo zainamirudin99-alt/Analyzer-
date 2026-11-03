@@ -45,10 +45,21 @@ export function extractSupabaseCredentials(req?: RequestWithHeaders | null): { u
 
   if (req && req.headers && typeof req.headers.get === 'function') {
     const headerUrl = req.headers.get('x-supabase-url');
-    const headerKey = req.headers.get('x-supabase-service-key') || req.headers.get('x-supabase-key') || req.headers.get('x-supabase-anon-key');
-    if (headerUrl && headerKey) {
+    const headerServiceKey = req.headers.get('x-supabase-service-key');
+    const headerAnonKey = req.headers.get('x-supabase-key') || req.headers.get('x-supabase-anon-key');
+    
+    if (headerUrl) {
       url = headerUrl.trim();
-      key = headerKey.trim();
+      isCustom = true;
+    }
+
+    // Jika server sudah memiliki SERVICE_ROLE / SUPABASE_SERVICE_ROLE_KEY,
+    // jangan turunkan ke anon key browser (agar RLS PostgreSQL tidak memblokir query user & settings).
+    if (headerServiceKey) {
+      key = headerServiceKey.trim();
+      isCustom = true;
+    } else if (!defaultSupabaseServiceKey && headerAnonKey) {
+      key = headerAnonKey.trim();
       isCustom = true;
     }
   }

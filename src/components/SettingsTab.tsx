@@ -13,7 +13,15 @@ import {
   CLAUDE_EFFORT_CONFIGS,
   ClaudeEffortLevel
 } from '@/lib/claude';
-import { pushAccountSettings, hydrateFromAccount, readLocalSnapshot, getAuthHeaders } from '@/lib/account-sync';
+import {
+  pushAccountSettings,
+  hydrateFromAccount,
+  pullAccountSettings,
+  fetchAccountSettings,
+  applySnapshotToLocal,
+  readLocalSnapshot,
+  getAuthHeaders
+} from '@/lib/account-sync';
 
 const SQL_SETUP_SCRIPT = `-- Jalankan ini di Supabase SQL Editor:
 CREATE TABLE IF NOT EXISTS public.ced_results (
@@ -640,20 +648,36 @@ export const SettingsTab: React.FC = () => {
     }
 
     // Auto-push langsung ke akun Supabase Cloud seketika!
+    setIsCloudSyncing(true);
     let cloudSynced = false;
+    let syncError: string | null = null;
     try {
       const snap = readLocalSnapshot();
+      snap.custom_ai_provider = activeProvider;
+      snap.custom_gemini_key = apiKey.trim();
+      snap.custom_gemini_model = effectiveGemini;
+      snap.custom_openai_key = openaiKey.trim();
+      snap.custom_openai_base_url = openaiBaseUrl.trim();
+      snap.custom_openai_model = effectiveOpenai;
+      snap.custom_claude_key = claudeKey.trim();
+      snap.custom_claude_base_url = claudeBaseUrl.trim();
+      snap.custom_claude_model = effectiveClaude;
+
       const status = await pushAccountSettings(snap);
       if (status === 'ok') {
         cloudSynced = true;
       }
-    } catch {}
+    } catch (pushEx: any) {
+      syncError = pushEx?.message || String(pushEx);
+    } finally {
+      setIsCloudSyncing(false);
+    }
 
     setTestResult({
       success: true,
       message: cloudSynced
-        ? `Pengaturan Provider Utama (${currentProviderLabel}) berhasil disimpan di browser & disinkronkan ke Cloud Supabase! ✅`
-        : `Pengaturan Provider Utama (${currentProviderLabel}) berhasil disimpan di browser lokal.`
+        ? `Pengaturan (${currentProviderLabel}) & API Key berhasil disimpan di browser dan disinkronkan ke Cloud Supabase! ✅`
+        : `Pengaturan (${currentProviderLabel}) tersimpan di browser lokal. (${syncError ? 'Sinkron Cloud: ' + syncError : 'Offline'})`
     });
   };
 
@@ -734,15 +758,58 @@ export const SettingsTab: React.FC = () => {
     setIsCloudSyncing(true);
     setCloudSyncMessage(null);
     try {
-      await hydrateFromAccount();
+      const remote = await fetchAccountSettings();
+      const keysCount = Object.keys(remote).length;
+      if (keysCount === 0) {
+        setCloudSyncMessage(
+          isEn
+            ? 'No settings found in Supabase Cloud for this account. Please click "Save & Sync" in your other browser first.'
+            : 'Belum ada data pengaturan di Cloud Supabase untuk akun ini. Pastikan Anda sudah klik "Simpan & Sinkronkan" di browser lain terlebih dahulu.'
+        );
+        return;
+      }
+
+      // Terapkan ke localStorage & trigger dispatch
+      applySnapshotToLocal(remote);
+
+      // Langsung perbarui state komponen seketika tanpa refresh
+      if (remote.custom_gemini_key !== undefined) {
+        setApiKey(remote.custom_gemini_key);
+      }
+      if (remote.custom_gemini_model) {
+        setSelectedModel(remote.custom_gemini_model);
+      }
+      if (remote.custom_ai_provider) {
+        setActiveProvider(remote.custom_ai_provider as any);
+      }
+      if (remote.custom_openai_key !== undefined) {
+        setOpenaiKey(remote.custom_openai_key);
+      }
+      if (remote.custom_claude_key !== undefined) {
+        setClaudeKey(remote.custom_claude_key);
+      }
+
       loadLocalProviderSettings();
       loadSkillsData();
-      setCloudSyncMessage(isEn ? 'Settings pulled from Supabase successfully!' : 'Pengaturan & API Key berhasil ditarik dari akun Supabase Anda ke browser ini!');
+
+      const keyPreview = remote.custom_gemini_key
+        ? `Gemini API Key (${remote.custom_gemini_key.slice(0, 6)}...${remote.custom_gemini_key.slice(-4)})`
+        : 'Pengaturan';
+
+      setCloudSyncMessage(
+        isEn
+          ? `Settings & ${keyPreview} successfully pulled from Supabase Cloud! ✅`
+          : `${keyPreview} & pengaturan berhasil ditarik dari Cloud Supabase! ✅`
+      );
     } catch (err: any) {
-      setCloudSyncMessage(err?.message || (isEn ? 'Pull failed' : 'Gagal menarik pengaturan dari Supabase'));
+      setCloudSyncMessage(
+        err?.message === 'unauthorized'
+          ? (isEn ? 'Session expired. Please log in again.' : 'Sesi login telah berakhir. Silakan login kembali.')
+          : (err?.message || (isEn ? 'Pull failed' : 'Gagal menarik pengaturan dari Supabase'))
+      );
     } finally {
       setIsCloudSyncing(false);
-      setTimeout(() => setCloudSyncMessage(null), 6000);
+      setTimeout(() => setCloudSyncMessage(null), 8000);
     }
   };
 

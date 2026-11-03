@@ -22,7 +22,23 @@ export async function GET(req: NextRequest) {
     let user = await findUserById(session.uid, session.username, req);
     let rawEncrypted = user?.settings_encrypted;
 
-    // Fallback: periksa juga dari tabel app_settings jika user di app_users baru dibuat
+    // Fallback 1: periksa langsung tabel public.app_users berdasarkan username
+    if (!rawEncrypted) {
+      try {
+        const { getSupabaseServerClient } = await import('@/lib/supabase');
+        const supabase = getSupabaseServerClient(req);
+        if (supabase) {
+          const { data: userRow } = await supabase
+            .from('app_users')
+            .select('settings_encrypted')
+            .eq('username', session.username)
+            .maybeSingle();
+          if (userRow?.settings_encrypted) rawEncrypted = userRow.settings_encrypted;
+        }
+      } catch {}
+    }
+
+    // Fallback 2: periksa juga dari tabel app_settings jika user di app_users baru dibuat
     if (!rawEncrypted) {
       try {
         const { getSupabaseServerClient, checkIsSupabaseConfigured } = await import('@/lib/supabase');
@@ -61,10 +77,41 @@ export async function PUT(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const incoming = body?.settings && typeof body.settings === 'object' ? body.settings : {};
 
-    const allowed: Record<string, string> = {};
+    // 1. Ambil pengaturan tersimpan sebelumnya agar tidak menimpa API key perangkat lain dengan string kosong
+    let existingSettings: Record<string, string> = {};
+    try {
+      const existingUser = await findUserById(session.uid, session.username, req);
+      let existingEncrypted = existingUser?.settings_encrypted;
+      if (!existingEncrypted) {
+        const { getSupabaseServerClient } = await import('@/lib/supabase');
+        const supabase = getSupabaseServerClient(req);
+        if (supabase) {
+          const { data: row } = await supabase
+            .from('app_users')
+            .select('settings_encrypted')
+            .eq('username', session.username)
+            .maybeSingle();
+          if (row?.settings_encrypted) existingEncrypted = row.settings_encrypted;
+        }
+      }
+      if (existingEncrypted) {
+        existingSettings = decryptSettings(existingEncrypted);
+      }
+    } catch {}
+
+    // 2. Gabungkan existing dengan incoming
+    const allowed: Record<string, string> = { ...existingSettings };
     for (const key of ACCOUNT_SYNC_KEYS) {
       const value = incoming[key];
-      if (typeof value === 'string') allowed[key] = value;
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        // Jangan timpa API key yang sudah tersimpan dengan string kosong dari tab baru
+        if (key.endsWith('_key') && !trimmed && existingSettings[key]) {
+          allowed[key] = existingSettings[key];
+        } else {
+          allowed[key] = value;
+        }
+      }
     }
 
     if (JSON.stringify(allowed).length > MAX_SETTINGS_BYTES) {
@@ -72,7 +119,7 @@ export async function PUT(req: NextRequest) {
     }
 
     await updateUser(session.uid, { settings_encrypted: encryptSettings(allowed) }, session.username, req);
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, keysCount: Object.keys(allowed).length });
   } catch (err) {
     return authErrorResponse(err);
   }

@@ -137,12 +137,14 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
     syncAllState();
     if (typeof window !== 'undefined') {
       window.addEventListener('storage', syncAllState);
+      window.addEventListener('analyzer-settings-changed', syncAllState);
       window.addEventListener('analyzer_presets_changed', syncAllState);
       window.addEventListener('analyzer_active_preset_changed', syncAllState);
       window.addEventListener('analyzer_skills_changed', syncAllState);
       window.addEventListener('analyzer_active_skill_changed', syncAllState);
       return () => {
         window.removeEventListener('storage', syncAllState);
+        window.removeEventListener('analyzer-settings-changed', syncAllState);
         window.removeEventListener('analyzer_presets_changed', syncAllState);
         window.removeEventListener('analyzer_active_preset_changed', syncAllState);
         window.removeEventListener('analyzer_skills_changed', syncAllState);
@@ -175,6 +177,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
       }
       setActiveModel(defModel);
       window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('analyzer-settings-changed'));
     }
   };
 
@@ -189,6 +192,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
         localStorage.setItem('custom_gemini_model', newModel);
       }
       window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('analyzer-settings-changed'));
     }
   };
 

@@ -18,8 +18,11 @@ const decoder = new TextDecoder();
 
 export function getAuthSecret(): string {
   return (
+    process.env.KEY_ENCRYPTION_SECRET ||
     process.env.AUTH_SECRET ||
+    process.env.SERVICE_ROLE ||
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.API_ANON ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
     process.env.GEMINI_API_KEY ||
     'analyzer-hmac-secret-key-2026'

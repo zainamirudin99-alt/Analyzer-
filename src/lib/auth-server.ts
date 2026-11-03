@@ -84,8 +84,8 @@ export async function verifyPassword(password: string, stored: string): Promise<
 
 // ---------- Enkripsi pengaturan akun (AES-256-GCM) ----------
 
-function getEncryptionKey(): Buffer {
-  return createHash('sha256').update(`analyzer-settings:${getAuthSecret()}`).digest();
+function getEncryptionKey(secretOverride?: string): Buffer {
+  return createHash('sha256').update(`analyzer-settings:${secretOverride || getAuthSecret()}`).digest();
 }
 
 export function encryptSettings(settings: Record<string, string>): string {
@@ -99,14 +99,33 @@ export function decryptSettings(payload: string | null): Record<string, string> 
   if (!payload) return {};
   const [ivB64, tagB64, dataB64] = payload.split('.');
   if (!ivB64 || !tagB64 || !dataB64) return {};
-  try {
-    const decipher = createDecipheriv('aes-256-gcm', getEncryptionKey(), Buffer.from(ivB64, 'base64'));
-    decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
-    const decrypted = Buffer.concat([decipher.update(Buffer.from(dataB64, 'base64')), decipher.final()]);
-    return JSON.parse(decrypted.toString('utf8'));
-  } catch {
-    return {};
+
+  const candidateSecrets = [
+    process.env.KEY_ENCRYPTION_SECRET,
+    process.env.AUTH_SECRET,
+    process.env.SERVICE_ROLE,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.API_ANON,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    'analyzer-hmac-secret-key-2026'
+  ].filter(Boolean) as string[];
+
+  for (const secret of candidateSecrets) {
+    try {
+      const key = getEncryptionKey(secret);
+      const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(ivB64, 'base64'));
+      decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
+      const decrypted = Buffer.concat([decipher.update(Buffer.from(dataB64, 'base64')), decipher.final()]);
+      const parsed = JSON.parse(decrypted.toString('utf8'));
+      if (parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    } catch {
+      // Coba kandidat kunci berikutnya jika kunci ini gagal
+    }
   }
+
+  return {};
 }
 
 // ---------- Penyimpanan akun Multi-Tier ----------
@@ -265,6 +284,25 @@ export async function findUserById(id: string, usernameHint?: string, req?: Requ
     } catch {}
 
     if (cleanHint) {
+      try {
+        const { data: byNameUser, error: byNameErr } = await supabase
+          .from('app_users')
+          .select('id, username, password_hash, settings_encrypted')
+          .eq('username', cleanHint)
+          .maybeSingle();
+
+        if (!byNameErr && byNameUser) {
+          return {
+            id: byNameUser.id,
+            username: byNameUser.username,
+            password_hash: byNameUser.password_hash,
+            settings_encrypted: byNameUser.settings_encrypted || null,
+            created_at: new Date().toISOString(),
+            last_login_at: null
+          };
+        }
+      } catch {}
+
       const byName = await readUserFromAppSettingsByUsername(cleanHint);
       if (byName) return byName;
     }
@@ -538,15 +576,28 @@ export async function updateUser(
         updateData.settings_encrypted = patch.settings_encrypted;
       }
 
-      if (matchedUserId) {
-        // Baris sudah ada -> update hanya kolom yang valid (settings_encrypted)
-        if (Object.keys(updateData).length > 0) {
+      if (Object.keys(updateData).length > 0) {
+        // Update berdasarkan username jika ada (paling akurat untuk tabel app_users)
+        if (cleanHint) {
+          const { error: updNameErr } = await supabase
+            .from('app_users')
+            .update(updateData)
+            .eq('username', cleanHint);
+          if (updNameErr) {
+            console.warn('[updateUser by username error]:', updNameErr.message);
+          }
+        }
+
+        // Update juga berdasarkan id
+        if (matchedUserId || id) {
           await supabase
             .from('app_users')
             .update(updateData)
-            .eq('id', matchedUserId);
+            .eq('id', matchedUserId || id);
         }
-      } else if (cleanHint) {
+      }
+
+      if (!matchedUserId && cleanHint) {
         // Baris BELUM ADA di app_users -> INSERT SEKARANG (hanya 4 kolom dasar)
         if (!matchedPasswordHash) {
           const fromSettings = await readUserFromAppSettingsByUsername(cleanHint);

@@ -86,22 +86,8 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
   }, [user]);
 
   useEffect(() => {
-    if (!user || typeof window === 'undefined') return;
-    const events = [
-      'storage',
-      'analyzer_presets_changed',
-      'analyzer_active_preset_changed',
-      'analyzer_skills_changed',
-      'analyzer_active_skill_changed',
-      'analyzer_language_changed',
-      'analyzer_account_settings_dirty'
-    ];
-    events.forEach(ev => window.addEventListener(ev, schedulePushToAccount));
-    return () => {
-      events.forEach(ev => window.removeEventListener(ev, schedulePushToAccount));
-      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-    };
-  }, [user, schedulePushToAccount]);
+    if (!user || typeof window !== 'undefined') return;
+  }, [user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,10 +137,6 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
 
   const handleLogout = async () => {
     try {
-      const currentSnapshot = readLocalSnapshot();
-      if (Object.keys(currentSnapshot).length > 0) {
-        await pushAccountSettings(currentSnapshot).catch(() => {});
-      }
       await fetch('/api/auth/logout', { method: 'POST' });
     } catch {
       // Tetap lanjutkan logout di sisi client

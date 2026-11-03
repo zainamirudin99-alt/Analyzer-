@@ -100,19 +100,27 @@ export async function pushAccountSettings(settings: Record<string, string>): Pro
   return 'ok';
 }
 
-/**
- * Saat login: jika akun sudah punya pengaturan, pakai pengaturan akun (mengisi API key & model otomatis).
- * Jika akun baru belum punya pengaturan, unggah pengaturan lokal perangkat ini ke akun.
- */
-export async function hydrateFromAccount(): Promise<string> {
+export async function pullAccountSettings(): Promise<Record<string, string>> {
   const remote = await fetchAccountSettings();
   if (Object.keys(remote).length > 0) {
     applySnapshotToLocal(remote);
-    return JSON.stringify(readLocalSnapshot());
   }
-  const local = readLocalSnapshot();
-  if (Object.keys(local).length > 0) {
-    await pushAccountSettings(local);
+  return remote;
+}
+
+/**
+ * Saat inisialisasi / tab focus: tarik pengaturan dari Supabase Cloud jika akun sudah memilikinya.
+ * Tidak pernah menimpa cloud dengan data lokal kosong.
+ */
+export async function hydrateFromAccount(): Promise<string> {
+  try {
+    const remote = await fetchAccountSettings();
+    if (Object.keys(remote).length > 0) {
+      applySnapshotToLocal(remote);
+      return JSON.stringify(readLocalSnapshot());
+    }
+  } catch (err) {
+    console.warn('[hydrateFromAccount] Gagal tarik pengaturan akun:', err);
   }
-  return JSON.stringify(local);
+  return JSON.stringify(readLocalSnapshot());
 }
