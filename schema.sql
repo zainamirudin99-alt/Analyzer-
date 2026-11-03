@@ -104,3 +104,56 @@ CREATE POLICY "Public Access App Settings" ON public.app_settings FOR ALL USING 
 INSERT INTO public.app_settings (key, value)
 VALUES ('active_gemini_model', 'gemini-3.7-flash')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+
+-- 5. Function RPC Keepalive (dipanggil pg_cron, Vercel Cron, dan GitHub Actions)
+CREATE OR REPLACE FUNCTION public.keepalive_ping()
+RETURNS TABLE(last_ping TIMESTAMPTZ, ping_count BIGINT, status TEXT)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    RETURN QUERY
+    INSERT INTO public.ced_heartbeat (id, last_ping, ping_count, status)
+    VALUES ('primary', NOW(), 1, 'active_keepalive')
+    ON CONFLICT (id) DO UPDATE
+    SET last_ping = NOW(),
+        ping_count = public.ced_heartbeat.ping_count + 1,
+        status = 'active_keepalive'
+    RETURNING public.ced_heartbeat.last_ping, public.ced_heartbeat.ping_count, public.ced_heartbeat.status;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.keepalive_ping() TO anon, authenticated;
+
+-- 6. Jadwal pg_cron otomatis setiap 6 jam (tetap berjalan walau web/dashboard tidak dibuka)
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS pg_cron;
+    PERFORM cron.unschedule(jobid)
+    FROM cron.job
+    WHERE jobname = 'ced-supabase-keepalive-every-6-hours';
+    PERFORM cron.schedule(
+        'ced-supabase-keepalive-every-6-hours',
+        '0 */6 * * *',
+        'SELECT public.keepalive_ping()'
+    );
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'pg_cron tidak tersedia (%). Aktifkan via Database > Extensions, lalu jalankan ulang blok ini.', SQLERRM;
+END $$;
+
+-- 7. Tabel Akun Aplikasi (username + password, tanpa email). Hanya diakses server (service role).
+CREATE TABLE IF NOT EXISTS public.app_users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username VARCHAR(32) NOT NULL UNIQUE
+        CHECK (username ~ '^[a-z0-9_.-]{3,32}$'),
+    password_hash TEXT NOT NULL,
+    settings_encrypted TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    last_login_at TIMESTAMPTZ
+);
+
+ALTER TABLE public.app_users ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "App Server Access Users" ON public.app_users;
+CREATE POLICY "App Server Access Users" ON public.app_users FOR ALL USING (true) WITH CHECK (true);

@@ -221,3 +221,38 @@ Mengimplementasikan alur 9 langkah terstruktur bergaya Stata sesuai kaidah ekono
 9. **Langkah 9 — Hasil Akhir `vce(robust)` & Interpretasi Bahasa Mudah**:
    - Mengestimasi ulang model terpilih menggunakan **variabel terakhir yang aktif** (setelah `ln_` dan/atau `orthog`) dengan **`vce(robust)`** (Cluster-Robust Standard Errors).
    - Menyajikan tabel akhir gaya Stata beserta kartu **Interpretasi Hasil Akhir dengan Bahasa yang Mudah Dipahami** untuk uji simultan ($F / \text{Wald } \chi^2$), $R^2$, dan arti ekonomi/praktis tiap variabel independen.
+
+---
+
+## 9. Phase 5 — Akun Wajib Login, Keepalive 24/7, Branding ANALYZER(?), Output Stata Rapi, & Ketahanan Gemini
+
+### 9.1 Supabase Keepalive Tanpa Membuka Dashboard/Web
+1. **Lapis 1 — `pg_cron` di dalam database**: `schema.sql` dan migrasi `20261004_supabase_keepalive_loop.sql` mengaktifkan `pg_cron` dan menjadwalkan `SELECT public.keepalive_ping()` setiap 6 jam (`0 */6 * * *`). Pembuatan jadwal dibungkus `DO $$ ... EXCEPTION WHEN OTHERS ... $$` agar skrip tetap sukses bila ekstensi belum diizinkan.
+2. **Lapis 2 — Vercel Cron**: `vercel.json` memanggil `/api/cron/keepalive` (catatan: Hobby plan dibatasi 1x per hari per job — belum terverifikasi untuk akun pengguna).
+3. **Lapis 3 — GitHub Actions**: `.github/workflows/supabase-keepalive.yml` memanggil endpoint REST Supabase (`rpc/keepalive_ping`) setiap 6 jam memakai secret `SUPABASE_URL` dan `SUPABASE_ANON_KEY`, serta ping endpoint aplikasi bila secret `APP_URL` diisi.
+
+> Catatan faktual: kebijakan pause Supabase free tier didasarkan pada aktivitas proyek; apakah aktivitas `pg_cron` internal saja cukup dihitung sebagai aktivitas **belum terverifikasi**, karena itu lapis eksternal (GitHub Actions) tetap disediakan.
+
+### 9.2 Akun Wajib (Username + Password, Tanpa Email)
+- Tabel `public.app_users(id, username UNIQUE, password_hash, settings JSONB terenkripsi, created_at, last_login_at)` dengan RLS aktif **tanpa policy publik** — hanya service role (server) yang dapat membaca/menulis.
+- Hash password: Node `crypto.scrypt` (salt 16 byte acak, keylen 64). Username: 3–32 karakter `[a-z0-9_.-]`, password minimal 6 karakter.
+- Sesi: token HMAC-SHA256 bertanda tangan (`AUTH_SECRET`, fallback `SUPABASE_SERVICE_ROLE_KEY`) di cookie `httpOnly`, `sameSite=lax`, masa berlaku 30 hari.
+- Route: `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`, `GET|PUT /api/auth/settings`.
+- Pengaturan akun (API key Gemini/OpenAI/Claude, model, provider, base URL, preset indikator, skill, bahasa) disimpan terenkripsi AES-256-GCM dan dimuat otomatis ke perangkat mana pun saat login.
+- Mode tanpa Supabase (pengembangan lokal): penyimpanan file `.data/users.json` (di-*gitignore*). Di Vercel tanpa Supabase service role, registrasi/login ditolak dengan pesan jelas.
+- `AuthGate` membungkus seluruh aplikasi: setiap akses web wajib login/daftar. Tombol Keluar tersedia di header.
+
+### 9.3 Branding
+- Seluruh logo, favicon, ikon drawer, dan maskot memakai `Image/new logo.png` (disalin ke `public/logo.png` dan `public/favicon.png`).
+- Judul aplikasi: **ANALYZER(?)** tanpa kata CED (CED tetap sebagai preset indikator pertama).
+
+### 9.4 Output Regresi Panel Gaya Stata Rapi
+- Lebar kolom nama variabel dihitung dinamis dari nama terpanjang (minimal 12, maksimal 40 karakter; nama lebih panjang dipotong dengan `~` seperti Stata).
+- Seluruh pemisah `|`, `+`, header kolom, dan blok `sigma_u / sigma_e / rho` sejajar. Blok info kanan atas (`Number of obs`, `Number of groups`, `Obs per group`, `F`/`Wald chi2`, `Prob`) memakai lebar label tetap.
+- Nilai `Obs per group min/avg/max` dihitung dari data aktual (panel tidak seimbang didukung).
+
+### 9.5 Ketahanan Analisis Gemini
+- Model baru ditambahkan tanpa mengubah model lama: `gemini-3.8-flash` dan `gemini-argon` (ketersediaan di API pengguna **belum terverifikasi**; bila 404 otomatis dialihkan ke model aktif hasil discovery).
+- Setiap request memakai `AbortController` timeout; status `408/429/500/502/503/504/505` di-*retry* dengan *exponential backoff*; `400` dengan `responseMimeType` dicoba ulang tanpa field tersebut; `403/404/405` langsung beralih ke model/endpoint berikutnya (`v1beta` lalu `v1`).
+- Route API mengekspor handler `GET`/`OPTIONS` sehingga tidak mengembalikan `405`; seluruh error dikembalikan sebagai JSON terstruktur (bukan halaman HTML) agar klien tidak gagal parse.
+- Klien `UploadTab` melakukan retry otomatis untuk respons non-JSON / 5xx gateway sebelum menampilkan pesan error.

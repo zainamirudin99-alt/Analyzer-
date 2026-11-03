@@ -9,6 +9,7 @@ import { GuideTab } from '@/components/GuideTab';
 import { SettingsTab } from '@/components/SettingsTab';
 import { RegressionTab } from '@/components/RegressionTab';
 import { PanelTab } from '@/components/PanelTab';
+import { AuthGate } from '@/components/AuthGate';
 import { useSupabaseKeepalive } from '@/hooks/useSupabaseKeepalive';
 
 export default function HomePage() {
@@ -44,52 +45,58 @@ export default function HomePage() {
   };
 
   return (
-    <div>
-      <Header
-        supabaseStatus={supabaseStatus}
-        activeTab={activeTab}
-        onTabChange={(tab: string) => setActiveTab(tab as any)}
-        isDrawerOpen={isDrawerOpen}
-        onToggleDrawer={() => setIsDrawerOpen(prev => !prev)}
-        toggleButtonRef={toggleButtonRef}
-      />
-
-      <NavigationDrawer
-        isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
-        activeTab={activeTab}
-        onSelectTab={(tab: string) => setActiveTab(tab as any)}
-        toggleButtonRef={toggleButtonRef}
-      />
-
-      <main className="main-container">
-        {activeTab === 'upload' && (
-          <UploadTab
-            onSuccessAnalysis={handleSuccessfulAnalysis}
-            onNavigateToResults={() => setActiveTab('results')}
+    <AuthGate>
+      {({ user, onLogout }) => (
+        <div>
+          <Header
+            supabaseStatus={supabaseStatus}
+            activeTab={activeTab}
+            onTabChange={(tab: string) => setActiveTab(tab as any)}
+            isDrawerOpen={isDrawerOpen}
+            onToggleDrawer={() => setIsDrawerOpen(prev => !prev)}
+            toggleButtonRef={toggleButtonRef}
+            currentUser={user}
+            onLogout={onLogout}
           />
-        )}
 
-        {activeTab === 'results' && (
-          <ResultsTab refreshTrigger={refreshResultsCount} />
-        )}
+          <NavigationDrawer
+            isOpen={isDrawerOpen}
+            onClose={() => setIsDrawerOpen(false)}
+            activeTab={activeTab}
+            onSelectTab={(tab: string) => setActiveTab(tab as any)}
+            toggleButtonRef={toggleButtonRef}
+          />
 
-        {activeTab === 'guide' && (
-          <GuideTab />
-        )}
+          <main className="main-container">
+            {activeTab === 'upload' && (
+              <UploadTab
+                onSuccessAnalysis={handleSuccessfulAnalysis}
+                onNavigateToResults={() => setActiveTab('results')}
+              />
+            )}
 
-        {activeTab === 'settings' && (
-          <SettingsTab />
-        )}
+            {activeTab === 'results' && (
+              <ResultsTab refreshTrigger={refreshResultsCount} />
+            )}
 
-        {activeTab === 'regression' && (
-          <RegressionTab />
-        )}
+            {activeTab === 'guide' && (
+              <GuideTab />
+            )}
 
-        {activeTab === 'panel' && (
-          <PanelTab />
-        )}
-      </main>
-    </div>
+            {activeTab === 'settings' && (
+              <SettingsTab />
+            )}
+
+            {activeTab === 'regression' && (
+              <RegressionTab />
+            )}
+
+            {activeTab === 'panel' && (
+              <PanelTab />
+            )}
+          </main>
+        </div>
+      )}
+    </AuthGate>
   );
 }

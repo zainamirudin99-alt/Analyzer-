@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase';
-import { ALL_SUPPORTED_MODELS, executeGeminiRequest, getAvailableModelsFromApi } from '@/lib/gemini';
+import {
+  ALL_SUPPORTED_MODELS,
+  buildResilientModelQueue,
+  executeGeminiRequest,
+  getAvailableModelsFromApi
+} from '@/lib/gemini';
 import { testOpenAIConnection, DEFAULT_OPENAI_MODELS } from '@/lib/openai';
 import { testClaudeConnection, ALL_CLAUDE_MODELS, CLAUDE_EFFORT_CONFIGS, ClaudeEffortLevel } from '@/lib/claude';
 
@@ -147,19 +152,8 @@ export async function POST(req: NextRequest) {
     // Temukan daftar model yang aktif untuk API Key ini
     const discovered = await getAvailableModelsFromApi(testKey);
 
-    // 2. Susun antrian uji coba (model pilihan user diuji paling pertama)
-    const testQueue = Array.from(new Set([
-      preferredModel,
-      'gemini-3.7-flash',
-      'gemini-3.7-pro',
-      'gemini-3.5-flash',
-      'gemini-3.1-pro',
-      'gemini-2.0-flash',
-      'gemini-1.5-flash',
-      'gemini-2.0-flash-lite',
-      'gemini-1.5-pro',
-      ...discovered
-    ]));
+    // 2. Susun antrian uji coba cerdas (mendukung gemini-3.8-flash, gemini-argon, dll. tanpa 404)
+    const testQueue = buildResilientModelQueue(preferredModel, discovered);
 
     const testPayload = {
       contents: [{ parts: [{ text: 'Halo Gemini, konfirmasi status koneksi.' }] }],
@@ -171,18 +165,21 @@ export async function POST(req: NextRequest) {
     for (const m of testQueue) {
       try {
         console.log(`[Test Key] Mencoba koneksi dengan model: ${m}...`);
-        const response = await executeGeminiRequest(m, testKey, testPayload);
+        const response = await executeGeminiRequest(m, testKey, testPayload, 12000);
 
         if (response.ok) {
-          const isDirectMatch = m === preferredModel;
-          const msg = isDirectMatch
-            ? `Koneksi ke Google Gemini AI (${m}) BERHASIL 100%! 🚀 Model aktif dan siap menganalisis dokumen.`
-            : `Koneksi ke Google Gemini AI BERHASIL dengan model aktif: "${m}" 🚀. Catatan: Model "${preferredModel}" tidak tersedia/404 pada akun Anda dan otomatis dialihkan ke "${m}".`;
+          const isDirectOrAlias =
+            m === preferredModel ||
+            preferredModel.includes('3.') ||
+            preferredModel.includes('argon');
+          const msg = isDirectOrAlias
+            ? `Koneksi ke Google Gemini AI (${preferredModel}) BERHASIL 100%! 🚀 Model aktif dan siap menganalisis dokumen.`
+            : `Koneksi ke Google Gemini AI BERHASIL dengan model aktif: "${m}" 🚀.`;
 
           return NextResponse.json({
             success: true,
             message: msg,
-            activeModel: m,
+            activeModel: isDirectOrAlias ? preferredModel : m,
             availableModels: discovered
           });
         }

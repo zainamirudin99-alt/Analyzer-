@@ -10,6 +10,7 @@ interface StataConsoleBlockProps {
 
 export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) => {
   const [copied, setCopied] = useState(false);
+  const [copiedOutput, setCopiedOutput] = useState(false);
 
   const handleCopy = async () => {
     try {
@@ -19,6 +20,48 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
     } catch (e) {
       console.error('Failed to copy', e);
     }
+  };
+
+  const handleCopyOutput = async () => {
+    try {
+      await navigator.clipboard.writeText(block.stataOutput);
+      setCopiedOutput(true);
+      setTimeout(() => setCopiedOutput(false), 2000);
+    } catch (e) {
+      console.error('Failed to copy output', e);
+    }
+  };
+
+  const renderFormattedStataLines = (rawOutput: string) => {
+    const lines = rawOutput.split('\n');
+    return lines.map((line, idx) => {
+      const isDivider = /^[-+=]{10,}$/.test(line.trim());
+      const isHeaderRow =
+        line.includes('| Coefficient') ||
+        line.includes('|      Mean   Std. dev.') ||
+        line.includes('|       VIF') ||
+        line.includes('|       Obs');
+      const isWarning = line.startsWith('Small Cluster Warning') || line.startsWith('Cluster-robust');
+
+      return (
+        <div
+          key={idx}
+          style={{
+            color: isDivider
+              ? '#6ea864'
+              : isHeaderRow
+              ? '#fde047'
+              : isWarning
+              ? '#fca5a5'
+              : '#eef7eb',
+            fontWeight: isHeaderRow ? 700 : 400,
+            minHeight: '1.45em'
+          }}
+        >
+          {line || ' '}
+        </div>
+      );
+    });
   };
 
   return (
@@ -41,7 +84,9 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
           justifyContent: 'space-between',
           marginBottom: '16px',
           borderBottom: '1px solid var(--border-light, #e4efe0)',
-          paddingBottom: '12px'
+          paddingBottom: '12px',
+          flexWrap: 'wrap',
+          gap: '10px'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -69,29 +114,53 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
           </h3>
         </div>
 
-        <button
-          onClick={handleCopy}
-          aria-label="Salin perintah Stata"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            background: copied ? 'var(--dew, #eef7eb)' : 'transparent',
-            border: '1px solid var(--border, #d2e2ca)',
-            color: copied ? 'var(--fern, #2e6922)' : 'var(--stone, #687962)',
-            borderRadius: '8px',
-            padding: '8px 14px',
-            minHeight: '44px',
-            minWidth: '44px',
-            cursor: 'pointer',
-            fontSize: '13px',
-            fontWeight: 600,
-            transition: 'all 0.2s ease'
-          }}
-        >
-          {copied ? <Check size={16} /> : <Copy size={16} />}
-          <span>{copied ? 'Tersalin' : 'Salin Kode'}</span>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            onClick={handleCopy}
+            aria-label="Salin perintah Stata"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: copied ? 'var(--dew, #eef7eb)' : 'transparent',
+              border: '1px solid var(--border, #d2e2ca)',
+              color: copied ? 'var(--fern, #2e6922)' : 'var(--stone, #687962)',
+              borderRadius: '8px',
+              padding: '8px 14px',
+              minHeight: '40px',
+              cursor: 'pointer',
+              fontSize: '12.5px',
+              fontWeight: 600,
+              transition: 'all 0.2s ease'
+            }}
+          >
+            {copied ? <Check size={15} /> : <Copy size={15} />}
+            <span>{copied ? 'Kode Tersalin' : 'Salin Kode'}</span>
+          </button>
+
+          <button
+            onClick={handleCopyOutput}
+            aria-label="Salin tabel output Stata"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: copiedOutput ? 'var(--dew, #eef7eb)' : 'transparent',
+              border: '1px solid var(--border, #d2e2ca)',
+              color: copiedOutput ? 'var(--fern, #2e6922)' : 'var(--stone, #687962)',
+              borderRadius: '8px',
+              padding: '8px 14px',
+              minHeight: '40px',
+              cursor: 'pointer',
+              fontSize: '12.5px',
+              fontWeight: 600,
+              transition: 'all 0.2s ease'
+            }}
+          >
+            {copiedOutput ? <Check size={15} /> : <Copy size={15} />}
+            <span>{copiedOutput ? 'Output Tersalin' : 'Salin Tabel Output'}</span>
+          </button>
+        </div>
       </div>
 
       {/* 1. Kode Perintah Stata */}
@@ -112,15 +181,16 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
         </div>
         <div
           style={{
-            background: '#151d14',
+            background: '#111811',
             color: '#a3e635',
             padding: '12px 16px',
             borderRadius: '8px',
-            fontFamily: "'DM Mono', monospace",
-            fontSize: '14px',
+            fontFamily: "'Consolas', 'Courier New', monospace",
+            fontSize: '13.5px',
             overflowX: 'auto',
             whiteSpace: 'pre-wrap',
-            lineHeight: 1.5
+            lineHeight: 1.5,
+            border: '1px solid #233321'
           }}
         >
           {block.stataCommand}
@@ -161,6 +231,7 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
           style={{
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'space-between',
             gap: '6px',
             fontSize: '13px',
             fontWeight: 600,
@@ -168,25 +239,34 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
             marginBottom: '6px'
           }}
         >
-          <Terminal size={15} />
-          <span>(3) Output Terminal Gaya Stata</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Terminal size={15} />
+            <span>(3) Output Terminal Gaya Stata (Rapi &amp; Sejajar Presisi)</span>
+          </div>
+          <span style={{ fontSize: '11.5px', color: 'var(--fern, #2e6922)', fontWeight: 700 }}>
+            Stata 18 Results Window
+          </span>
         </div>
         <pre
           className="stata-terminal"
           style={{
-            background: '#0e140d',
-            color: '#e4efe0',
-            padding: '16px',
-            borderRadius: '8px',
-            fontFamily: "'DM Mono', Courier, monospace",
+            background: '#0b110a',
+            color: '#eef7eb',
+            padding: '18px 20px',
+            borderRadius: '10px',
+            fontFamily: "'Consolas', 'Lucida Console', 'Courier New', monospace",
+            fontVariantNumeric: 'tabular-nums',
             fontSize: '13px',
+            letterSpacing: '0px',
             overflowX: 'auto',
             whiteSpace: 'pre',
-            lineHeight: 1.45,
-            border: '1px solid #233321'
+            lineHeight: 1.5,
+            border: '1px solid #263823',
+            boxShadow: 'inset 0 2px 10px rgba(0, 0, 0, 0.45)',
+            margin: 0
           }}
         >
-          {block.stataOutput}
+          {renderFormattedStataLines(block.stataOutput)}
         </pre>
       </div>
 

@@ -103,7 +103,7 @@ export function computeXtsum(
   let wMin = Infinity;
   let wMax = -Infinity;
 
-  for (const [id, list] of entityVals) {
+  for (const [, list] of entityVals) {
     const m = list.reduce((a, b) => a + b, 0) / list.length;
     for (const v of list) {
       const dev = v - m;
@@ -126,7 +126,7 @@ export function computeXtsum(
 }
 
 /**
- * Format tabel regresi gaya Stata
+ * Format tabel regresi gaya Stata (Lebar kolom dinamis & perataan vertikal presisi 100%)
  */
 export function formatStataRegTable(
   model: PanelModelResult,
@@ -145,56 +145,83 @@ export function formatStataRegTable(
     ? 'Random-effects GLS regression'
     : 'Linear regression';
 
-  lines.push(`${padR(title, 48)} Number of obs     = ${padL(String(model.nObs), 10)}`);
-  lines.push(`Group variable: id_num                          Number of groups  = ${padL(String(model.nEntities), 10)}`);
-  lines.push('R-squared:                                      Obs per group:');
-  lines.push(`     within  = ${fmt(model.r2.within, 4)}                                     min = ${padL(String(model.nPeriods), 10)}`);
-  lines.push(`     between = ${fmt(model.r2.between, 4)}                                     avg = ${padL(String(model.nPeriods) + '.0', 10)}`);
-  lines.push(`     overall = ${fmt(model.r2.overall, 4)}                                     max = ${padL(String(model.nPeriods), 10)}`);
+  const coeffKeys = Object.keys(model.coefficients).map(k => (k === '_cons' ? '_cons' : k));
+  const varWidth = Math.max(13, yCol.length, ...coeffKeys.map(k => k.length));
+  const rightColsWidth = 69;
+  const totalWidth = varWidth + 2 + rightColsWidth;
+  const rightMetaWidth = 31;
+  const leftMetaWidth = Math.max(48, totalWidth - rightMetaWidth);
+  const avgObsPerGroup = model.nEntities > 0 ? (model.nObs / model.nEntities).toFixed(1) : `${model.nPeriods}.0`;
+
+  const metaLine = (leftText: string, rightLabel: string, rightVal?: string, alignRightLabel = false): string => {
+    const leftPart = padR(leftText, leftMetaWidth);
+    if (rightVal === undefined) {
+      return `${leftPart}${rightLabel}`;
+    }
+    const formattedLabel = alignRightLabel ? `${padL(rightLabel, 17)} ` : padR(rightLabel, 18);
+    return `${leftPart}${formattedLabel}= ${padL(rightVal, 11)}`;
+  };
+
+  lines.push(metaLine(title, 'Number of obs', String(model.nObs)));
+  lines.push(metaLine('Group variable: id_num', 'Number of groups', String(model.nEntities)));
+  lines.push(metaLine('R-squared:', 'Obs per group:'));
+  lines.push(metaLine(`     within  = ${fmt(model.r2.within, 4)}`, 'min', String(model.nPeriods), true));
+  lines.push(metaLine(`     between = ${fmt(model.r2.between, 4)}`, 'avg', avgObsPerGroup, true));
+  lines.push(metaLine(`     overall = ${fmt(model.r2.overall, 4)}`, 'max', String(model.nPeriods), true));
 
   if (isFEM) {
-    lines.push(`corr(u_i, Xb) = -0.1517                         F(${model.dfModel}, ${model.dfResidual})         = ${padL(fmt(model.fStat, 2), 10)}`);
-    lines.push(`                                                Prob > F          = ${padL(fmt(model.fPValue, 4), 10)}`);
+    lines.push(metaLine('corr(u_i, Xb) = -0.1517', `F(${model.dfModel}, ${model.dfResidual})`, fmt(model.fStat, 2)));
+    lines.push(metaLine('', 'Prob > F', fmt(model.fPValue, 4)));
   } else if (isREM) {
-    lines.push(`corr(u_i, X)   = 0 (assumed)                    Wald chi2(${model.dfModel})      = ${padL(fmt(model.waldChi2, 2), 10)}`);
-    lines.push(`                                                Prob > chi2       = ${padL(fmt(model.waldPValue, 4), 10)}`);
+    lines.push(metaLine('corr(u_i, X)  = 0 (assumed)', `Wald chi2(${model.dfModel})`, fmt(model.waldChi2, 2)));
+    lines.push(metaLine('', 'Prob > chi2', fmt(model.waldPValue, 4)));
+  } else {
+    lines.push(metaLine('', `F(${model.dfModel}, ${model.dfResidual})`, fmt(model.fStat, 2)));
+    lines.push(metaLine('', 'Prob > F', fmt(model.fPValue, 4)));
   }
 
   if (isRobust) {
-    lines.push(`                              (Std. err. adjusted for ${model.nEntities} clusters in id_num)`);
+    const clusterNote = `(Std. err. adjusted for ${model.nEntities} clusters in id_num)`;
+    lines.push(padL(clusterNote, totalWidth));
   }
 
-  lines.push('------------------------------------------------------------------------------');
-  lines.push(`${padR(yCol, 14)} | Coefficient  Std. err.      ${statLabel}    ${pLabel}     [95% conf. interval]`);
-  lines.push('-------------+----------------------------------------------------------------');
+  const fullBorder = `${'-'.repeat(varWidth + 1)}-${'-'.repeat(rightColsWidth)}`;
+  const splitBorder = `${'-'.repeat(varWidth + 1)}+${'-'.repeat(rightColsWidth)}`;
+  const headerRight = ` ${padL('Coefficient', 11)}  ${padL('Std. err.', 10)}  ${padL(statLabel, 7)} ${padL(pLabel, 7)}   ${padL('[95% conf. interval]', 25)}`;
+
+  lines.push(fullBorder);
+  lines.push(`${padL(yCol, varWidth)} |${headerRight}`);
+  lines.push(splitBorder);
 
   for (const [varName, row] of Object.entries(model.coefficients)) {
     const cName = varName === '_cons' ? '_cons' : varName;
     if (row.isOmitted) {
-      lines.push(`${padR(cName, 12)} |          0  (omitted)`);
+      lines.push(`${padL(cName, varWidth)} | ${padL('0', 11)}  (omitted)`);
       continue;
     }
-    const bStr = padL(fmt(row.b, 7), 10);
+    const bStr = padL(fmt(row.b, 7), 11);
     const seStr = padL(fmt(row.stdError, 7), 10);
     const tStr = padL(fmt(row.tOrZ, 2), 7);
     const pStr = padL(fmt(row.sig, 3), 7);
     const loStr = padL(fmt(row.ciLower, 7), 12);
     const hiStr = padL(fmt(row.ciUpper, 7), 12);
-    lines.push(`${padR(cName, 12)} | ${bStr}  ${seStr}  ${tStr} ${pStr}   ${loStr} ${hiStr}`);
+    lines.push(`${padL(cName, varWidth)} | ${bStr}  ${seStr}  ${tStr} ${pStr}   ${loStr} ${hiStr}`);
   }
 
   if (isFEM || isREM) {
-    lines.push('-------------+----------------------------------------------------------------');
-    lines.push(`     sigma_u | ${padL(fmt(model.sigma_u, 5), 10)}`);
-    lines.push(`     sigma_e | ${padL(fmt(model.sigma_e, 5), 10)}`);
-    lines.push(`         rho | ${padL(fmt(model.rho, 8), 10)}   (fraction of variance due to u_i)`);
+    lines.push(splitBorder);
+    lines.push(`${padL('sigma_u', varWidth)} | ${padL(fmt(model.sigma_u, 7), 11)}`);
+    lines.push(`${padL('sigma_e', varWidth)} | ${padL(fmt(model.sigma_e, 7), 11)}`);
+    lines.push(`${padL('rho', varWidth)} | ${padL(fmt(model.rho, 7), 11)}   (fraction of variance due to u_i)`);
   }
 
   if (isFEM && model.chowF) {
-    lines.push('------------------------------------------------------------------------------');
-    lines.push(`F test that all u_i=0: F(${model.chowF.df1}, ${model.chowF.df2}) = ${fmt(model.chowF.f, 2)}                     Prob > F = ${fmt(model.chowF.p, 4)}`);
+    lines.push(fullBorder);
+    const leftF = `F test that all u_i=0: F(${model.chowF.df1}, ${model.chowF.df2}) = ${fmt(model.chowF.f, 2)}`;
+    const rightP = `Prob > F = ${fmt(model.chowF.p, 4)}`;
+    lines.push(`${padR(leftF, Math.max(leftF.length + 2, totalWidth - rightP.length))}${rightP}`);
   } else {
-    lines.push('------------------------------------------------------------------------------');
+    lines.push(fullBorder);
   }
 
   return lines.join('\n');
@@ -306,16 +333,19 @@ Panel balance         : ${isBalanced ? 'Strongly balanced (all entities have T =
   // Langkah 5: Statistik Deskriptif (xtsum)
   // ==========================================================
   const allVars = [yCol, ...xCols];
+  const xtsumVarWidth = Math.max(9, ...allVars.map(v => v.length));
+  const xtsumLeftCol = xtsumVarWidth + 10;
+  const xtsumDivider = `${'-'.repeat(xtsumLeftCol)}+--------------------------------------------+----------------`;
   const xtsumLines: string[] = [];
-  xtsumLines.push('Variable         |      Mean   Std. dev.       Min        Max |    Observations');
-  xtsumLines.push('-----------------+--------------------------------------------+----------------');
+  xtsumLines.push(`${padR('Variable', xtsumLeftCol)}|      Mean   Std. dev.       Min        Max |    Observations`);
+  xtsumLines.push(xtsumDivider);
 
   for (const v of allVars) {
     const s = computeXtsum(input.rows, idCol, v);
-    xtsumLines.push(`${padR(v + '   overall', 17)}|${padL(fmt(s.overall.mean, 4), 10)} ${padL(fmt(s.overall.sd, 4), 10)} ${padL(fmt(s.overall.min, 4), 12)} ${padL(fmt(s.overall.max, 4), 10)} |     N =   ${padL(String(s.overall.N), 5)}`);
-    xtsumLines.push(`         between |           ${padL(fmt(s.between.sd, 4), 10)} ${padL(fmt(s.between.min, 4), 12)} ${padL(fmt(s.between.max, 4), 10)} |     n =   ${padL(String(s.between.n), 5)}`);
-    xtsumLines.push(`         within  |           ${padL(fmt(s.within.sd, 4), 10)} ${padL(fmt(s.within.min, 4), 12)} ${padL(fmt(s.within.max, 4), 10)} | T-bar =   ${padL(String(s.within.tBar), 5)}`);
-    xtsumLines.push('-----------------+--------------------------------------------+----------------');
+    xtsumLines.push(`${padR(v, xtsumVarWidth)} overall  |${padL(fmt(s.overall.mean, 4), 10)} ${padL(fmt(s.overall.sd, 4), 10)} ${padL(fmt(s.overall.min, 4), 12)} ${padL(fmt(s.overall.max, 4), 10)} |     N =   ${padL(String(s.overall.N), 5)}`);
+    xtsumLines.push(`${' '.repeat(xtsumVarWidth)} between  |           ${padL(fmt(s.between.sd, 4), 10)} ${padL(fmt(s.between.min, 4), 12)} ${padL(fmt(s.between.max, 4), 10)} |     n =   ${padL(String(s.between.n), 5)}`);
+    xtsumLines.push(`${' '.repeat(xtsumVarWidth)} within   |           ${padL(fmt(s.within.sd, 4), 10)} ${padL(fmt(s.within.min, 4), 12)} ${padL(fmt(s.within.max, 4), 10)} | T-bar =   ${padL(String(s.within.tBar), 5)}`);
+    xtsumLines.push(xtsumDivider);
   }
 
   blocks.push({
@@ -330,15 +360,16 @@ Panel balance         : ${isBalanced ? 'Strongly balanced (all entities have T =
   // ==========================================================
   // Langkah 6: Korelasi Matriks & Spearman
   // ==========================================================
+  const corrVarWidth = Math.max(12, ...allVars.map(v => v.length));
   blocks.push({
     stepIndex: 6,
     stepTitle: 'Korelasi Matriks & Spearman',
     stataCommand: `pwcorr ${allVars.join(' ')}, star(0.05) sig`,
     stataFunction: 'Mengukur kekuatan hubungan linier antar variabel dan menguji signifikansi korelasi berpasangan.',
     stataOutput: `Correlation Matrix:
-             |   ${allVars.map(v => padR(v, 8)).join(' ')}
--------------+${'-'.repeat(allVars.length * 9)}
-${allVars.map(v => `  ${padR(v, 10)} |   ${allVars.map(() => '1.0000 ').join(' ')}`).join('\n')}`,
+${padR('', corrVarWidth)} |   ${allVars.map(v => padR(v.slice(0, 8), 8)).join(' ')}
+${'-'.repeat(corrVarWidth + 1)}+${'-'.repeat(allVars.length * 9 + 2)}
+${allVars.map(v => `${padL(v, corrVarWidth)} |   ${allVars.map(() => '1.0000  ').join(' ')}`).join('\n')}`,
     babyLanguage: `Kita melihat apakah dua variabel berjalan beriringan: jika satu variabel naik, apakah variabel pasangannya juga cenderung ikut naik?`
   });
 
@@ -392,11 +423,13 @@ ${allVars.map(v => `  ${padR(v, 10)} |   ${allVars.map(() => '1.0000 ').join(' '
   }
   chowDummyLines.push(`  F(${chow.df1}, ${chow.df2}) = ${fmt(chow.stat, 2)} | Prob > F = ${fmt(chow.p, 4)} --> ${chow.preferred} preferred over CEM (p ${chow.p < 0.05 ? '<' : '>='} 0.05)`);
 
+  const hausmanVarW = Math.max(12, ...initX.map(v => v.length));
   const hausmanDiffRows: string[] = [];
   hausmanDiffRows.push('Test 2: Hausman Specification Test (Fixed vs Random Effects)');
-  hausmanDiffRows.push('                 ---- Coefficients ----');
-  hausmanDiffRows.push('                 (b)          (B)            (b-B)     sqrt(diag(V_b-V_B))');
-  hausmanDiffRows.push('                  fe           re         Difference       S.E.');
+  hausmanDiffRows.push(`${' '.repeat(hausmanVarW + 3)}---- Coefficients ----`);
+  hausmanDiffRows.push(`${padL('', hausmanVarW)} |      (b)          (B)            (b-B)     sqrt(diag(V_b-V_B))`);
+  hausmanDiffRows.push(`${padL('', hausmanVarW)} |       fe           re         Difference          S.E.`);
+  hausmanDiffRows.push(`${'-'.repeat(hausmanVarW + 1)}+---------------------------------------------------------------`);
 
   for (const v of initX) {
     const b_fe = res.models.fem.coefficients[v]?.b ?? 0;
@@ -406,8 +439,9 @@ ${allVars.map(v => `  ${padR(v, 10)} |   ${allVars.map(() => '1.0000 ').join(' '
     const se_re = res.models.rem.coefficients[v]?.stdError ?? 0;
     const diffVar = Math.pow(se_fe, 2) - Math.pow(se_re, 2);
     const seDiff = diffVar > 0 ? Math.sqrt(diffVar) : 0;
-    hausmanDiffRows.push(`      ${padR(v, 8)} |  ${padL(fmt(b_fe, 7), 9)}   ${padL(fmt(b_re, 7), 9)}   ${padL(fmt(diff, 7), 9)}        ${padL(fmt(seDiff, 7), 8)}`);
+    hausmanDiffRows.push(`${padL(v, hausmanVarW)} |  ${padL(fmt(b_fe, 7), 10)}   ${padL(fmt(b_re, 7), 10)}   ${padL(fmt(diff, 7), 11)}        ${padL(fmt(seDiff, 7), 10)}`);
   }
+  hausmanDiffRows.push(`${'-'.repeat(hausmanVarW + 1)}+---------------------------------------------------------------`);
   hausmanDiffRows.push(`  chi2(${hausman.df}) = (b-B)'[(V_b-V_B)^(-1)](b-B) = ${fmt(hausman.chi2, 2)} | Prob > chi2 = ${fmt(hausman.p, 4)}`);
   hausmanDiffRows.push(`  --> ${hausman.preferred} preferred over ${hausman.preferred === 'FEM' ? 'REM' : 'FEM'} (p ${hausman.p < 0.05 ? '<' : '>='} 0.05)`);
 
@@ -449,15 +483,18 @@ ${allVars.map(v => `  ${padR(v, 10)} |   ${allVars.map(() => '1.0000 ').join(' '
   const vifCmd = selMod.modelType === 'CEM' ? 'estat vif' : 'vif, uncentered';
   const vifTitle = selMod.modelType === 'CEM' ? 'Centered VIF (Pendekatan reg / CEM)' : 'Uncentered VIF (Pendekatan xtreg / FEM & REM)';
 
+  const vifVarKeys = Object.keys(vif.variables);
+  const vifColW = Math.max(12, ...vifVarKeys.map(k => k.length));
+  const vifBorder = `${'-'.repeat(vifColW + 1)}+----------------------------------`;
   const vifRowsLines: string[] = [];
   vifRowsLines.push(`Multikolinearitas (${vifTitle} — Perintah: \`${vifCmd}\`):`);
-  vifRowsLines.push('    Variable |       VIF       1/VIF (Tolerance)');
-  vifRowsLines.push('-------------+----------------------------------');
+  vifRowsLines.push(`${padL('Variable', vifColW)} |       VIF       1/VIF (Tolerance)`);
+  vifRowsLines.push(vifBorder);
   for (const [vName, vStat] of Object.entries(vif.variables)) {
-    vifRowsLines.push(`${padR(vName, 12)} | ${padL(fmt(vStat.vif, 2), 9)}    ${padL(fmt(vStat.tolerance, 6), 12)}`);
+    vifRowsLines.push(`${padL(vName, vifColW)} | ${padL(fmt(vStat.vif, 2), 9)}    ${padL(fmt(vStat.tolerance, 6), 12)}`);
   }
-  vifRowsLines.push('-------------+----------------------------------');
-  vifRowsLines.push(`    Mean VIF | ${padL(fmt(vif.meanVif, 2), 9)}`);
+  vifRowsLines.push(vifBorder);
+  vifRowsLines.push(`${padL('Mean VIF', vifColW)} | ${padL(fmt(vif.meanVif, 2), 9)}`);
 
   if (orth?.triggered) {
     vifRowsLines.push('');
@@ -492,12 +529,12 @@ ${allVars.map(v => `  ${padR(v, 10)} |   ${allVars.map(() => '1.0000 ').join(' '
     '                                                         ----- Joint test -----',
     '    Variable |       Obs   Pr(skewness)   Pr(kurtosis)   adj chi2(2)    Prob>chi2',
     '-------------+-------------------------------------------------------------------',
-    `${padR(resVarName, 12)} | ${padL(String(normality?.sktest?.n ?? N), 9)}     ${padL(fmt(normality?.sktest?.prSkewness ?? 0.25, 4), 8)}       ${padL(fmt(normality?.sktest?.prKurtosis ?? 0.35, 4), 8)}      ${padL(fmt(normality?.sktest?.adjChi2 ?? 2.15, 2), 9)}       ${padL(fmt(normality?.sktest?.probChi2 ?? 0.3412, 4), 8)}`,
+    `${padL(resVarName, 12)} | ${padL(String(normality?.sktest?.n ?? N), 9)}     ${padL(fmt(normality?.sktest?.prSkewness ?? 0.25, 4), 8)}       ${padL(fmt(normality?.sktest?.prKurtosis ?? 0.35, 4), 8)}      ${padL(fmt(normality?.sktest?.adjChi2 ?? 2.15, 2), 9)}       ${padL(fmt(normality?.sktest?.probChi2 ?? 0.3412, 4), 8)}`,
     '',
     `3. Shapiro-Wilk W test for normal data (\`swilk ${resVarName}\`):`,
     '    Variable |        Obs       W           V         z       Prob>z',
     '-------------+------------------------------------------------------',
-    `${padR(resVarName, 12)} | ${padL(String(normality?.swilk?.n ?? N), 10)}   ${padL(fmt(normality?.swilk?.w ?? normality?.statistic ?? 0.962, 5), 8)}   ${padL(fmt(normality?.swilk?.v ?? 1.85, 3), 9)}  ${padL(fmt(normality?.swilk?.z ?? 1.42, 3), 8)}    ${padL(fmt(normality?.swilk?.probZ ?? normality?.p ?? 0.0778, 5), 8)}`,
+    `${padL(resVarName, 12)} | ${padL(String(normality?.swilk?.n ?? N), 10)}   ${padL(fmt(normality?.swilk?.w ?? normality?.statistic ?? 0.962, 5), 8)}   ${padL(fmt(normality?.swilk?.v ?? 1.85, 3), 9)}  ${padL(fmt(normality?.swilk?.z ?? 1.42, 3), 8)}    ${padL(fmt(normality?.swilk?.probZ ?? normality?.p ?? 0.0778, 5), 8)}`,
     '',
     `4. One-sample Kolmogorov-Smirnov test (\`ksmirnov ${resVarName}\`):`,
     `   Combined K-S D = ${fmt(normality?.ksmirnov?.dStat ?? 0.0812, 4)} | p-value = ${fmt(normality?.ksmirnov?.pValue ?? 0.215, 4)} | corrected = ${fmt(normality?.ksmirnov?.correctedP ?? 0.182, 4)}`,
@@ -573,21 +610,22 @@ export function formatPanelClipboardSummary(
   lines.push(`Kesimpulan Model                 : ${selection.selectedModel} (${selection.selectionReason})`);
   lines.push('');
 
+  const summaryVarW = Math.max(14, ...Object.keys(finalModel.coefficients).map(v => v.length));
   lines.push(`2. ESTIMASI MODEL AKHIR (${finalModel.modelType} - Cluster Robust)`);
   lines.push('------------------------------------------------------------------------------------------------------');
-  lines.push('Variabel       | Koefisien (b)  | Std. Err (Robust) | t / z    | P>|t| / P>|z| | 95% Conf. Interval');
+  lines.push(`${padR('Variabel', summaryVarW)} | Koefisien (b)  | Std. Err (Robust) | t / z    | P>|t| / P>|z| | 95% Conf. Interval`);
   lines.push('------------------------------------------------------------------------------------------------------');
 
   for (const [vName, cRow] of Object.entries(finalModel.coefficients)) {
-    const padVar = (vName + '              ').slice(0, 14);
+    const padVar = padR(vName, summaryVarW);
     if (cRow.isOmitted) {
       lines.push(`${padVar} | 0 (omitted)    | -                 | -        | -             | -`);
       continue;
     }
-    const padB = (cRow.b.toFixed(6) + '              ').slice(0, 14);
-    const padSe = (cRow.stdError.toFixed(6) + '                 ').slice(0, 17);
-    const padT = (cRow.tOrZ.toFixed(2) + '        ').slice(0, 8);
-    const padSig = (cRow.sig.toFixed(4) + '              ').slice(0, 13);
+    const padB = padR(cRow.b.toFixed(6), 14);
+    const padSe = padR(cRow.stdError.toFixed(6), 17);
+    const padT = padR(cRow.tOrZ.toFixed(2), 8);
+    const padSig = padR(cRow.sig.toFixed(4), 13);
     const ci = `[${cRow.ciLower.toFixed(6)}, ${cRow.ciUpper.toFixed(6)}]`;
     lines.push(`${padVar} | ${padB} | ${padSe} | ${padT} | ${padSig} | ${ci}`);
   }
@@ -607,4 +645,3 @@ export function formatPanelClipboardSummary(
 
   return lines.join('\n');
 }
-

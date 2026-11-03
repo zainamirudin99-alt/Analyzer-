@@ -8,14 +8,14 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'PDF Analyzer – Carbon Emission Disclosure (CED)',
-  description: 'Aplikasi Analisis Otomatis 18 Indikator Carbon Emission Disclosure pada Laporan Tahunan Perusahaan Menggunakan Google Gemini AI & Supabase.',
-  keywords: ['Carbon Emission Disclosure', 'CED Analyzer', 'PDF Analyzer', 'ESG', 'Gemini AI', 'Supabase', 'Sustainability Report'],
-  authors: [{ name: 'Analyzer AI Team' }],
+  title: 'ANALYZER(?)',
+  description: 'Aplikasi Analisis Indikator Dokumen AI, Regresi Linier SPSS & Regresi Data Panel Stata Menggunakan Multi-Model AI & Supabase.',
+  keywords: ['ANALYZER(?)', 'Document Indicator Analyzer', 'SPSS Regression', 'Stata Panel Regression', 'ESG', 'Gemini AI', 'Supabase'],
+  authors: [{ name: 'ANALYZER(?) Team' }],
   icons: {
-    icon: '/favicon.png',
-    shortcut: '/favicon.png',
-    apple: '/logo.png',
+    icon: '/favicon.png?v=2',
+    shortcut: '/favicon.png?v=2',
+    apple: '/logo.png?v=2',
   }
 };
 

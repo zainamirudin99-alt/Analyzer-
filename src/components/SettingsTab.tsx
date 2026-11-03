@@ -83,6 +83,31 @@ BEGIN
     RETURNING public.ced_heartbeat.last_ping, public.ced_heartbeat.ping_count, public.ced_heartbeat.status;
 END;
 $$;
+GRANT EXECUTE ON FUNCTION public.keepalive_ping() TO anon, authenticated;
+
+-- Jadwal pg_cron otomatis setiap 6 jam (tetap aktif walau web/dashboard tidak dibuka)
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS pg_cron;
+    PERFORM cron.unschedule(jobid) FROM cron.job WHERE jobname = 'ced-supabase-keepalive-every-6-hours';
+    PERFORM cron.schedule('ced-supabase-keepalive-every-6-hours', '0 */6 * * *', 'SELECT public.keepalive_ping()');
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'pg_cron tidak tersedia (%)', SQLERRM;
+END $$;
+
+-- Tabel Akun Aplikasi (username + password, tanpa email) - hanya diakses server
+CREATE TABLE IF NOT EXISTS public.app_users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username VARCHAR(32) NOT NULL UNIQUE CHECK (username ~ '^[a-z0-9_.-]{3,32}$'),
+    password_hash TEXT NOT NULL,
+    settings_encrypted TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    last_login_at TIMESTAMPTZ
+);
+ALTER TABLE public.app_users ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "App Server Access Users" ON public.app_users;
+CREATE POLICY "App Server Access Users" ON public.app_users FOR ALL USING (true) WITH CHECK (true);
 
 -- (Opsional) Tabel Kustom Preset Indikator & Custom AI Skills:
 CREATE TABLE IF NOT EXISTS public.custom_indicator_presets (
@@ -294,7 +319,7 @@ export const SettingsTab: React.FC = () => {
     }
   };
 
-  useEffect(() => {
+  const loadLocalProviderSettings = () => {
     if (typeof window === 'undefined') return;
 
     // Load active provider
@@ -373,9 +398,22 @@ export const SettingsTab: React.FC = () => {
       setClaudeModel(storedClaudeModel);
       setIsClaudeManualMode(false);
     }
+  };
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    loadLocalProviderSettings();
     checkSystemStatus();
     loadSkillsData();
+
+    const handleSyncUpdate = () => {
+      loadLocalProviderSettings();
+      loadSkillsData();
+    };
+    window.addEventListener('analyzer-settings-changed', handleSyncUpdate);
+    return () => {
+      window.removeEventListener('analyzer-settings-changed', handleSyncUpdate);
+    };
   }, []);
 
   const checkSystemStatus = async () => {
@@ -491,6 +529,7 @@ export const SettingsTab: React.FC = () => {
       localStorage.setItem('custom_claude_custom_models', JSON.stringify(claudeCustomModels));
 
       window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('analyzer-settings-changed'));
     }
 
     let currentProviderLabel = `Google Gemini (${effectiveGemini})`;
@@ -502,7 +541,7 @@ export const SettingsTab: React.FC = () => {
 
     setTestResult({
       success: true,
-      message: `Pengaturan Provider Utama (${currentProviderLabel}) berhasil disimpan ke browser dan langsung aktif di menu Upload & Analisis.`
+      message: `Pengaturan Provider Utama (${currentProviderLabel}) berhasil disimpan ke Akun Anda & Browser (tersinkronisasi otomatis lintas perangkat).`
     });
   };
 

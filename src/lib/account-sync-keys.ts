@@ -1,0 +1,22 @@
+// Daftar kunci localStorage yang disinkronkan ke akun pengguna (aman diimpor client & server).
+export const ACCOUNT_SYNC_KEYS = [
+  'custom_ai_provider',
+  'custom_gemini_key',
+  'custom_gemini_model',
+  'custom_openai_key',
+  'custom_openai_model',
+  'custom_openai_base_url',
+  'custom_openai_custom_models',
+  'custom_claude_key',
+  'custom_claude_model',
+  'custom_claude_base_url',
+  'custom_claude_effort',
+  'custom_claude_custom_models',
+  'analyzer_indicator_presets',
+  'analyzer_active_preset_id',
+  'analyzer_custom_skills',
+  'analyzer_active_skill_id',
+  'analyzer_active_skill_ids',
+  'analyzer_language'
+] as const;
+

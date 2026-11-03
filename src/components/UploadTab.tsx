@@ -397,7 +397,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
 
     // Kirim hanya teks jika teks tersedia (sangat ringan, hanya ~50 KB)
     if (extractedData?.text && extractedData.text.length >= 50) {
-      formData.append('pdfText', extractedData.text);
+      formData.append('pdfText', extractedData.text.slice(0, 220000));
     } else if (selectedFile) {
       if (selectedFile.size > 4.2 * 1024 * 1024) {
         setAlertInfo({
@@ -449,12 +449,30 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
     }
 
     try {
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        body: formData
-      });
+      const executeAnalyzeFetch = async (attempt: number): Promise<{ res: Response; raw: string }> => {
+        try {
+          const response = await fetch('/api/analyze', {
+            method: 'POST',
+            body: formData
+          });
+          const textBody = await response.text();
+          if ([502, 503, 504, 505].includes(response.status) && attempt < 2) {
+            setProgressLabel('Server sibuk / timeout sementara, mengulang otomatis (Retry 1/1)...');
+            await new Promise(r => setTimeout(r, 1200));
+            return executeAnalyzeFetch(attempt + 1);
+          }
+          return { res: response, raw: textBody };
+        } catch (networkErr) {
+          if (attempt < 2) {
+            setProgressLabel('Koneksi jaringan terputus sementara, mengulang otomatis (Retry 1/1)...');
+            await new Promise(r => setTimeout(r, 1200));
+            return executeAnalyzeFetch(attempt + 1);
+          }
+          throw networkErr;
+        }
+      };
 
-      const raw = await res.text();
+      const { res, raw } = await executeAnalyzeFetch(1);
       let json: any;
       try {
         json = JSON.parse(raw);
@@ -1276,13 +1294,15 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
           {isAnalyzing ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <div className="mascot-pulse-wrap">
-                <img src="/logo.png" alt="AI Analyzing" className="mascot-loading-img" />
+                <img src="/logo.png?v=2" alt="AI Analyzing" className="mascot-loading-img" />
               </div>
               <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--fern)', marginTop: '18px' }}>
-                AI Sedang Menilai 18 Indikator CED...
+                {isEn ? 'AI Is Evaluating Document Indicators...' : 'AI Sedang Menilai Indikator Dokumen...'}
               </h3>
               <div style={{ fontSize: '13px', color: 'var(--stone)', maxWidth: '380px', marginTop: '8px', lineHeight: '1.6' }}>
-                Google Gemini (<strong>{activeModel}</strong>) sedang memindai laporan dan menghitung bobot nilai CC, GHG, EC, RC, dan ACC secara mendalam.
+                {isEn
+                  ? `AI Engine (${activeModel}) is scanning the document and scoring each active indicator in depth.`
+                  : `Mesin AI (${activeModel}) sedang memindai laporan dan menghitung skor setiap indikator secara mendalam.`}
               </div>
               <div className="mascot-status-pill">
                 <span className="spinner" style={{ width: '14px', height: '14px' }} />
@@ -1292,7 +1312,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
           ) : isExtracting ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <div className="mascot-bounce-wrap">
-                <img src="/logo.png" alt="Extracting PDF" className="mascot-loading-img" />
+                <img src="/logo.png?v=2" alt="Extracting PDF" className="mascot-loading-img" />
               </div>
               <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--moss)', marginTop: '18px' }}>
                 Mengekstrak Konten PDF ke TXT...
@@ -1308,7 +1328,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
           ) : (
             <>
               <div className="mascot-idle-wrap">
-                <img src="/logo.png" alt="PDF Analyzer Mascot" className="mascot-idle-img" />
+                <img src="/logo.png?v=2" alt="ANALYZER(?) Mascot" className="mascot-idle-img" />
               </div>
               <h3 style={{ fontSize: '17px', fontWeight: 800, color: 'var(--text)', marginTop: '10px' }}>
                 Alur Ekstraksi & Analisis PDF

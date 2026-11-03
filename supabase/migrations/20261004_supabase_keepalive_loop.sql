@@ -47,13 +47,21 @@ BEGIN
 END;
 $$;
 
--- 5. Konfigurasi Jadwal pg_cron (Jalankan di Supabase SQL Editor jika pg_cron aktif)
--- Catatan: Ekstensi pg_cron diaktifkan secara default di Supabase.
--- Script berikut menjadwalkan update otomatis setiap 6 jam:
---
--- CREATE EXTENSION IF NOT EXISTS pg_cron;
--- SELECT cron.schedule(
---     'ced-supabase-keepalive-every-6-hours',
---     '0 */6 * * *',
---     'SELECT public.keepalive_ping()'
--- );
+GRANT EXECUTE ON FUNCTION public.keepalive_ping() TO anon, authenticated;
+
+-- 5. Jadwal pg_cron otomatis di dalam database (berjalan walau web/dashboard tidak dibuka).
+-- Dibungkus EXCEPTION agar migrasi tetap sukses bila pg_cron belum diizinkan pada proyek.
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS pg_cron;
+    PERFORM cron.unschedule(jobid)
+    FROM cron.job
+    WHERE jobname = 'ced-supabase-keepalive-every-6-hours';
+    PERFORM cron.schedule(
+        'ced-supabase-keepalive-every-6-hours',
+        '0 */6 * * *',
+        'SELECT public.keepalive_ping()'
+    );
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'pg_cron tidak tersedia (%). Aktifkan via Database > Extensions, lalu jalankan ulang blok ini.', SQLERRM;
+END $$;

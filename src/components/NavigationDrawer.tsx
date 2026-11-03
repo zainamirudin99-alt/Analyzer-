@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element */
 
 import React, { useState, useEffect } from 'react';
 import { X, ChevronDown, ChevronRight } from 'lucide-react';
@@ -11,6 +12,20 @@ export interface NavigationDrawerProps {
   onSelectTab: (tab: string) => void;
   toggleButtonRef?: React.RefObject<HTMLButtonElement>;
 }
+
+const SideLogoIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
+  <img
+    src="/logo.png?v=2"
+    alt="ANALYZER(?)"
+    style={{
+      width: `${size}px`,
+      height: `${size}px`,
+      objectFit: 'contain',
+      borderRadius: '4px',
+      flexShrink: 0
+    }}
+  />
+);
 
 export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
   isOpen,
@@ -86,10 +101,18 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
       >
         <div className="drawer-header">
           <div className="drawer-brand">
-            <span className="drawer-logo-badge">🌿</span>
+            <span className="drawer-logo-badge" style={{ padding: '2px', overflow: 'hidden' }}>
+              <img
+                src="/logo.png?v=2"
+                alt="ANALYZER(?) Logo"
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              />
+            </span>
             <div className="drawer-title-group">
-              <span className="drawer-app-title">{isEn ? 'Analyzer Navigation' : 'Analyzer Navigasi'}</span>
-              <span className="drawer-app-subtitle">{isEn ? 'CED & Statistical Analysis' : 'CED & Analisis Statistik'}</span>
+              <span className="drawer-app-title">ANALYZER(?)</span>
+              <span className="drawer-app-subtitle">
+                {isEn ? 'AI Document & Statistical Suite' : 'Analisis Dokumen AI & Statistik'}
+              </span>
             </div>
           </div>
           <button
@@ -120,7 +143,9 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
               data-testid="group-header-analyze-sr"
             >
               <div className="group-header-left">
-                <span className="nav-item-icon">📑</span>
+                <span className="nav-item-icon">
+                  <SideLogoIcon size={20} />
+                </span>
                 <span className="group-title">Analyze SR (Sustainability)</span>
               </div>
               <span className="group-chevron">
@@ -137,7 +162,9 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
                   onClick={() => handleItemClick('guide')}
                   data-testid="nav-item-guide"
                 >
-                  <span className="nav-item-icon">🌱</span>
+                  <span className="nav-item-icon">
+                    <SideLogoIcon size={18} />
+                  </span>
                   <span className="nav-item-label">{isEn ? 'Indicator Presets' : 'Pilihan Indikator'}</span>
                 </button>
 
@@ -147,7 +174,9 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
                   onClick={() => handleItemClick('upload')}
                   data-testid="nav-item-upload"
                 >
-                  <span className="nav-item-icon">🌿</span>
+                  <span className="nav-item-icon">
+                    <SideLogoIcon size={18} />
+                  </span>
                   <span className="nav-item-label">{isEn ? 'Upload & Analysis' : 'Upload & Analisis'}</span>
                 </button>
 
@@ -157,7 +186,9 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
                   onClick={() => handleItemClick('results')}
                   data-testid="nav-item-results"
                 >
-                  <span className="nav-item-icon">📋</span>
+                  <span className="nav-item-icon">
+                    <SideLogoIcon size={18} />
+                  </span>
                   <span className="nav-item-label">{isEn ? 'Analysis Results Table' : 'Tabel Hasil Analisis'}</span>
                 </button>
               </div>
@@ -171,7 +202,9 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
             onClick={() => handleItemClick('settings')}
             data-testid="nav-item-settings"
           >
-            <span className="nav-item-icon">⚙️</span>
+            <span className="nav-item-icon">
+              <SideLogoIcon size={20} />
+            </span>
             <span className="nav-item-label">{isEn ? 'Settings & Database' : 'Pengaturan & Database'}</span>
           </button>
 
@@ -182,7 +215,9 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
             onClick={() => handleItemClick('regression')}
             data-testid="nav-item-regression"
           >
-            <span className="nav-item-icon">📊</span>
+            <span className="nav-item-icon">
+              <SideLogoIcon size={20} />
+            </span>
             <span className="nav-item-label">{isEn ? 'Statistical Regression Analysis' : 'Analisis Regresi Statistik'}</span>
           </button>
 
@@ -193,7 +228,9 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
             onClick={() => handleItemClick('panel')}
             data-testid="nav-item-panel"
           >
-            <span className="nav-item-icon">📈</span>
+            <span className="nav-item-icon">
+              <SideLogoIcon size={20} />
+            </span>
             <div className="nav-item-panel-label-group">
               <span className="nav-item-label">{isEn ? 'Stata Panel Data Regression' : 'Regresi Data Panel Stata'}</span>
               <span className="nav-item-badge">{isEn ? 'NEW' : 'BARU'}</span>
@@ -202,8 +239,9 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
         </nav>
 
         <div className="drawer-footer">
-          <div className="drawer-footer-text">
-            <span>{isEn ? 'Analyzer v1.0 • Econometric Standard' : 'Analyzer v1.0 • Standar Ekonometrika'}</span>
+          <div className="drawer-footer-text" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+            <SideLogoIcon size={16} />
+            <span>{isEn ? 'ANALYZER(?) • Econometric Standard' : 'ANALYZER(?) • Standar Ekonometrika'}</span>
           </div>
         </div>
       </aside>

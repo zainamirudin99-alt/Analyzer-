@@ -142,3 +142,9 @@ Dokumen ini memuat daftar tugas operasional dari Tahap 1 hingga Tahap 3 beserta 
 
 - [x] **T4.12**: Optimasi alur Regresi Linier (Gaya SPSS), validasi & diagnostik Time Series lengkap, serta Smart Remedial & Auto-Scan Optimasi $R^2$ sesuai kaidah statistika (`RegressionTab.tsx`, `RegressionResultsView.tsx`, `regression-remedial.ts`).
 - [x] **T4.13**: Implementasi alur 9-Langkah Regresi Data Panel (Gaya Stata): Input Data -> Cleaning Data & Pilihan Nilai `0` (True Zero vs Tidak Ada Pengungkapan) -> Analisis & Transformasi `LN` -> `xtset` -> `CEM`, `FEM`, `REM` -> Uji Chow Dummy, Hausman, & LM Adaptif -> Uji Asumsi Klasik (Uncentered VIF untuk `xtreg` FEM/REM vs Centered VIF untuk `reg` CEM + Transformasi `orthog` menggunakan variabel terakhir) -> Uji Normalitas (`predict e, e` vs `predict resid, residuals`, Histogram, `sktest`, `swilk`, `ksmirnov`) -> Hasil Akhir `vce(robust)` & Interpretasi Bahasa Mudah (`panel-types.ts`, `panel-engine.ts`, `panel-interpretation.ts`, `PanelStepper.tsx`, `PanelTab.tsx`).
+
+- [x] **T4.14**: Keepalive Supabase 24/7 (`pg_cron` + Vercel Cron + GitHub Actions) tanpa perlu membuka dashboard/web.
+- [x] **T4.15**: Akun wajib login/daftar (username + password tanpa email) dan sinkronisasi pengaturan/API key lintas perangkat (`app_users`, `/api/auth/*`, `AuthGate`).
+- [x] **T4.16**: Branding **ANALYZER(?)** dengan `new logo.png` untuk seluruh logo, favicon, ikon drawer, dan maskot.
+- [x] **T4.17**: Perapian tabel output regresi data panel gaya Stata (lebar kolom dinamis, pemisah sejajar).
+- [x] **T4.18**: Model `gemini-3.8-flash` & `gemini-argon` + perisai error HTTP (404/403/405/429/5xx, timeout, retry, fallback endpoint).

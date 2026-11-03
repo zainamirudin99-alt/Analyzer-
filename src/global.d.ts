@@ -96,6 +96,7 @@ declare module 'next/server' {
   }
 
   export class NextResponse extends Response {
+    readonly cookies: any;
     static json(body: any, init?: ResponseInit): NextResponse;
     static redirect(url: string | URL, init?: number | ResponseInit): NextResponse;
     static rewrite(destination: string | URL, init?: ResponseInit): NextResponse;
@@ -177,6 +178,11 @@ declare module 'lucide-react' {
   export const Settings2: any;
   export const Globe: any;
   export const Languages: any;
+  export const User: any;
+  export const LogIn: any;
+  export const LogOut: any;
+  export const UserPlus: any;
+  export const EyeOff: any;
 
   const icons: any;
   export default icons;
