@@ -7,6 +7,7 @@ import { UploadCloud, FileText, CheckCircle2, Sparkles, RefreshCw, ArrowRight, C
 import { CEDScores, INDICATOR_KEYS, CEDResultRecord, IndicatorPreset, CustomAISkill } from '@/lib/types';
 import {
   getStoredPresets,
+  saveStoredPresets,
   getActivePresetId,
   setActivePresetId,
   getActivePreset,
@@ -16,6 +17,12 @@ import {
   getActiveSkill,
   DEFAULT_PRESET_ID
 } from '@/lib/indicators-storage';
+import {
+  useLanguage,
+  getPresetName,
+  getIndicatorTitle,
+  ensurePresetsTranslated
+} from '@/lib/i18n';
 
 interface UploadTabProps {
   onSuccessAnalysis: () => void;
@@ -23,6 +30,8 @@ interface UploadTabProps {
 }
 
 export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToResults }) => {
+  const { lang } = useLanguage();
+  const isEn = lang === 'en';
   const [companyCode, setCompanyCode] = useState('');
   const [fiscalYear, setFiscalYear] = useState('FY 2024');
   const [notes, setNotes] = useState('');
@@ -118,6 +127,16 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
       };
     }
   }, []);
+
+  useEffect(() => {
+    const currentPresets = getStoredPresets();
+    ensurePresetsTranslated(currentPresets, lang).then(({ updatedPresets, changed }) => {
+      if (changed) {
+        saveStoredPresets(updatedPresets);
+        setPresets(updatedPresets);
+      }
+    });
+  }, [lang]);
 
   const handleProviderChange = (newProvider: 'gemini' | 'openai' | 'claude') => {
     setActiveProvider(newProvider);
@@ -587,15 +606,15 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
       <div className="card">
         <div className="card-title">
           <div className="ct-icon">📝</div>
-          <span>1. Dokumen & Ekstraksi Teks (PDF ➔ TXT)</span>
+          <span>{isEn ? '1. Document & Text Extraction (PDF ➔ TXT)' : '1. Dokumen & Ekstraksi Teks (PDF ➔ TXT)'}</span>
         </div>
 
         <div className="form-group">
-          <label className="form-label">Kode Emiten / Perusahaan (Ticker)</label>
+          <label className="form-label">{isEn ? 'Issuer / Company Code (Ticker)' : 'Kode Emiten / Perusahaan (Ticker)'}</label>
           <input
             type="text"
             className="form-input font-mono"
-            placeholder="Contoh: AKRA, TINS, ANTM, PTBA, ADRO"
+            placeholder={isEn ? 'e.g., AKRA, TINS, ANTM, PTBA, ADRO' : 'Contoh: AKRA, TINS, ANTM, PTBA, ADRO'}
             value={companyCode}
             onChange={e => setCompanyCode(e.target.value.toUpperCase())}
             maxLength={12}
@@ -604,7 +623,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
         </div>
 
         <div className="form-group">
-          <label className="form-label">Tahun Fiskal (Fiscal Year)</label>
+          <label className="form-label">{isEn ? 'Fiscal Year' : 'Tahun Fiskal (Fiscal Year)'}</label>
           <select
             className="form-select font-mono"
             value={fiscalYear}
@@ -622,10 +641,10 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
         </div>
 
         <div className="form-group">
-          <label className="form-label">Catatan Tambahan (Opsional)</label>
+          <label className="form-label">{isEn ? 'Additional Notes (Optional)' : 'Catatan Tambahan (Opsional)'}</label>
           <textarea
             className="form-textarea"
-            placeholder="Contoh: Sustainability Report 2022..."
+            placeholder={isEn ? 'e.g., Sustainability Report 2024...' : 'Contoh: Sustainability Report 2022...'}
             value={notes}
             onChange={e => setNotes(e.target.value)}
             disabled={isAnalyzing || isExtracting}
@@ -633,7 +652,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
         </div>
 
         <div className="form-group">
-          <label className="form-label">Unggah Laporan PDF</label>
+          <label className="form-label">{isEn ? 'Upload PDF Report' : 'Unggah Laporan PDF'}</label>
           <div
             className={`drop-zone ${isDragOver ? 'drag-over' : ''} ${selectedFile ? 'has-file' : ''}`}
             onDragOver={handleDragOver}
@@ -657,11 +676,15 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
               {selectedFile ? <FileText size={32} color="#2e6922" /> : <UploadCloud size={32} color="#687962" />}
             </div>
             <div style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text)' }}>
-              {selectedFile ? selectedFile.name : 'Klik atau Tarik File PDF ke Sini'}
+              {selectedFile ? selectedFile.name : isEn ? 'Click or Drag PDF File Here' : 'Klik atau Tarik File PDF ke Sini'}
             </div>
             <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
               {selectedFile
-                ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB · Klik "Ubah PDF ke TXT" di bawah`
+                ? isEn
+                  ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB · Click "1. Convert PDF to TXT" below`
+                  : `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB · Klik "Ubah PDF ke TXT" di bawah`
+                : isEn
+                ? 'Supports Annual / Sustainability Reports in PDF (Max 25 MB)'
                 : 'Mendukung Laporan Tahunan / Keberlanjutan PDF (Maks 25 MB)'}
             </div>
           </div>
@@ -731,10 +754,10 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800, fontSize: '13.5px', color: 'var(--moss)' }}>
               <Sliders size={16} />
-              <span>Konfigurasi Indikator & Model Analisis</span>
+              <span>{isEn ? 'Indicator & AI Model Configuration' : 'Konfigurasi Indikator & Model Analisis'}</span>
             </div>
             <span style={{ fontSize: '11px', color: 'var(--stone)' }}>
-              Tersinkronisasi Otomatis
+              {isEn ? 'Auto-Synchronized' : 'Tersinkronisasi Otomatis'}
             </span>
           </div>
 
@@ -742,7 +765,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
             {/* 1. Pemilih Preset Indikator */}
             <div>
               <label className="form-label" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--bark)', marginBottom: '4px' }}>
-                🌱 Pilihan Indikator Digunakan
+                🌱 {isEn ? 'Selected Indicator Preset' : 'Pilihan Indikator Digunakan'}
               </label>
               <select
                 className="form-select font-mono"
@@ -753,7 +776,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
               >
                 {presets.map(p => (
                   <option key={p.id} value={p.id}>
-                    {p.name} ({p.indicators.length} Indikator)
+                    {getPresetName(p, lang)} ({p.indicators.length} {isEn ? 'Indicators' : 'Indikator'})
                   </option>
                 ))}
               </select>
@@ -762,7 +785,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
             {/* 2. Pemilih Bantuan AI Skill */}
             <div>
               <label className="form-label" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--bark)', marginBottom: '4px' }}>
-                🧠 Skill Bantuan AI (Custom Skill)
+                🧠 {isEn ? 'AI Assistant Skill (Custom Skill)' : 'Skill Bantuan AI (Custom Skill)'}
               </label>
               <select
                 className="form-select"
@@ -771,7 +794,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
                 disabled={isAnalyzing || isExtracting}
                 style={{ background: '#ffffff', fontSize: '12.5px', padding: '7px 10px' }}
               >
-                <option value="none">Tanpa Skill Tambahan (Bawaan)</option>
+                <option value="none">{isEn ? 'No Extra Skill (Default)' : 'Tanpa Skill Tambahan (Bawaan)'}</option>
                 {skills.map(s => (
                   <option key={s.id} value={s.id}>
                     ✨ {s.name}
@@ -784,7 +807,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
           {/* 3. Pemilih Mesin & Model AI Dua Arah */}
           <div>
             <label className="form-label" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--bark)', marginBottom: '6px' }}>
-              🤖 Mesin & Model AI (Sinkron Dua Arah dengan Pengaturan)
+              🤖 {isEn ? 'AI Engine & Model (Two-Way Sync with Settings)' : 'Mesin & Model AI (Sinkron Dua Arah dengan Pengaturan)'}
             </label>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
               <div style={{ display: 'flex', background: 'rgba(0,0,0,0.06)', borderRadius: '8px', padding: '3px' }}>
@@ -892,12 +915,12 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
               {isExtracting ? (
                 <>
                   <span className="spinner" />
-                  <span>Mengekstrak PDF ke TXT...</span>
+                  <span>{isEn ? 'Extracting PDF to TXT...' : 'Mengekstrak PDF ke TXT...'}</span>
                 </>
               ) : (
                 <>
                   <FileText size={18} />
-                  <span>1. Ubah PDF ke TXT</span>
+                  <span>{isEn ? '1. Convert PDF to TXT' : '1. Ubah PDF ke TXT'}</span>
                 </>
               )}
             </button>
@@ -912,12 +935,15 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
                 {isAnalyzing ? (
                   <>
                     <span className="spinner" />
-                    <span>AI Sedang Menganalisis...</span>
+                    <span>{isEn ? 'AI is Analyzing...' : 'AI Sedang Menganalisis...'}</span>
                   </>
                 ) : (
                   <>
                     <Sparkles size={18} />
-                    <span>2. Analisis dengan AI {(extractedData?.totalCharacters ?? 0) < 50 ? '(Multimodal Vision)' : ''}</span>
+                    <span>
+                      {isEn ? '2. Analyze with AI' : '2. Analisis dengan AI'}{' '}
+                      {(extractedData?.totalCharacters ?? 0) < 50 ? '(Multimodal Vision)' : ''}
+                    </span>
                   </>
                 )}
               </button>
@@ -927,10 +953,10 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
                 onClick={handleExtractToTxt}
                 disabled={isExtracting || isAnalyzing}
                 style={{ flex: 1 }}
-                title="Ekstrak ulang dokumen"
+                title={isEn ? 'Re-extract document' : 'Ekstrak ulang dokumen'}
               >
                 <RefreshCw size={16} />
-                <span>Ubah Ulang TXT</span>
+                <span>{isEn ? 'Re-convert TXT' : 'Ubah Ulang TXT'}</span>
               </button>
             </div>
           )}
@@ -938,11 +964,13 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
 
         {/* Model Info Badge */}
         <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--stone)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-          <span>🤖 Model AI Terpilih:</span>
+          <span>🤖 {isEn ? 'Selected AI Model:' : 'Model AI Terpilih:'}</span>
           <span className="badge badge-primary font-mono" style={{ fontSize: '11px', padding: '2px 8px' }}>
             {activeModel}
           </span>
-          <span style={{ fontSize: '11.5px', color: 'var(--stone)' }}>(Tersinkronisasi dengan tab Pengaturan)</span>
+          <span style={{ fontSize: '11.5px', color: 'var(--stone)' }}>
+            {isEn ? '(Synchronized with Settings tab)' : '(Tersinkronisasi dengan tab Pengaturan)'}
+          </span>
         </div>
       </div>
 

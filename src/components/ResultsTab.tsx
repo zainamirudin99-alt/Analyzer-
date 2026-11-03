@@ -1,15 +1,19 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Download, Search, Trash2, Printer, Copy, Check, Table, Filter } from 'lucide-react';
-import { CEDResultRecord, INDICATOR_KEYS, IndicatorPreset, IndicatorItem } from '@/lib/types';
-import { getStoredPresets, getActivePresetId, DEFAULT_PRESET_ID } from '@/lib/indicators-storage';
+import { RefreshCw, Download, Search, Trash2, Printer, Copy, Check, Table } from 'lucide-react';
+import { CEDResultRecord, INDICATOR_KEYS, IndicatorPreset } from '@/lib/types';
+import { getStoredPresets, saveStoredPresets, getActivePresetId, DEFAULT_PRESET_ID } from '@/lib/indicators-storage';
+import { useLanguage, getPresetName, getIndicatorTitle, ensurePresetsTranslated } from '@/lib/i18n';
 
 interface ResultsTabProps {
   refreshTrigger: number;
 }
 
 export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
+  const { lang } = useLanguage();
+  const isEn = lang === 'en';
+
   const [results, setResults] = useState<CEDResultRecord[]>([]);
   const [presets, setPresets] = useState<IndicatorPreset[]>([]);
   const [filterPreset, setFilterPreset] = useState<string>('all');
@@ -96,8 +100,21 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     }
   }, [refreshTrigger]);
 
+  useEffect(() => {
+    const currentPresets = getStoredPresets();
+    ensurePresetsTranslated(currentPresets, lang).then(({ updatedPresets, changed }) => {
+      if (changed) {
+        saveStoredPresets(updatedPresets);
+        setPresets(updatedPresets);
+      }
+    });
+  }, [lang]);
+
   const handleDelete = async (record: CEDResultRecord) => {
-    if (!confirm(`Apakah Anda yakin ingin menghapus data ${record.company_code} (${record.fiscal_year})?`)) {
+    const confirmMsg = isEn
+      ? `Are you sure you want to delete data for ${record.company_code} (${record.fiscal_year})?`
+      : `Apakah Anda yakin ingin menghapus data ${record.company_code} (${record.fiscal_year})?`;
+    if (!confirm(confirmMsg)) {
       return;
     }
 
@@ -119,7 +136,12 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
       console.warn('Backend delete sync:', err);
     }
 
-    setMessage({ type: 'success', text: `Data ${record.company_code} (${record.fiscal_year}) berhasil dihapus.` });
+    setMessage({
+      type: 'success',
+      text: isEn
+        ? `Data for ${record.company_code} (${record.fiscal_year}) deleted.`
+        : `Data ${record.company_code} (${record.fiscal_year}) berhasil dihapus.`
+    });
   };
 
   const selectedPresetObj = presets.find(p => p.id === filterPreset);
@@ -129,22 +151,26 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
 
   const displayIndicatorItems: { code: string; title: string }[] =
     currentPresetForColumns && currentPresetForColumns.indicators.length > 0
-      ? currentPresetForColumns.indicators.map(i => ({ code: i.code, title: i.title }))
+      ? currentPresetForColumns.indicators.map(i => ({ code: i.code, title: getIndicatorTitle(i, lang) }))
       : INDICATOR_KEYS.map(k => ({ code: k.toUpperCase(), title: k.toUpperCase() }));
 
   // 1. SALIN HANYA NILAI SKOR
   const handleCopyScoresOnly = (row: CEDResultRecord, idKey: string) => {
-    const scoresTsv = displayIndicatorItems.map(ind => {
-      const lower = ind.code.toLowerCase();
-      const upper = ind.code.toUpperCase();
-      return (row as any)[lower] ?? (row as any)[upper] ?? 0;
-    }).join('\t');
+    const scoresTsv = displayIndicatorItems
+      .map(ind => {
+        const lower = ind.code.toLowerCase();
+        const upper = ind.code.toUpperCase();
+        return (row as any)[lower] ?? (row as any)[upper] ?? 0;
+      })
+      .join('\t');
 
     navigator.clipboard.writeText(scoresTsv);
     setCopiedId(`scores_${idKey}`);
     setMessage({
       type: 'success',
-      text: `Nilai skor untuk ${row.company_code} (${row.fiscal_year}) tersalin ke clipboard! Siap di-paste (Ctrl+V) ke spreadsheet.`
+      text: isEn
+        ? `Scores for ${row.company_code} (${row.fiscal_year}) copied to clipboard! Ready to paste (Ctrl+V).`
+        : `Nilai skor untuk ${row.company_code} (${row.fiscal_year}) tersalin ke clipboard! Siap di-paste (Ctrl+V) ke spreadsheet.`
     });
     setTimeout(() => setCopiedId(null), 2500);
   };
@@ -157,18 +183,15 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
       return (row as any)[lower] ?? (row as any)[upper] ?? 0;
     });
 
-    const rowTsv = [
-      row.company_code,
-      row.fiscal_year,
-      ...scores,
-      row.total_score ?? 0
-    ].join('\t');
+    const rowTsv = [row.company_code, row.fiscal_year, ...scores, row.total_score ?? 0].join('\t');
 
     navigator.clipboard.writeText(rowTsv);
     setCopiedId(`row_${idKey}`);
     setMessage({
       type: 'success',
-      text: `Baris lengkap ${row.company_code} (${row.fiscal_year}) tersalin ke clipboard!`
+      text: isEn
+        ? `Full row for ${row.company_code} (${row.fiscal_year}) copied to clipboard!`
+        : `Baris lengkap ${row.company_code} (${row.fiscal_year}) tersalin ke clipboard!`
     });
     setTimeout(() => setCopiedId(null), 2500);
   };
@@ -192,21 +215,28 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     setCopiedAll(true);
     setMessage({
       type: 'success',
-      text: `${filteredResults.length} baris data berhasil disalin! Siap di-paste ke Google Sheets / Excel.`
+      text: isEn
+        ? `${filteredResults.length} rows copied! Ready to paste into Google Sheets / Excel.`
+        : `${filteredResults.length} baris data berhasil disalin! Siap di-paste ke Google Sheets / Excel.`
     });
     setTimeout(() => setCopiedAll(false), 3000);
   };
 
   const handleExportCSV = () => {
     if (results.length === 0) {
-      alert('Tidak ada data untuk diekspor.');
+      alert(isEn ? 'No data available to export.' : 'Tidak ada data untuk diekspor.');
       return;
     }
 
     const headers = [
-      'Company Code', 'Fiscal Year', 'File Name',
+      'Company Code',
+      'Fiscal Year',
+      'File Name',
       ...displayIndicatorItems.map(i => i.code),
-      'Total Score', 'Disclosure Level', 'Model Used', 'Created At'
+      'Total Score',
+      'Disclosure Level',
+      'Model Used',
+      'Created At'
     ];
 
     const rows = filteredResults.map(r => {
@@ -240,15 +270,14 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
   const filteredResults = results.filter(item => {
     const matchCode = !filterCode || item.company_code.toLowerCase().includes(filterCode.toLowerCase());
     const matchYear = !filterYear || item.fiscal_year === filterYear;
-    const matchPreset = filterPreset === 'all' || (item.preset_id ? item.preset_id === filterPreset : filterPreset === DEFAULT_PRESET_ID);
+    const matchPreset =
+      filterPreset === 'all' || (item.preset_id ? item.preset_id === filterPreset : filterPreset === DEFAULT_PRESET_ID);
     return matchCode && matchYear && matchPreset;
   });
 
   const totalCount = filteredResults.length;
   const totalScoresArray = filteredResults.map(r => r.total_score || 0);
-  const avgScore = totalCount > 0
-    ? (totalScoresArray.reduce((a, b) => a + b, 0) / totalCount).toFixed(1)
-    : '0.0';
+  const avgScore = totalCount > 0 ? (totalScoresArray.reduce((a, b) => a + b, 0) / totalCount).toFixed(1) : '0.0';
   const maxScore = totalCount > 0 ? Math.max(...totalScoresArray) : 0;
   const minScore = totalCount > 0 ? Math.min(...totalScoresArray) : 0;
   const topCompany = filteredResults.find(r => (r.total_score || 0) === maxScore);
@@ -261,19 +290,23 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
         <div className="grid-4" style={{ marginBottom: '24px' }}>
           <div className="stat-box s-green">
             <div className="stat-val">{totalCount}</div>
-            <div className="stat-lbl">Total Laporan Dianalisis</div>
+            <div className="stat-lbl">{isEn ? 'Total Analyzed Reports' : 'Total Laporan Dianalisis'}</div>
           </div>
           <div className="stat-box s-teal">
             <div className="stat-val">{avgScore}</div>
-            <div className="stat-lbl">Rata-Rata Skor Industri</div>
+            <div className="stat-lbl">{isEn ? 'Industry Average Score' : 'Rata-Rata Skor Industri'}</div>
           </div>
           <div className="stat-box s-sage">
             <div className="stat-val">{maxScore}</div>
-            <div className="stat-lbl">Skor Tertinggi {topCompany ? `(${topCompany.company_code})` : ''}</div>
+            <div className="stat-lbl">
+              {isEn ? 'Highest Score' : 'Skor Tertinggi'} {topCompany ? `(${topCompany.company_code})` : ''}
+            </div>
           </div>
           <div className="stat-box s-gold">
             <div className="stat-val">{minScore}</div>
-            <div className="stat-lbl">Skor Terendah {lowestCompany ? `(${lowestCompany.company_code})` : ''}</div>
+            <div className="stat-lbl">
+              {isEn ? 'Lowest Score' : 'Skor Terendah'} {lowestCompany ? `(${lowestCompany.company_code})` : ''}
+            </div>
           </div>
         </div>
       )}
@@ -283,7 +316,11 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
         <div className="card-title" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div className="ct-icon">📋</div>
-            <span>Database Hasil CED Scoring ({filteredResults.length} Entri)</span>
+            <span>
+              {isEn
+                ? `CED Scoring Results Database (${filteredResults.length} Entries)`
+                : `Database Hasil CED Scoring (${filteredResults.length} Entri)`}
+            </span>
           </div>
 
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -291,7 +328,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
               <input
                 type="text"
                 className="form-input font-mono"
-                placeholder="Cari emiten..."
+                placeholder={isEn ? 'Search ticker...' : 'Cari emiten...'}
                 style={{ width: '140px', paddingLeft: '32px' }}
                 value={filterCode}
                 onChange={e => setFilterCode(e.target.value)}
@@ -305,7 +342,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
               value={filterYear}
               onChange={e => setFilterYear(e.target.value)}
             >
-              <option value="">Semua Tahun</option>
+              <option value="">{isEn ? 'All Years' : 'Semua Tahun'}</option>
               <option value="FY 2026">FY 2026</option>
               <option value="FY 2025">FY 2025</option>
               <option value="FY 2024">FY 2024</option>
@@ -317,17 +354,20 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
 
             <select
               className="form-select font-mono"
-              style={{ width: '160px' }}
+              style={{ width: '170px' }}
               value={filterPreset}
               onChange={e => setFilterPreset(e.target.value)}
-              title="Filter hasil berdasarkan pilihan indikator yang digunakan"
+              title={isEn ? 'Filter results by indicator preset' : 'Filter hasil berdasarkan pilihan indikator yang digunakan'}
             >
-              <option value="all">Semua Indikator</option>
-              {presets.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.name.length > 22 ? `${p.name.slice(0, 22)}...` : p.name}
-                </option>
-              ))}
+              <option value="all">{isEn ? 'All Indicators' : 'Semua Indikator'}</option>
+              {presets.map(p => {
+                const pName = getPresetName(p, lang);
+                return (
+                  <option key={p.id} value={p.id}>
+                    {pName.length > 22 ? `${pName.slice(0, 22)}...` : pName}
+                  </option>
+                );
+              })}
             </select>
 
             <button className="btn btn-outline btn-sm" onClick={fetchResults} disabled={isLoading}>
@@ -335,9 +375,13 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
               <span>Refresh</span>
             </button>
 
-            <button className="btn btn-primary btn-sm" onClick={handleCopyAllTable} title="Salin seluruh baris tabel untuk di-paste langsung ke Google Sheets">
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={handleCopyAllTable}
+              title={isEn ? 'Copy all rows to paste into Google Sheets' : 'Salin seluruh baris tabel untuk di-paste langsung ke Google Sheets'}
+            >
               {copiedAll ? <Check size={14} /> : <Copy size={14} />}
-              <span>{copiedAll ? 'Tersalin! ✅' : 'Salin Semua (Spreadsheet)'}</span>
+              <span>{copiedAll ? (isEn ? 'Copied! ✅' : 'Tersalin! ✅') : isEn ? 'Copy All (Spreadsheet)' : 'Salin Semua (Spreadsheet)'}</span>
             </button>
 
             <button className="btn btn-accent btn-sm" onClick={handleExportCSV}>
@@ -347,7 +391,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
 
             <button className="btn btn-outline btn-sm" onClick={() => window.print()}>
               <Printer size={13} />
-              <span>Cetak</span>
+              <span>{isEn ? 'Print' : 'Cetak'}</span>
             </button>
           </div>
         </div>
@@ -367,11 +411,13 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
                 <th style={{ textAlign: 'left', minWidth: '90px' }}>Code</th>
                 <th style={{ minWidth: '90px' }}>Years</th>
                 {displayIndicatorItems.map(ind => (
-                  <th key={ind.code} title={ind.title}>{ind.code}</th>
+                  <th key={ind.code} title={ind.title}>
+                    {ind.code}
+                  </th>
                 ))}
                 <th style={{ minWidth: '70px' }}>TOTAL</th>
                 <th style={{ minWidth: '100px' }}>Level</th>
-                <th style={{ minWidth: '190px' }}>Salin & Aksi</th>
+                <th style={{ minWidth: '190px' }}>{isEn ? 'Copy & Actions' : 'Salin & Aksi'}</th>
               </tr>
             </thead>
             <tbody>
@@ -380,14 +426,22 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
                   <td colSpan={displayIndicatorItems.length + 5} style={{ padding: '36px', color: 'var(--text-muted)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                       <span className="spinner" style={{ borderColor: 'rgba(0,0,0,0.15)', borderTopColor: 'var(--primary)' }} />
-                      <span>Memuat data hasil analisis...</span>
+                      <span>{isEn ? 'Loading analysis results...' : 'Memuat data hasil analisis...'}</span>
                     </div>
                   </td>
                 </tr>
               ) : filteredResults.length === 0 ? (
                 <tr>
                   <td colSpan={displayIndicatorItems.length + 5} style={{ padding: '48px 20px', color: 'var(--stone)', fontStyle: 'italic' }}>
-                    🌿 Belum ada data analisis. Silakan upload laporan tahunan pada tab <strong>"Upload & Analisis"</strong>.
+                    {isEn ? (
+                      <>
+                        🌿 No analysis records yet. Please upload an annual/sustainability report in the <strong>"Upload & Analysis"</strong> tab.
+                      </>
+                    ) : (
+                      <>
+                        🌿 Belum ada data analisis. Silakan upload laporan tahunan pada tab <strong>"Upload & Analisis"</strong>.
+                      </>
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -400,7 +454,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
                     <tr key={row.id || rowKey}>
                       <td className="td-code">{row.company_code}</td>
                       <td className="td-year">{row.fiscal_year}</td>
-                      
+
                       {displayIndicatorItems.map(ind => {
                         const lower = ind.code.toLowerCase();
                         const upper = ind.code.toUpperCase();
@@ -414,34 +468,40 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
 
                       <td className="td-total">{row.total_score ?? 0}</td>
                       <td style={{ fontSize: '12px', fontWeight: 700, color: 'var(--moss)', whiteSpace: 'nowrap' }}>
-                        {row.disclosure_level?.split(' ')[0] || 'Rendah'}
+                        {row.disclosure_level?.split(' ')[0] || (isEn ? 'Low' : 'Rendah')}
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', alignItems: 'center' }}>
                           <button
                             className="btn btn-primary btn-sm"
                             style={{ padding: '4px 8px', fontSize: '11.5px', fontWeight: 700 }}
-                            title="Salin Nilai Skor untuk paste ke spreadsheet"
+                            title={isEn ? 'Copy indicator scores to paste into spreadsheet' : 'Salin Nilai Skor untuk paste ke spreadsheet'}
                             onClick={() => handleCopyScoresOnly(row, rowKey)}
                           >
                             {isCopiedScores ? <Check size={12} /> : <Table size={12} />}
-                            <span>{isCopiedScores ? 'Tersalin!' : `📋 ${displayIndicatorItems.length} Skor`}</span>
+                            <span>
+                              {isCopiedScores
+                                ? isEn
+                                  ? 'Copied!'
+                                  : 'Tersalin!'
+                                : `📋 ${displayIndicatorItems.length} ${isEn ? 'Scores' : 'Skor'}`}
+                            </span>
                           </button>
 
                           <button
                             className="btn btn-outline btn-sm"
                             style={{ padding: '4px 8px', fontSize: '11px', background: '#ffffff' }}
-                            title="Salin Baris Lengkap (+Code & Tahun)"
+                            title={isEn ? 'Copy Full Row (+Code & Year)' : 'Salin Baris Lengkap (+Code & Tahun)'}
                             onClick={() => handleCopyRow(row, rowKey)}
                           >
                             {isCopiedRow ? <Check size={12} /> : <Copy size={12} />}
-                            <span>{isCopiedRow ? 'Tersalin!' : 'Lengkap'}</span>
+                            <span>{isCopiedRow ? (isEn ? 'Copied!' : 'Tersalin!') : isEn ? 'Full' : 'Lengkap'}</span>
                           </button>
 
                           <button
                             className="btn btn-danger btn-sm"
                             style={{ padding: '4px 8px' }}
-                            title="Hapus data ini"
+                            title={isEn ? 'Delete this record' : 'Hapus data ini'}
                             onClick={() => handleDelete(row)}
                           >
                             <Trash2 size={12} />

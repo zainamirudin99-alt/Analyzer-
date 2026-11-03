@@ -2,6 +2,8 @@
 // Types Definition for Analyzer (Carbon Emission Disclosure)
 // ============================================================
 
+export type AppLanguage = 'id' | 'en';
+
 export type CEDIndicatorKey =
   | 'cc1' | 'cc2'
   | 'ghg1' | 'ghg2' | 'ghg3' | 'ghg4' | 'ghg5' | 'ghg6' | 'ghg7'
@@ -30,15 +32,26 @@ export type CEDScores = Record<CEDIndicatorKey, number>;
 export interface IndicatorItem {
   id: string;          // misal: 'cc1', 'water1'
   code: string;        // kode kapital, misal: 'CC1', 'WATER1'
-  title: string;       // judul indikator
-  fullDesc: string;    // deskripsi kriteria penilaian
-  group: string;       // nama kelompok/grup
+  title: string;       // judul indikator utama
+  fullDesc: string;    // deskripsi kriteria penilaian utama
+  group: string;       // nama kelompok/grup utama
+  // Field dwibahasa opsional untuk translasi otomatis ID <-> EN
+  title_id?: string;
+  title_en?: string;
+  fullDesc_id?: string;
+  fullDesc_en?: string;
+  group_id?: string;
+  group_en?: string;
 }
 
 export interface IndicatorPreset {
   id: string;          // 'default_ced_18' atau string unik
   name: string;        // nama preset
   description?: string;
+  name_id?: string;
+  name_en?: string;
+  description_id?: string;
+  description_en?: string;
   isDefault: boolean;  // true untuk bawaan 18 CED
   indicators: IndicatorItem[];
   createdAt?: string;
@@ -48,7 +61,8 @@ export interface IndicatorPreset {
 export interface CustomAISkill {
   id: string;          // id unik skill
   name: string;        // nama skill
-  fileName?: string;   // nama file saat diunggah (.md/.txt)
+  description?: string;// deskripsi singkat dari frontmatter YAML jika ada
+  fileName?: string;   // nama file saat diunggah (.skill/.md/.txt)
   content: string;     // instruksi pedoman auditing/persona
   createdAt: string;
 }
@@ -117,88 +131,160 @@ export const CED_GROUPS: IndicatorGroup[] = [
   }
 ];
 
-export const INDICATOR_DESCRIPTIONS: Record<CEDIndicatorKey, { title: string; fullDesc: string }> = {
+export const INDICATOR_DESCRIPTIONS: Record<CEDIndicatorKey, { title: string; fullDesc: string; title_en: string; fullDesc_en: string }> = {
   cc1: {
     title: 'Penilaian & Aksi Risiko Perubahan Iklim',
-    fullDesc: 'Penilaian/deskripsi dari risiko (peraturan/regulasi baik khusus maupun umum) yang berhubungan dengan perubahan iklim dan aksi yang dilakukan untuk mengatasi risiko tersebut.'
+    fullDesc: 'Penilaian/deskripsi dari risiko (peraturan/regulasi baik khusus maupun umum) yang berhubungan dengan perubahan iklim dan aksi yang dilakukan untuk mengatasi risiko tersebut.',
+    title_en: 'Climate Change Risk Assessment & Actions',
+    fullDesc_en: 'Assessment/description of risks (specific or general regulatory/physical risks) related to climate change and actions taken to manage or mitigate those risks.'
   },
   cc2: {
     title: 'Implikasi Finansial & Peluang Bisnis Iklim',
-    fullDesc: 'Penilaian/deskripsi saat ini (dan masa depan) dari implikasi keuangan, implikasi bisnis, dan peluang dari perubahan iklim.'
+    fullDesc: 'Penilaian/deskripsi saat ini (dan masa depan) dari implikasi keuangan, implikasi bisnis, dan peluang dari perubahan iklim.',
+    title_en: 'Financial Implications & Business Opportunities of Climate Change',
+    fullDesc_en: 'Current (and future) assessment/description of financial implications, business impacts, and opportunities arising from climate change.'
   },
   ghg1: {
     title: 'Metodologi Penghitungan Emisi GRK',
-    fullDesc: 'Deskripsi tentang metodologi yang digunakan untuk mengkalkulasi (menghitung) emisi GRK (gas rumah kaca atau standar ISO/GHG Protocol).'
+    fullDesc: 'Deskripsi tentang metodologi yang digunakan untuk mengkalkulasi (menghitung) emisi GRK (gas rumah kaca atau standar ISO/GHG Protocol).',
+    title_en: 'GHG Emissions Calculation Methodology',
+    fullDesc_en: 'Description of the methodology used to calculate greenhouse gas (GHG) emissions (e.g., GHG Protocol, IPCC, or ISO standards).'
   },
   ghg2: {
     title: 'Verifikasi Pihak Eksternal Emisi GRK',
-    fullDesc: 'Keberadaan verifikasi dari pihak eksternal independen dalam mengukur jumlah emisi GRK (siapa auditornya dan atas dasar standar apa).'
+    fullDesc: 'Keberadaan verifikasi dari pihak eksternal independen dalam mengukur jumlah emisi GRK (siapa auditornya dan atas dasar standar apa).',
+    title_en: 'External Verification / Assurance of GHG Emissions',
+    fullDesc_en: 'Presence of independent third-party verification/assurance in measuring GHG emissions (identifying the auditor and assurance standard).'
   },
   ghg3: {
     title: 'Total Kuantifikasi Emisi GRK',
-    fullDesc: 'Pengungkapan angka kuantitatif total emisi GRK yang dihasilkan oleh perusahaan.'
+    fullDesc: 'Pengungkapan angka kuantitatif total emisi GRK yang dihasilkan oleh perusahaan.',
+    title_en: 'Total GHG Emissions Quantification',
+    fullDesc_en: 'Quantitative disclosure of total greenhouse gas (GHG) emissions generated by the company.'
   },
   ghg4: {
     title: 'Cakupan Emisi (Scope 1, 2, atau 3)',
-    fullDesc: 'Pengungkapan rincian emisi GRK langsung Lingkup 1 (Scope 1) dan tidak langsung Lingkup 2 (Scope 2), atau Lingkup 3.'
+    fullDesc: 'Pengungkapan rincian emisi GRK langsung Lingkup 1 (Scope 1) dan tidak langsung Lingkup 2 (Scope 2), atau Lingkup 3.',
+    title_en: 'Emissions Breakdown by Scope (Scope 1, 2, or 3)',
+    fullDesc_en: 'Disclosure of direct Scope 1, indirect Scope 2, and/or value-chain Scope 3 GHG emissions.'
   },
   ghg5: {
     title: 'Emisi GRK Berdasarkan Asal / Sumber',
-    fullDesc: 'Pengungkapan emisi GRK berdasarkan pada asal maupun sumber energi (misalnya: batu bara, solar/diesel, listrik PLN, gas bumi, dll).'
+    fullDesc: 'Pengungkapan emisi GRK berdasarkan pada asal maupun sumber energi (misalnya: batu bara, solar/diesel, listrik PLN, gas bumi, dll).',
+    title_en: 'GHG Emissions by Source / Fuel Type',
+    fullDesc_en: 'Disclosure of GHG emissions broken down by origin or energy source (e.g., coal, diesel, grid electricity, natural gas).'
   },
   ghg6: {
     title: 'Emisi GRK Berdasarkan Fasilitas / Segmen',
-    fullDesc: 'Pengungkapan emisi GRK yang dirinci berdasarkan unit fasilitas operasi, wilayah tambang, pabrik peleburan, atau level segmen bisnis.'
+    fullDesc: 'Pengungkapan emisi GRK yang dirinci berdasarkan unit fasilitas operasi, wilayah tambang, pabrik peleburan, atau level segmen bisnis.',
+    title_en: 'GHG Emissions by Facility / Operating Segment',
+    fullDesc_en: 'Disclosure of GHG emissions broken down by operating facility, mine site, plant, or business segment.'
   },
   ghg7: {
     title: 'Tren / Perbandingan Emisi dengan Tahun Lalu',
-    fullDesc: 'Perbandingan angka emisi GRK tahun berjalan dengan tahun-tahun sebelumnya (historis/trend analysis).'
+    fullDesc: 'Perbandingan angka emisi GRK tahun berjalan dengan tahun-tahun sebelumnya (historis/trend analysis).',
+    title_en: 'Historical GHG Emissions Trend & Year-on-Year Comparison',
+    fullDesc_en: 'Comparison of current year GHG emissions with previous years (historical multi-year trend analysis).'
   },
   ec1: {
     title: 'Total Energi yang Dikonsumsi',
-    fullDesc: 'Total energi yang dikonsumsi secara operasional (misalnya dalam satuan Liter, Giga Joule, Tera Joule, Peta Joule, atau MWh).'
+    fullDesc: 'Total energi yang dikonsumsi secara operasional (misalnya dalam satuan Liter, Giga Joule, Tera Joule, Peta Joule, atau MWh).',
+    title_en: 'Total Operational Energy Consumed',
+    fullDesc_en: 'Total energy consumed across operations (measured in Liters, Gigajoules, Terajoules, Petajoules, or MWh).'
   },
   ec2: {
     title: 'Pemanfaatan Energi Terbarukan (EBT)',
-    fullDesc: 'Kuantifikasi energi yang digunakan dari sumber daya yang dapat diperbarui (solar panel, PLTMH, biomassa, biodiesel, dll).'
+    fullDesc: 'Kuantifikasi energi yang digunakan dari sumber daya yang dapat diperbarui (solar panel, PLTMH, biomassa, biodiesel, dll).',
+    title_en: 'Renewable Energy Utilization',
+    fullDesc_en: 'Quantification of energy consumed from renewable sources (solar PV, hydro, biomass, biofuel/biodiesel, etc.).'
   },
   ec3: {
     title: 'Rincian Energi per Tipe / Fasilitas / Segmen',
-    fullDesc: 'Pengungkapan konsumsi energi yang diklasifikasikan menurut tipe bahan bakar, fasilitas site operasional, atau segmen anak usaha.'
+    fullDesc: 'Pengungkapan konsumsi energi yang diklasifikasikan menurut tipe bahan bakar, fasilitas site operasional, atau segmen anak usaha.',
+    title_en: 'Energy Breakdown by Type / Facility / Segment',
+    fullDesc_en: 'Disclosure of energy consumption classified by fuel type, operational site/facility, or subsidiary segment.'
   },
   rc1: {
     title: 'Rencana & Strategi Detail Pengurangan Emisi',
-    fullDesc: 'Rencana atau strategi yang terperinci dan terstruktur untuk mereduksi emisi GRK perusahaan (dekarbonisasi).'
+    fullDesc: 'Rencana atau strategi yang terperinci dan terstruktur untuk mereduksi emisi GRK perusahaan (dekarbonisasi).',
+    title_en: 'Detailed Emission Reduction Plan & Strategy',
+    fullDesc_en: 'Detailed and structured plan or strategy to reduce corporate GHG emissions (decarbonization roadmap).'
   },
   rc2: {
     title: 'Target Tingkat / Level & Tahun Target Emisi',
-    fullDesc: 'Spesifikasi angka target penurunan (persentase pengurangan) beserta tahun target pencapaian (misal Net Zero 2050 / 30% reduction by 2030).'
+    fullDesc: 'Spesifikasi angka target penurunan (persentase pengurangan) beserta tahun target pencapaian (misal Net Zero 2050 / 30% reduction by 2030).',
+    title_en: 'Emission Reduction Target Level & Target Year',
+    fullDesc_en: 'Specification of quantitative emission reduction targets (percentage/absolute) and target year (e.g., Net Zero 2050 or 30% reduction by 2030).'
   },
   rc3: {
     title: 'Realisasi Pengurangan Emisi & Penghematan Biaya',
-    fullDesc: 'Pengurangan emisi aktual dan biaya atau penghematan (cost saving) yang berhasil dicapai sebagai akibat implementasi rencana efisiensi karbon.'
+    fullDesc: 'Pengurangan emisi aktual dan biaya atau penghematan (cost saving) yang berhasil dicapai sebagai akibat implementasi rencana efisiensi karbon.',
+    title_en: 'Actual Emission Reductions & Cost Savings Achieved',
+    fullDesc_en: 'Actual emission reductions and associated cost savings achieved to date as a result of carbon efficiency initiatives.'
   },
   rc4: {
     title: 'Biaya Emisi Masa Depan dalam Capex Planning',
-    fullDesc: 'Perhitungan perkiraan biaya emisi/pajak karbon masa depan yang diintegrasikan ke dalam perencanaan belanja modal (capital expenditure planning).'
+    fullDesc: 'Perhitungan perkiraan biaya emisi/pajak karbon masa depan yang diintegrasikan ke dalam perencanaan belanja modal (capital expenditure planning).',
+    title_en: 'Future Carbon Emissions Cost in Capex Planning',
+    fullDesc_en: 'Factoring of future carbon emissions costs/carbon pricing into capital expenditure (CapEx) planning.'
   },
   acc1: {
     title: 'Komite / Dewan Penanggung Jawab Aksi Iklim',
-    fullDesc: 'Indikasi keberadaan dewan komisaris, komite keberlanjutan (ESG Committee), atau badan eksekutif yang memegang tanggung jawab atas aksi perubahan iklim.'
+    fullDesc: 'Indikasi keberadaan dewan komisaris, komite keberlanjutan (ESG Committee), atau badan eksekutif yang memegang tanggung jawab atas aksi perubahan iklim.',
+    title_en: 'Board / Committee Responsible for Climate Action',
+    fullDesc_en: 'Indication that a board committee, sustainability/ESG committee, or executive body has overall responsibility for actions related to climate change.'
   },
   acc2: {
     title: 'Mekanisme Dewan Meninjau Kemajuan Iklim',
-    fullDesc: 'Deskripsi mekanisme formal di mana dewan/manajemen eksekutif melakukan peninjauan (review & audit) berkala atas kemajuan target perubahan iklim perusahaan.'
+    fullDesc: 'Deskripsi mekanisme formal di mana dewan/manajemen eksekutif melakukan peninjauan (review & audit) berkala atas kemajuan target perubahan iklim perusahaan.',
+    title_en: 'Board Mechanism for Reviewing Climate Progress',
+    fullDesc_en: 'Description of the formal mechanism by which the board/executive management periodically reviews the company’s progress regarding climate change.'
   }
 };
 
 export const SCORING_RUBRIC = [
-  { score: 0, label: '0: Tidak Ada Pengungkapan', desc: 'Tidak ada informasi atau pengungkapan sama sekali mengenai indikator terkait.' },
-  { score: 1, label: '1: Kurang dari 3 Kalimat', desc: 'Diungkapkan sangat singkat dalam kurang dari tiga kalimat.' },
-  { score: 2, label: '2: 1 Paragraf / ≤ ½ Halaman', desc: 'Diungkapkan dalam tiga kalimat hingga satu paragraf (tidak lebih dari setengah halaman).' },
-  { score: 3, label: '3: ½ s/d 1 Halaman A4', desc: 'Diungkapkan secara substansial minimal setengah halaman tetapi kurang dari satu halaman A4 penuh.' },
-  { score: 4, label: '4: 1 Halaman Penuh A4', desc: 'Diungkapkan secara mendalam pada satu halaman A4 penuh.' },
-  { score: 5, label: '5: > 1 Halaman A4', desc: 'Diungkapkan secara komprehensif pada lebih dari satu halaman A4.' }
+  {
+    score: 0,
+    label: '0: Tidak Ada Pengungkapan',
+    desc: 'Tidak ada informasi atau pengungkapan sama sekali mengenai indikator terkait.',
+    label_en: '0: No Disclosure',
+    desc_en: 'No information or disclosure at all regarding the indicator.'
+  },
+  {
+    score: 1,
+    label: '1: Kurang dari 3 Kalimat',
+    desc: 'Diungkapkan sangat singkat dalam kurang dari tiga kalimat.',
+    label_en: '1: Less than 3 Sentences',
+    desc_en: 'Disclosed very briefly in fewer than three sentences.'
+  },
+  {
+    score: 2,
+    label: '2: 1 Paragraf / ≤ ½ Halaman',
+    desc: 'Diungkapkan dalam tiga kalimat hingga satu paragraf (tidak lebih dari setengah halaman).',
+    label_en: '2: 1 Paragraph / ≤ ½ Page',
+    desc_en: 'Disclosed in three sentences up to one paragraph (no more than half a page).'
+  },
+  {
+    score: 3,
+    label: '3: ½ s/d 1 Halaman A4',
+    desc: 'Diungkapkan secara substansial minimal setengah halaman tetapi kurang dari satu halaman A4 penuh.',
+    label_en: '3: ½ to 1 Full A4 Page',
+    desc_en: 'Substantially disclosed across at least half a page but less than one full A4 page.'
+  },
+  {
+    score: 4,
+    label: '4: 1 Halaman Penuh A4',
+    desc: 'Diungkapkan secara mendalam pada satu halaman A4 penuh.',
+    label_en: '4: 1 Full A4 Page',
+    desc_en: 'Thoroughly disclosed across one full A4 page.'
+  },
+  {
+    score: 5,
+    label: '5: > 1 Halaman A4',
+    desc: 'Diungkapkan secara komprehensif pada lebih dari satu halaman A4.',
+    label_en: '5: > 1 A4 Page',
+    desc_en: 'Comprehensively disclosed across more than one full A4 page.'
+  }
 ];
 
 export function calculateTotalScore(scores: Partial<CEDScores>): number {

@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Database, Key, Copy, ExternalLink, RefreshCw, Activity, Sparkles, Upload, FileText, Trash2, Eye, Plus, Check, X, BookOpen, Edit2 } from 'lucide-react';
+import { Database, Key, Copy, ExternalLink, RefreshCw, Activity, Sparkles, Upload, FileText, Trash2, Eye, Plus, Check, X, BookOpen, Edit2, Globe } from 'lucide-react';
 import { CustomAISkill } from '@/lib/types';
-import { getStoredSkills, saveStoredSkills } from '@/lib/indicators-storage';
+import { getStoredSkills, saveStoredSkills, parseUploadedSkillFile } from '@/lib/indicators-storage';
+import { useLanguage } from '@/lib/i18n';
 import { SUPPORTED_MODEL_CATEGORIES, ALL_SUPPORTED_MODELS } from '@/lib/gemini';
 import { DEFAULT_OPENAI_MODELS } from '@/lib/openai';
 import {
@@ -123,6 +124,9 @@ const getTabButtonStyle = (isActive: boolean): React.CSSProperties => ({
 });
 
 export const SettingsTab: React.FC = () => {
+  const { lang, setLang } = useLanguage();
+  const isEn = lang === 'en';
+
   // Provider Selection
   const [activeProvider, setActiveProvider] = useState<'gemini' | 'openai' | 'claude'>('gemini');
 
@@ -175,40 +179,48 @@ export const SettingsTab: React.FC = () => {
     setSkills(loaded);
   };
 
-  const handleSkillFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSkillFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.name.endsWith('.md') && !file.name.endsWith('.txt')) {
-      alert('Hanya mendukung file format Markdown (.md) atau Teks (.txt).');
+    const lowerName = file.name.toLowerCase();
+    const allowedExts = ['.skill', '.md', '.txt', '.json', '.yaml', '.yml'];
+    if (!allowedExts.some(ext => lowerName.endsWith(ext))) {
+      alert(
+        isEn
+          ? 'Supported formats: .skill, Markdown (.md), Text (.txt), JSON (.json), or YAML (.yaml).'
+          : 'Hanya mendukung file format .skill, Markdown (.md), Teks (.txt), JSON (.json), atau YAML (.yaml).'
+      );
+      e.target.value = '';
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      if (!text || !text.trim()) {
-        alert('File kosong atau tidak dapat dibaca.');
-        return;
-      }
-
-      const cleanName = file.name.replace(/\.(md|txt)$/i, '');
+    try {
+      const parsed = await parseUploadedSkillFile(file);
       const newSkill: CustomAISkill = {
         id: `skill_${Date.now()}`,
-        name: cleanName,
+        name: parsed.name,
+        description: parsed.description,
         fileName: file.name,
-        content: text.trim(),
+        content: parsed.content,
         createdAt: new Date().toISOString()
       };
 
-      const updated = [newSkill, ...skills.filter(s => s.name !== cleanName)];
+      const updated = [newSkill, ...skills.filter(s => s.name !== parsed.name)];
       setSkills(updated);
       saveStoredSkills(updated);
-      setSkillNotice({ type: 'success', text: `Skill "${file.name}" berhasil diunggah dan disimpan!` });
+      setSkillNotice({
+        type: 'success',
+        text: isEn
+          ? `Skill "${file.name}" (${parsed.name}) uploaded and saved!`
+          : `Skill "${file.name}" (${parsed.name}) berhasil diunggah dan disimpan!`
+      });
       setTimeout(() => setSkillNotice(null), 4000);
-    };
-    reader.readAsText(file);
-    e.target.value = '';
+    } catch (err: any) {
+      alert(err?.message || (isEn ? 'Failed to read skill file.' : 'Gagal membaca file skill.'));
+    } finally {
+      e.target.value = '';
+    }
   };
 
   const handleOpenSkillModal = (skill?: CustomAISkill) => {
@@ -561,13 +573,66 @@ export const SettingsTab: React.FC = () => {
 
   return (
     <div className="grid-2">
+      {/* SECTION: PILIHAN BAHASA TAMPILAN & TRANSLASI OTOMATIS INDIKATOR */}
+      <div className="card" style={{ gridColumn: '1 / -1', marginBottom: '4px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+          <div>
+            <div className="card-title" style={{ marginBottom: '4px' }}>
+              <div className="ct-icon"><Globe size={18} color="#2e6922" /></div>
+              <span>{isEn ? 'Display Language & Auto-Indicator Translation' : 'Pilihan Bahasa Tampilan & Translasi Indikator'}</span>
+            </div>
+            <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: 0 }}>
+              {isEn
+                ? 'All menus and indicators (even custom indicators inputted in Indonesian) will automatically translate and display in your selected language.'
+                : 'Seluruh menu serta daftar indikator (termasuk indikator kustom yang diinput dalam Bahasa Indonesia/Inggris) akan otomatis diterjemahkan mengikuti bahasa tampilan yang dipilih.'}
+            </p>
+          </div>
+
+          <div
+            style={{
+              display: 'inline-flex',
+              gap: '6px',
+              background: 'var(--dew, #eef7eb)',
+              padding: '5px',
+              borderRadius: '10px',
+              border: '1px solid var(--border)'
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setLang('id')}
+              style={{
+                ...getTabButtonStyle(lang === 'id'),
+                padding: '8px 16px',
+                minWidth: '170px'
+              }}
+            >
+              <span>🇮🇩</span>
+              <span>Bahasa Indonesia</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setLang('en')}
+              style={{
+                ...getTabButtonStyle(lang === 'en'),
+                padding: '8px 16px',
+                minWidth: '170px'
+              }}
+            >
+              <span>🇬🇧</span>
+              <span>English (EN)</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Kolom Kiri: Konfigurasi Multi-AI Provider */}
       <div>
         <div className="card">
           <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div className="ct-icon"><Key size={18} color="#2e6922" /></div>
-              <span>Konfigurasi Mesin AI (Multi-Model)</span>
+              <span>{isEn ? 'AI Engine Configuration (Multi-Model)' : 'Konfigurasi Mesin AI (Multi-Model)'}</span>
             </div>
             <span style={{ fontSize: '12px', background: 'var(--dew)', color: 'var(--moss)', padding: '2px 8px', borderRadius: '12px', fontWeight: 600 }}>
               {activeProvider === 'claude' ? '🎭 Anthropic Claude' : activeProvider === 'openai' ? '⚡ OpenAI / ChatGPT' : '🌿 Google Gemini'}
@@ -1264,14 +1329,14 @@ export const SettingsTab: React.FC = () => {
         <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div className="ct-icon">🧠</div>
-            <span>Manajemen Custom AI Skills (Bantuan Analisis)</span>
+            <span>{isEn ? 'Custom AI Skills Management (Analysis Assistant)' : 'Manajemen Custom AI Skills (Bantuan Analisis)'}</span>
           </div>
 
           <div style={{ display: 'flex', gap: '8px' }}>
             <input
               type="file"
               ref={skillFileInputRef}
-              accept=".md,.txt"
+              accept=".skill,.md,.txt,.json,.yaml,.yml"
               style={{ display: 'none' }}
               onChange={handleSkillFileUpload}
             />
@@ -1281,7 +1346,7 @@ export const SettingsTab: React.FC = () => {
               onClick={() => skillFileInputRef.current?.click()}
             >
               <Upload size={14} />
-              <span>Unggah File Skill (.md / .txt)</span>
+              <span>{isEn ? 'Upload Skill File (.skill / .md / .txt)' : 'Unggah File Skill (.skill / .md / .txt)'}</span>
             </button>
 
             <button
@@ -1290,13 +1355,21 @@ export const SettingsTab: React.FC = () => {
               onClick={() => handleOpenSkillModal()}
             >
               <Plus size={14} />
-              <span>Tulis Skill Manual</span>
+              <span>{isEn ? 'Write Manual Skill' : 'Tulis Skill Manual'}</span>
             </button>
           </div>
         </div>
 
         <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-          Unggah instruksi pedoman auditing, regulasi spesifik (misal: POJK 51, Standar GRI, taksonomi hijau), atau panduan industri dalam format Markdown (<code>.md</code>) atau Teks (<code>.txt</code>). Skill yang tersimpan dapat dipilih pada tab <strong>Upload & Analisis</strong> untuk memperdalam evaluasi AI.
+          {isEn ? (
+            <>
+              Upload auditing guidelines, specific regulations (e.g., POJK 51, GRI Standards, green taxonomy), or industry guides in <code>.skill</code>, Markdown (<code>.md</code>), or Text (<code>.txt</code>) format. Saved skills can be selected in the <strong>Upload & Analysis</strong> tab to deepen AI evaluation.
+            </>
+          ) : (
+            <>
+              Unggah instruksi pedoman auditing, regulasi spesifik (misal: POJK 51, Standar GRI, taksonomi hijau), atau panduan industri dalam format <code>.skill</code>, Markdown (<code>.md</code>), atau Teks (<code>.txt</code>). Skill yang tersimpan dapat dipilih pada tab <strong>Upload & Analisis</strong> untuk memperdalam evaluasi AI.
+            </>
+          )}
         </p>
 
         {skillNotice && (
@@ -1310,79 +1383,102 @@ export const SettingsTab: React.FC = () => {
         {skills.length === 0 ? (
           <div style={{ padding: '32px 16px', textAlign: 'center', background: 'var(--dew)', borderRadius: '12px', border: '1px dashed var(--border)', color: 'var(--stone)' }}>
             <BookOpen size={28} style={{ opacity: 0.6, marginBottom: '6px' }} />
-            <div style={{ fontWeight: 700, fontSize: '13.5px', color: 'var(--text)' }}>Belum ada skill yang diunggah</div>
+            <div style={{ fontWeight: 700, fontSize: '13.5px', color: 'var(--text)' }}>
+              {isEn ? 'No custom skills uploaded yet' : 'Belum ada skill yang diunggah'}
+            </div>
             <div style={{ fontSize: '12px', marginTop: '4px' }}>
-              Klik tombol <strong>"Unggah File Skill (.md / .txt)"</strong> di atas untuk menambahkan dokumen keahlian bantuan analisis pertama Anda.
+              {isEn ? (
+                <>
+                  Click <strong>"Upload Skill File (.skill / .md / .txt)"</strong> above to add your first analysis assistant skill.
+                </>
+              ) : (
+                <>
+                  Klik tombol <strong>"Unggah File Skill (.skill / .md / .txt)"</strong> di atas untuk menambahkan dokumen keahlian bantuan analisis pertama Anda.
+                </>
+              )}
             </div>
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
-            {skills.map(s => (
-              <div
-                key={s.id}
-                style={{
-                  background: 'var(--white)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '12px',
-                  padding: '14px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
-                }}
-              >
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '6px' }}>
-                    <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)' }}>
-                      ✨ {s.name}
-                    </div>
-                    {s.fileName && (
-                      <span className="badge" style={{ fontSize: '10px', background: 'var(--dew)', color: 'var(--moss)' }}>
-                        {s.fileName.endsWith('.md') ? '.MD' : '.TXT'}
-                      </span>
-                    )}
-                  </div>
-                  <p style={{ fontSize: '12px', color: 'var(--stone)', lineHeight: '1.45', height: '36px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-                    {s.content}
-                  </p>
-                </div>
+            {skills.map(s => {
+              const extBadge = s.fileName
+                ? s.fileName.toLowerCase().endsWith('.skill')
+                  ? '.SKILL'
+                  : s.fileName.toLowerCase().endsWith('.md')
+                  ? '.MD'
+                  : '.TXT'
+                : 'MANUAL';
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--border-light)' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--stone)' }}>
-                    {new Date(s.createdAt).toLocaleDateString('id-ID')}
-                  </span>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button
-                      type="button"
-                      className="btn btn-outline btn-sm"
-                      style={{ padding: '3px 8px', fontSize: '11px' }}
-                      onClick={() => setPreviewingSkill(s)}
-                      title="Pratinjau Teks Skill"
-                    >
-                      <Eye size={12} /> Pratinjau
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-outline btn-sm"
-                      style={{ padding: '3px 8px', fontSize: '11px' }}
-                      onClick={() => handleOpenSkillModal(s)}
-                      title="Edit Skill"
-                    >
-                      <Edit2 size={12} /> Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-outline btn-sm"
-                      style={{ padding: '3px 8px', fontSize: '11px', color: 'var(--danger)', borderColor: 'var(--border)' }}
-                      onClick={() => handleDeleteSkill(s.id, s.name)}
-                      title="Hapus Skill"
-                    >
-                      <Trash2 size={12} />
-                    </button>
+              return (
+                <div
+                  key={s.id}
+                  style={{
+                    background: 'var(--white)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '12px',
+                    padding: '14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '6px' }}>
+                      <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)' }}>
+                        ✨ {s.name}
+                      </div>
+                      <span className="badge" style={{ fontSize: '10px', background: 'var(--dew)', color: 'var(--moss)' }}>
+                        {extBadge}
+                      </span>
+                    </div>
+                    {s.description && (
+                      <div style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--fern)', marginBottom: '4px' }}>
+                        {s.description}
+                      </div>
+                    )}
+                    <p style={{ fontSize: '12px', color: 'var(--stone)', lineHeight: '1.45', height: '36px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                      {s.content}
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--border-light)' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--stone)' }}>
+                      {new Date(s.createdAt).toLocaleDateString(isEn ? 'en-US' : 'id-ID')}
+                    </span>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        style={{ padding: '3px 8px', fontSize: '11px' }}
+                        onClick={() => setPreviewingSkill(s)}
+                        title={isEn ? 'Preview Skill Content' : 'Pratinjau Teks Skill'}
+                      >
+                        <Eye size={12} /> {isEn ? 'Preview' : 'Pratinjau'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        style={{ padding: '3px 8px', fontSize: '11px' }}
+                        onClick={() => handleOpenSkillModal(s)}
+                        title={isEn ? 'Edit Skill' : 'Edit Skill'}
+                      >
+                        <Edit2 size={12} /> Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        style={{ padding: '3px 8px', fontSize: '11px', color: 'var(--danger)', borderColor: 'var(--border)' }}
+                        onClick={() => handleDeleteSkill(s.id, s.name)}
+                        title={isEn ? 'Delete Skill' : 'Hapus Skill'}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

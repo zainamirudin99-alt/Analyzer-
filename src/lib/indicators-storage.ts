@@ -8,7 +8,7 @@ import {
 
 export const DEFAULT_PRESET_ID = 'default_ced_18';
 
-// Bangun preset default dari 18 Indikator CED
+// Bangun preset default dari 18 Indikator CED (Dwibahasa ID & EN)
 export function createDefaultCEDPreset(): IndicatorPreset {
   const items: IndicatorItem[] = [];
 
@@ -20,7 +20,13 @@ export function createDefaultCEDPreset(): IndicatorPreset {
         code: key.toUpperCase(),
         title: desc?.title || key.toUpperCase(),
         fullDesc: desc?.fullDesc || '',
-        group: group.name
+        group: group.name,
+        title_id: desc?.title || key.toUpperCase(),
+        title_en: desc?.title_en || desc?.title || key.toUpperCase(),
+        fullDesc_id: desc?.fullDesc || '',
+        fullDesc_en: desc?.fullDesc_en || desc?.fullDesc || '',
+        group_id: group.name,
+        group_en: group.name
       });
     }
   }
@@ -29,6 +35,10 @@ export function createDefaultCEDPreset(): IndicatorPreset {
     id: DEFAULT_PRESET_ID,
     name: '18 Indikator Carbon Emission Disclosure (Standar CED)',
     description: 'Standar baku 18 indikator CED (CC1–CC2, GHG1–GHG7, EC1–EC3, RC1–RC4, ACC1–ACC2) skala skor 0–5.',
+    name_id: '18 Indikator Carbon Emission Disclosure (Standar CED)',
+    name_en: '18 Carbon Emission Disclosure Indicators (CED Standard)',
+    description_id: 'Standar baku 18 indikator CED (CC1–CC2, GHG1–GHG7, EC1–EC3, RC1–RC4, ACC1–ACC2) skala skor 0–5.',
+    description_en: 'Standard 18 CED indicators (CC1–CC2, GHG1–GHG7, EC1–EC3, RC1–RC4, ACC1–ACC2) with 0–5 scoring scale.',
     isDefault: true,
     indicators: items,
     createdAt: '2026-01-01T00:00:00.000Z'
@@ -49,10 +59,21 @@ export function getStoredPresets(): IndicatorPreset[] {
       return initial;
     }
     const parsed: IndicatorPreset[] = JSON.parse(raw);
-    // Pastikan preset default selalu ada
-    if (!parsed.some(p => p.id === DEFAULT_PRESET_ID)) {
-      parsed.unshift(createDefaultCEDPreset());
+    const defaultFresh = createDefaultCEDPreset();
+
+    const defaultIndex = parsed.findIndex(p => p.id === DEFAULT_PRESET_ID);
+    if (defaultIndex === -1) {
+      parsed.unshift(defaultFresh);
       localStorage.setItem('analyzer_indicator_presets', JSON.stringify(parsed));
+    } else if (!parsed[defaultIndex].name_en) {
+      // Pastikan preset default memiliki atribut dwibahasa terbaru
+      parsed[defaultIndex] = {
+        ...parsed[defaultIndex],
+        name_id: defaultFresh.name_id,
+        name_en: defaultFresh.name_en,
+        description_id: defaultFresh.description_id,
+        description_en: defaultFresh.description_en
+      };
     }
     return parsed;
   } catch (e) {
@@ -65,7 +86,6 @@ export function saveStoredPresets(presets: IndicatorPreset[]): void {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem('analyzer_indicator_presets', JSON.stringify(presets));
-    // Trigger custom event untuk update antar-komponen instan
     window.dispatchEvent(new Event('analyzer_presets_changed'));
   } catch (e) {
     console.warn('Gagal menyimpan indicator presets ke localStorage:', e);
@@ -131,3 +151,130 @@ export function getActiveSkill(): CustomAISkill | null {
   return skills.find(s => s.id === id) || null;
 }
 
+// Ekstraksi YAML Frontmatter dari konten SKILL.md / .skill
+function parseSkillMarkdownMetadata(rawText: string, fallbackName: string): {
+  name: string;
+  description?: string;
+  content: string;
+} {
+  const trimmed = rawText.trim();
+  const fmMatch = trimmed.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  if (!fmMatch) {
+    return { name: fallbackName, content: trimmed };
+  }
+
+  const frontmatter = fmMatch[1];
+  const body = fmMatch[2].trim();
+
+  const nameMatch = frontmatter.match(/^name:\s*["']?([^"'\r\n]+)["']?/m);
+  const descMatch = frontmatter.match(/^description:\s*["']?([^"'\r\n]+)["']?/m);
+
+  return {
+    name: nameMatch?.[1]?.trim() || fallbackName,
+    description: descMatch?.[1]?.trim(),
+    content: body || trimmed
+  };
+}
+
+// Ekstraksi SKILL.md dari arsip ZIP (.skill package) menggunakan Web API bawaan
+async function extractSkillFromZipBuffer(buffer: ArrayBuffer): Promise<string | null> {
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  const decoder = new TextDecoder('utf-8');
+
+  // Cari End of Central Directory (0x06054b50) dari belakang
+  let eocdOffset = -1;
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      eocdOffset = i;
+      break;
+    }
+  }
+
+  const candidateFiles: Array<{ name: string; method: number; compSize: number; localOffset: number }> = [];
+
+  if (eocdOffset !== -1) {
+    const cdCount = view.getUint16(eocdOffset + 10, true);
+    const cdOffset = view.getUint32(eocdOffset + 16, true);
+    let ptr = cdOffset;
+
+    for (let idx = 0; idx < cdCount && ptr + 46 <= bytes.length; idx++) {
+      if (view.getUint32(ptr, true) !== 0x02014b50) break;
+      const method = view.getUint16(ptr + 10, true);
+      const compSize = view.getUint32(ptr + 20, true);
+      const nameLen = view.getUint16(ptr + 28, true);
+      const extraLen = view.getUint16(ptr + 30, true);
+      const commentLen = view.getUint16(ptr + 32, true);
+      const localOffset = view.getUint32(ptr + 42, true);
+      const fileName = decoder.decode(bytes.subarray(ptr + 46, ptr + 46 + nameLen));
+
+      if (!fileName.endsWith('/') && (fileName.toLowerCase().endsWith('.md') || fileName.toLowerCase().endsWith('.txt') || fileName.toLowerCase().endsWith('.skill'))) {
+        candidateFiles.push({ name: fileName, method, compSize, localOffset });
+      }
+      ptr += 46 + nameLen + extraLen + commentLen;
+    }
+  }
+
+  // Prioritaskan SKILL.md
+  candidateFiles.sort((a, b) => {
+    const aIsSkill = a.name.toLowerCase().endsWith('skill.md') ? 0 : 1;
+    const bIsSkill = b.name.toLowerCase().endsWith('skill.md') ? 0 : 1;
+    return aIsSkill - bIsSkill;
+  });
+
+  for (const entry of candidateFiles) {
+    const lh = entry.localOffset;
+    if (lh + 30 > bytes.length || view.getUint32(lh, true) !== 0x04034b50) continue;
+    const lhNameLen = view.getUint16(lh + 26, true);
+    const lhExtraLen = view.getUint16(lh + 28, true);
+    const dataStart = lh + 30 + lhNameLen + lhExtraLen;
+    const dataEnd = dataStart + entry.compSize;
+    if (dataEnd > bytes.length) continue;
+
+    const compressedSlice = bytes.subarray(dataStart, dataEnd);
+    if (entry.method === 0) {
+      return decoder.decode(compressedSlice);
+    } else if (entry.method === 8 && typeof DecompressionStream !== 'undefined') {
+      try {
+        const ds = new DecompressionStream('deflate-raw');
+        const writer = ds.writable.getWriter();
+        writer.write(compressedSlice);
+        writer.close();
+        const decompressedResp = new Response(ds.readable);
+        const ab = await decompressedResp.arrayBuffer();
+        return decoder.decode(ab);
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  return null;
+}
+
+// Parser utama file Skill (.skill, .md, .txt, .json, .yaml)
+export async function parseUploadedSkillFile(file: File): Promise<{
+  name: string;
+  description?: string;
+  content: string;
+}> {
+  const cleanFallbackName = file.name.replace(/\.(skill|md|txt|json|yaml|yml)$/i, '');
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+
+  // Cek apakah file adalah paket ZIP (.skill berbasis ZIP diawali PK\x03\x04)
+  if (bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04) {
+    const extracted = await extractSkillFromZipBuffer(buffer);
+    if (extracted && extracted.trim()) {
+      return parseSkillMarkdownMetadata(extracted, cleanFallbackName);
+    }
+    throw new Error('Tidak ditemukan berkas SKILL.md atau instruksi teks di dalam paket .skill ini.');
+  }
+
+  const text = new TextDecoder('utf-8').decode(bytes);
+  if (!text || !text.trim()) {
+    throw new Error('File kosong atau tidak dapat dibaca.');
+  }
+
+  return parseSkillMarkdownMetadata(text, cleanFallbackName);
+}

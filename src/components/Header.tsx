@@ -3,6 +3,7 @@
 
 import React from 'react';
 import { Menu } from 'lucide-react';
+import { useLanguage } from '@/lib/i18n';
 
 interface HeaderProps {
   supabaseStatus: {
@@ -18,12 +19,14 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   supabaseStatus,
-  activeTab,
   onTabChange,
   isDrawerOpen = false,
   onToggleDrawer,
   toggleButtonRef
 }) => {
+  const { lang } = useLanguage();
+  const isEn = lang === 'en';
+
   return (
     <header className="app-header">
       <div className="header-left-cluster">
@@ -35,7 +38,7 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={onToggleDrawer}
           aria-expanded={isDrawerOpen}
           aria-controls="app-navigation-drawer"
-          aria-label="Toggle Menu Navigasi"
+          aria-label={isEn ? 'Toggle Navigation Menu' : 'Toggle Menu Navigasi'}
           data-testid="nav-toggle-btn"
         >
           <Menu size={22} />
@@ -47,7 +50,11 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
           <div className="header-title-box">
             <h1>PDF Analyzer</h1>
-            <p>Carbon Emission Disclosure (CED) — Analisis AI & Database Supabase</p>
+            <p>
+              {isEn
+                ? 'Carbon Emission Disclosure (CED) — AI Analysis & Supabase Database'
+                : 'Carbon Emission Disclosure (CED) — Analisis AI & Database Supabase'}
+            </p>
           </div>
         </div>
       </div>
@@ -57,7 +64,7 @@ export const Header: React.FC<HeaderProps> = ({
           className="db-pill"
           style={{ cursor: 'pointer' }}
           onClick={() => onTabChange('settings')}
-          title="Klik untuk membuka pengaturan database"
+          title={isEn ? 'Click to open settings & database' : 'Klik untuk membuka pengaturan database'}
         >
           <span className={`db-dot ${supabaseStatus.connected ? '' : 'inactive'}`} />
           <span>{supabaseStatus.connected ? 'Supabase Connected' : 'Supabase Setup'}</span>

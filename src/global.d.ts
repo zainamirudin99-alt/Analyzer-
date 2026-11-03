@@ -175,6 +175,8 @@ declare module 'lucide-react' {
   export const Filter: any;
   export const Upload: any;
   export const Settings2: any;
+  export const Globe: any;
+  export const Languages: any;
 
   const icons: any;
   export default icons;

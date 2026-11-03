@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, ChevronDown, ChevronRight } from 'lucide-react';
+import { useLanguage } from '@/lib/i18n';
 
 export interface NavigationDrawerProps {
   isOpen: boolean;
@@ -18,6 +19,9 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
   onSelectTab,
   toggleButtonRef
 }) => {
+  const { lang } = useLanguage();
+  const isEn = lang === 'en';
+
   // Grup Analyze SR otomatis terbuka jika salah satu anaknya aktif
   const isChildOfAnalyze = ['guide', 'upload', 'results'].includes(activeTab);
   const [isAnalyzeOpen, setIsAnalyzeOpen] = useState<boolean>(true);
@@ -76,7 +80,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
         id="app-navigation-drawer"
         className={`navigation-drawer ${isOpen ? 'open' : ''}`}
         role="dialog"
-        aria-label="Navigasi Utama"
+        aria-label={isEn ? 'Main Navigation' : 'Navigasi Utama'}
         aria-modal="true"
         data-testid="navigation-drawer"
       >
@@ -84,8 +88,8 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
           <div className="drawer-brand">
             <span className="drawer-logo-badge">🌿</span>
             <div className="drawer-title-group">
-              <span className="drawer-app-title">Analyzer Navigasi</span>
-              <span className="drawer-app-subtitle">CED & Analisis Statistik</span>
+              <span className="drawer-app-title">{isEn ? 'Analyzer Navigation' : 'Analyzer Navigasi'}</span>
+              <span className="drawer-app-subtitle">{isEn ? 'CED & Statistical Analysis' : 'CED & Analisis Statistik'}</span>
             </div>
           </div>
           <button
@@ -97,14 +101,14 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
                 toggleButtonRef.current.focus();
               }
             }}
-            aria-label="Tutup Navigasi"
+            aria-label={isEn ? 'Close Navigation' : 'Tutup Navigasi'}
             data-testid="drawer-close-btn"
           >
             <X size={20} />
           </button>
         </div>
 
-        <nav className="drawer-nav-list" aria-label="Daftar Menu">
+        <nav className="drawer-nav-list" aria-label={isEn ? 'Menu List' : 'Daftar Menu'}>
           {/* 1. Analyze SR (Grup Analisis Berkelanjutan) */}
           <div className="drawer-group" data-testid="drawer-group-analyze-sr">
             <button
@@ -134,7 +138,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
                   data-testid="nav-item-guide"
                 >
                   <span className="nav-item-icon">🌱</span>
-                  <span className="nav-item-label">Pilihan Indikator</span>
+                  <span className="nav-item-label">{isEn ? 'Indicator Presets' : 'Pilihan Indikator'}</span>
                 </button>
 
                 <button
@@ -144,7 +148,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
                   data-testid="nav-item-upload"
                 >
                   <span className="nav-item-icon">🌿</span>
-                  <span className="nav-item-label">Upload & Analisis</span>
+                  <span className="nav-item-label">{isEn ? 'Upload & Analysis' : 'Upload & Analisis'}</span>
                 </button>
 
                 <button
@@ -154,7 +158,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
                   data-testid="nav-item-results"
                 >
                   <span className="nav-item-icon">📋</span>
-                  <span className="nav-item-label">Tabel Hasil Analisis</span>
+                  <span className="nav-item-label">{isEn ? 'Analysis Results Table' : 'Tabel Hasil Analisis'}</span>
                 </button>
               </div>
             )}
@@ -168,7 +172,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
             data-testid="nav-item-settings"
           >
             <span className="nav-item-icon">⚙️</span>
-            <span className="nav-item-label">Pengaturan & Database</span>
+            <span className="nav-item-label">{isEn ? 'Settings & Database' : 'Pengaturan & Database'}</span>
           </button>
 
           {/* 3. Analisis Regresi Statistik */}
@@ -179,7 +183,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
             data-testid="nav-item-regression"
           >
             <span className="nav-item-icon">📊</span>
-            <span className="nav-item-label">Analisis Regresi Statistik</span>
+            <span className="nav-item-label">{isEn ? 'Statistical Regression Analysis' : 'Analisis Regresi Statistik'}</span>
           </button>
 
           {/* 4. Regresi Data Panel Stata */}
@@ -191,15 +195,15 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
           >
             <span className="nav-item-icon">📈</span>
             <div className="nav-item-panel-label-group">
-              <span className="nav-item-label">Regresi Data Panel Stata</span>
-              <span className="nav-item-badge">BARU</span>
+              <span className="nav-item-label">{isEn ? 'Stata Panel Data Regression' : 'Regresi Data Panel Stata'}</span>
+              <span className="nav-item-badge">{isEn ? 'NEW' : 'BARU'}</span>
             </div>
           </button>
         </nav>
 
         <div className="drawer-footer">
           <div className="drawer-footer-text">
-            <span>Analyzer v1.0 • Standar Ekonometrika</span>
+            <span>{isEn ? 'Analyzer v1.0 • Econometric Standard' : 'Analyzer v1.0 • Standar Ekonometrika'}</span>
           </div>
         </div>
       </aside>

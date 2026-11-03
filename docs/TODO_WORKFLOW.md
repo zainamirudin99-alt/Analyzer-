@@ -132,3 +132,7 @@ Dokumen ini memuat daftar tugas operasional dari Tahap 1 hingga Tahap 3 beserta 
 - [x] **T4.5**: Modul **Manajemen Custom AI Skills** di menu **Pengaturan & Database** (unggah file `.md`/`.txt` atau input manual).
 - [x] **T4.6**: Adaptasi kolom dinamis, filter preset, salin spreadsheet, dan ekspor CSV pada **Tabel Hasil Analisis**.
 - [x] **Gerbang G4**: Verifikasi kompilasi TypeScript (`tsc --noEmit`) dan build produksi (`next build`) lulus 100%.
+
+- [x] **T4.7**: Perbaikan CSS `.modal-backdrop` & `.modal-card` agar pop-up tampil di tengah layar + alur berkelanjutan (*chained modal*) dari buat preset langsung ke form tambah indikator.
+- [x] **T4.8**: Dukungan upload file `.skill` (teks Markdown/YAML maupun arsip paket `.skill` ZIP) di menu Pengaturan.
+- [x] **T4.9**: Pilihan Bahasa Tampilan (Bahasa Indonesia & Bahasa Inggris) di menu Pengaturan beserta translasi otomatis dua arah (ID ↔ EN) untuk seluruh indikator (baku & kustom).

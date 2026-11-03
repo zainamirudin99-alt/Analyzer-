@@ -115,3 +115,31 @@ export interface CustomAISkill {
 4. Verifikasi Custom Skill: Mengunggah file `.md`/`.txt`, memilih skill di UploadTab, dan memastikan instruksi terinjeksi ke payload `/api/analyze`.
 5. Verifikasi Zero-Regression: Analisis dengan 18 Indikator CED standar tetap berfungsi 100% tanpa error.
 
+
+
+---
+
+## 6. Spesifikasi Fase 2: Modal Pop-up Terpusat, Dukungan File `.skill`, dan Lokalisasi Dwibahasa (ID ↔ EN)
+
+**Tanggal**: 3 November 2026  
+**Status**: Disetujui (Approved)
+
+### A. Pop-up Modal di Tengah & Alur Input Indikator Berkelanjutan (`globals.css`, `GuideTab.tsx`)
+1. Menambahkan definisi CSS `.modal-backdrop` (`position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; background: rgba(15, 29, 11, 0.58); backdrop-filter: blur(4px)`) dan `.modal-card` (`background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow-lg); max-height: 90vh; overflow-y: auto; padding: 24px`) agar seluruh modal pop-up tampil tepat di tengah layar.
+2. Alur *Chained Wizard* saat klik **"Tambah Pilihan Indikator Baru"**:
+   - Langkah 1: Pengguna mengisi **Nama Preset** & **Deskripsi** lalu klik **"Simpan & Lanjut Input Indikator"**.
+   - Langkah 2: Modal otomatis bertransisi ke form **Input Indikator** untuk preset baru tersebut, menampilkan daftar indikator yang sudah diinput dalam sesi modal, tombol **"+ Tambah Indikator Lagi"** (untuk menambah indikator beruntun), dan tombol **"Selesai"** untuk menutup modal.
+
+### B. Dukungan Upload File `.skill` (`SettingsTab.tsx`)
+1. Memperbarui atribut input file pada Manajemen Custom AI Skills menjadi `accept=".skill,.md,.txt,.json,.yaml"`.
+2. Parser file `.skill` mendukung:
+   - File `.skill` berbasis teks/Markdown (beserta ekstraksi YAML frontmatter `name` dan `description`).
+   - File `.skill` berbasis paket arsip ZIP (`PK\x03\x04`), dengan ekstraksi otomatis entri `SKILL.md` / `.md` tanpa dependensi eksternal berat.
+
+### C. Pilihan Bahasa Tampilan (ID / EN) & Translasi Otomatis Indikator Dua Arah (`src/lib/i18n.ts`, `/api/translate`)
+1. Menambahkan pengaturan **Bahasa Tampilan / Display Language** (`id` = Bahasa Indonesia, `en` = English) di `SettingsTab.tsx`, disimpan di `localStorage` (`analyzer_language`) dan dipancarkan via event `analyzer_language_changed`.
+2. Seluruh label antarmuka utama (`Header`, `NavigationDrawer`, `GuideTab`, `UploadTab`, `ResultsTab`, `SettingsTab`) beradaptasi secara reaktif terhadap bahasa aktif.
+3. **Translasi Dua Arah Indikator (ID ↔ EN)**:
+   - Untuk 18 indikator standar CED dan rubrik skor (0–5): disediakan kamus dwibahasa baku (ID & EN) di `src/lib/i18n.ts`.
+   - Untuk preset dan indikator kustom: `IndicatorItem` dan `IndicatorPreset` menyimpan atribut dwibahasa (`title_id`, `title_en`, `fullDesc_id`, `fullDesc_en`, `group_id`, `group_en`, `name_id`, `name_en`, `desc_id`, `desc_en`).
+   - Saat indikator diinput dalam Bahasa Indonesia dan pengguna beralih ke Bahasa Inggris (atau sebaliknya), sistem otomatis menerjemahkan teks indikator secara asinkron melalui endpoint `/api/translate` dan menyimpannya ke cache `localStorage`.
