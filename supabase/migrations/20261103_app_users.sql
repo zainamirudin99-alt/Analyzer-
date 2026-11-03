@@ -15,6 +15,11 @@ CREATE TABLE IF NOT EXISTS public.app_users (
     last_login_at TIMESTAMPTZ
 );
 
+ALTER TABLE public.app_users ADD COLUMN IF NOT EXISTS settings_encrypted TEXT;
+ALTER TABLE public.app_users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now());
+ALTER TABLE public.app_users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now());
+ALTER TABLE public.app_users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+
 CREATE INDEX IF NOT EXISTS idx_app_users_username ON public.app_users(username);
 
 -- Grant privileges ke semua role Supabase

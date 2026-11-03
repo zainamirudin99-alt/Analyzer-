@@ -206,16 +206,23 @@ export async function findUserByUsername(username: string): Promise<AppUserRecor
 
   const supabase = isSupabaseConfigured ? getSupabaseServerClient() : null;
   if (supabase) {
-    // 1. Coba dari tabel public.app_users
+    // 1. Coba dari tabel public.app_users (hanya panggil kolom yang pasti ada di database)
     try {
       const { data, error } = await supabase
         .from('app_users')
-        .select('id, username, password_hash, settings_encrypted, created_at, last_login_at')
+        .select('id, username, password_hash, settings_encrypted')
         .eq('username', clean)
         .maybeSingle();
 
       if (!error && data) {
-        return data as AppUserRecord;
+        return {
+          id: data.id,
+          username: data.username,
+          password_hash: data.password_hash,
+          settings_encrypted: data.settings_encrypted || null,
+          created_at: new Date().toISOString(),
+          last_login_at: null
+        };
       }
     } catch (tblEx) {
       console.warn('[findUserByUsername app_users exception]:', tblEx);
@@ -241,12 +248,19 @@ export async function findUserById(id: string, usernameHint?: string): Promise<A
     try {
       const { data, error } = await supabase
         .from('app_users')
-        .select('id, username, password_hash, settings_encrypted, created_at, last_login_at')
+        .select('id, username, password_hash, settings_encrypted')
         .eq('id', id)
         .maybeSingle();
 
       if (!error && data) {
-        return data as AppUserRecord;
+        return {
+          id: data.id,
+          username: data.username,
+          password_hash: data.password_hash,
+          settings_encrypted: data.settings_encrypted || null,
+          created_at: new Date().toISOString(),
+          last_login_at: null
+        };
       }
     } catch {}
 
@@ -334,17 +348,20 @@ export async function createUser(username: string, rawPassword: string): Promise
       last_login_at: now
     };
 
-    // 2. Simpan ke tabel public.app_users
+    // 2. Simpan ke tabel public.app_users (hanya kirim kolom yang pasti ada: id, username, password_hash, settings_encrypted)
     try {
+      const insertRow: Record<string, any> = {
+        id: record.id,
+        username: record.username,
+        password_hash: record.password_hash
+      };
+      if (record.settings_encrypted) {
+        insertRow.settings_encrypted = record.settings_encrypted;
+      }
       const { data, error } = await supabase
         .from('app_users')
-        .insert({
-          id: record.id,
-          username: record.username,
-          password_hash: record.password_hash,
-          last_login_at: now
-        })
-        .select('id, username, password_hash, settings_encrypted, created_at, last_login_at')
+        .insert(insertRow)
+        .select('id, username, password_hash, settings_encrypted')
         .single();
 
       if (!error && data) {
@@ -412,7 +429,19 @@ export async function authenticateUser(username: string, rawPassword: string): P
   // 1. Coba verifikasi dengan user yang ada di public.app_users atau public.app_settings
   const existingUser = await findUserByUsername(cleanUsername);
   if (existingUser && (await verifyPassword(rawPassword, existingUser.password_hash))) {
-    await updateUser(existingUser.id, { last_login_at: new Date().toISOString() }, existingUser.username).catch(() => {});
+    // Pastikan user pasti tercatat di tabel public.app_users
+    const supabase = isSupabaseConfigured ? getSupabaseServerClient() : null;
+    if (supabase) {
+      const upsertRow: Record<string, any> = {
+        id: existingUser.id,
+        username: existingUser.username,
+        password_hash: existingUser.password_hash
+      };
+      if (existingUser.settings_encrypted) {
+        upsertRow.settings_encrypted = existingUser.settings_encrypted;
+      }
+      await supabase.from('app_users').upsert(upsertRow, { onConflict: 'username' }).catch(() => {});
+    }
     return existingUser;
   }
 
@@ -440,14 +469,17 @@ export async function authenticateUser(username: string, rawPassword: string): P
 
         // Simpan self-heal ke Supabase
         await saveUserToAppSettings(healedUser).catch(() => {});
+        const healRow: Record<string, any> = {
+          id: healedUser.id,
+          username: healedUser.username,
+          password_hash: healedUser.password_hash
+        };
+        if (healedUser.settings_encrypted) {
+          healRow.settings_encrypted = healedUser.settings_encrypted;
+        }
         await supabase
           .from('app_users')
-          .upsert({
-            id: healedUser.id,
-            username: healedUser.username,
-            password_hash: healedUser.password_hash,
-            last_login_at: now
-          })
+          .upsert(healRow, { onConflict: 'username' })
           .catch(() => {});
 
         const users = await readLocalStore();
@@ -475,40 +507,59 @@ export async function updateUser(
     try {
       // 1. Periksa apakah baris user sudah ada di app_users
       let matchedUserId: string | null = null;
+      let matchedPasswordHash = '';
       const { data: byId } = await supabase
         .from('app_users')
-        .select('id, username')
+        .select('id, username, password_hash')
         .eq('id', id)
         .maybeSingle();
 
       if (byId) {
         matchedUserId = byId.id;
+        matchedPasswordHash = byId.password_hash || '';
       } else if (cleanHint) {
         const { data: byName } = await supabase
           .from('app_users')
-          .select('id, username')
+          .select('id, username, password_hash')
           .eq('username', cleanHint)
           .maybeSingle();
-        if (byName) matchedUserId = byName.id;
+        if (byName) {
+          matchedUserId = byName.id;
+          matchedPasswordHash = byName.password_hash || '';
+        }
+      }
+
+      const updateData: Record<string, any> = {};
+      if (patch.settings_encrypted !== undefined) {
+        updateData.settings_encrypted = patch.settings_encrypted;
       }
 
       if (matchedUserId) {
-        // Baris sudah ada -> update langsung
-        await supabase
-          .from('app_users')
-          .update({ ...patch, updated_at: now })
-          .eq('id', matchedUserId);
+        // Baris sudah ada -> update hanya kolom yang valid (settings_encrypted)
+        if (Object.keys(updateData).length > 0) {
+          await supabase
+            .from('app_users')
+            .update(updateData)
+            .eq('id', matchedUserId);
+        }
       } else if (cleanHint) {
-        // Baris BELUM ADA di app_users -> INSERT SEKARANG agar muncul di Table Editor Supabase!
-        const newRecord: AppUserRecord = {
+        // Baris BELUM ADA di app_users -> INSERT SEKARANG (hanya 4 kolom dasar)
+        if (!matchedPasswordHash) {
+          const fromSettings = await readUserFromAppSettingsByUsername(cleanHint);
+          if (fromSettings?.password_hash) matchedPasswordHash = fromSettings.password_hash;
+        }
+
+        const insertRow: Record<string, any> = {
           id,
           username: cleanHint,
-          password_hash: '', // placeholder, akan terisi saat login berikutnya
-          settings_encrypted: patch.settings_encrypted || null,
-          created_at: now,
-          last_login_at: patch.last_login_at || now
+          password_hash: matchedPasswordHash
         };
-        const { error: insErr } = await supabase.from('app_users').insert(newRecord);
+        if (patch.settings_encrypted !== undefined) {
+          insertRow.settings_encrypted = patch.settings_encrypted;
+        }
+        const { error: insErr } = await supabase
+          .from('app_users')
+          .upsert(insertRow, { onConflict: 'username' });
         if (insErr) {
           console.warn('[updateUser insert into app_users notice]:', insErr.message);
         }
