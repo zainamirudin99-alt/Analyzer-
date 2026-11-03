@@ -13,7 +13,7 @@ import {
   CLAUDE_EFFORT_CONFIGS,
   ClaudeEffortLevel
 } from '@/lib/claude';
-import { pushAccountSettings, hydrateFromAccount, readLocalSnapshot } from '@/lib/account-sync';
+import { pushAccountSettings, hydrateFromAccount, readLocalSnapshot, getAuthHeaders } from '@/lib/account-sync';
 
 const SQL_SETUP_SCRIPT = `-- Jalankan ini di Supabase SQL Editor:
 CREATE TABLE IF NOT EXISTS public.ced_results (
@@ -207,6 +207,14 @@ export const SettingsTab: React.FC = () => {
   const [isPinging, setIsPinging] = useState<boolean>(false);
   const [pingMessage, setPingMessage] = useState<string | null>(null);
 
+  // Supabase Custom Credentials State
+  const [customSupabaseUrl, setCustomSupabaseUrl] = useState<string>('');
+  const [customSupabaseAnonKey, setCustomSupabaseAnonKey] = useState<string>('');
+  const [customSupabaseServiceKey, setCustomSupabaseServiceKey] = useState<string>('');
+  const [isSavingSupabase, setIsSavingSupabase] = useState<boolean>(false);
+  const [supabaseSaveMsg, setSupabaseSaveMsg] = useState<{ success: boolean; text: string } | null>(null);
+  const [showSupabaseCredentials, setShowSupabaseCredentials] = useState<boolean>(false);
+
   // Custom AI Skills State
   const [skills, setSkills] = useState<CustomAISkill[]>([]);
   const [showSkillModal, setShowSkillModal] = useState<boolean>(false);
@@ -337,8 +345,72 @@ export const SettingsTab: React.FC = () => {
     }
   };
 
+  const handleSaveSupabaseCredentials = async () => {
+    setIsSavingSupabase(true);
+    setSupabaseSaveMsg(null);
+    try {
+      const cleanUrl = customSupabaseUrl.trim();
+      const cleanAnon = customSupabaseAnonKey.trim();
+      const cleanService = customSupabaseServiceKey.trim();
+
+      if (cleanUrl) localStorage.setItem('custom_supabase_url', cleanUrl);
+      else localStorage.removeItem('custom_supabase_url');
+
+      if (cleanAnon) localStorage.setItem('custom_supabase_anon_key', cleanAnon);
+      else localStorage.removeItem('custom_supabase_anon_key');
+
+      if (cleanService) localStorage.setItem('custom_supabase_service_key', cleanService);
+      else localStorage.removeItem('custom_supabase_service_key');
+
+      const testHeaders: Record<string, string> = {};
+      if (cleanUrl) testHeaders['x-supabase-url'] = cleanUrl;
+      if (cleanService || cleanAnon) testHeaders['x-supabase-key'] = cleanService || cleanAnon;
+
+      const res = await fetch('/api/settings', { headers: testHeaders });
+      const json = await res.json();
+      if (json.success && json.data?.supabase) {
+        setSysStatus(json.data);
+        if (json.data.supabase.connected) {
+          setSupabaseSaveMsg({
+            success: true,
+            text: isEn ? 'Supabase connected successfully! ✅' : 'Kredensial Supabase berhasil disimpan dan database terhubung! ✅'
+          });
+          const snap = readLocalSnapshot();
+          if (Object.keys(snap).length > 0) {
+            pushAccountSettings(snap).catch(() => {});
+          }
+          window.dispatchEvent(new Event('storage'));
+          window.dispatchEvent(new Event('analyzer-settings-changed'));
+        } else {
+          setSupabaseSaveMsg({
+            success: false,
+            text: json.data.supabase.message || (isEn ? 'Failed to connect to Supabase.' : 'Gagal menghubungi database Supabase.')
+          });
+        }
+      }
+    } catch (err: any) {
+      setSupabaseSaveMsg({
+        success: false,
+        text: err?.message || (isEn ? 'Connection error' : 'Terjadi kesalahan koneksi.')
+      });
+    } finally {
+      setIsSavingSupabase(false);
+    }
+  };
+
   const loadLocalProviderSettings = () => {
     if (typeof window === 'undefined') return;
+
+    // Load Supabase credentials
+    const storedSupabaseUrl = localStorage.getItem('custom_supabase_url') || '';
+    const storedSupabaseAnonKey = localStorage.getItem('custom_supabase_anon_key') || '';
+    const storedSupabaseServiceKey = localStorage.getItem('custom_supabase_service_key') || '';
+    setCustomSupabaseUrl(storedSupabaseUrl);
+    setCustomSupabaseAnonKey(storedSupabaseAnonKey);
+    setCustomSupabaseServiceKey(storedSupabaseServiceKey);
+    if (storedSupabaseUrl || storedSupabaseAnonKey) {
+      setShowSupabaseCredentials(true);
+    }
 
     // Load active provider
     const storedProvider = (localStorage.getItem('custom_ai_provider') || 'gemini') as 'gemini' | 'openai' | 'claude';
@@ -436,7 +508,9 @@ export const SettingsTab: React.FC = () => {
 
   const checkSystemStatus = async () => {
     try {
-      const res = await fetch('/api/settings');
+      const res = await fetch('/api/settings', {
+        headers: getAuthHeaders()
+      });
       const json = await res.json();
       if (json.success) {
         setSysStatus(json.data);
@@ -1368,6 +1442,102 @@ export const SettingsTab: React.FC = () => {
               <span style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
                 {sysStatus?.supabase?.message || 'Memeriksa...'}
               </span>
+            </div>
+
+            {/* Panel Pengaturan Kredensial Supabase Langsung */}
+            <div style={{ marginTop: '12px', padding: '12px', background: 'var(--surface-sunken, #f8fafc)', borderRadius: '8px', border: '1px solid var(--border-color, #e2e8f0)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-main, #1e293b)' }}>
+                  {isEn ? 'Direct Supabase Connection (Browser)' : 'Koneksi Langsung Supabase (Browser)'}
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => setShowSupabaseCredentials(!showSupabaseCredentials)}
+                  style={{ padding: '2px 8px', fontSize: '11px', background: '#ffffff' }}
+                >
+                  {showSupabaseCredentials ? (isEn ? 'Tutup' : 'Tutup') : (isEn ? 'Atur URL & Key' : 'Atur URL & Key')}
+                </button>
+              </div>
+
+              {showSupabaseCredentials && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                  <div style={{ fontSize: '11.5px', color: 'var(--text-muted, #64748b)', lineHeight: '1.4' }}>
+                    {isEn
+                      ? 'Enter your Supabase credentials here if not set in Vercel. Find them in Supabase Dashboard > Project Settings > API.'
+                      : 'Masukkan URL & Key Supabase di sini jika belum diatur di Vercel. Dapatkan dari Supabase Dashboard > Project Settings > API.'}
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '11.5px', fontWeight: 600, display: 'block', marginBottom: '3px' }}>
+                      Project URL:
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      style={{ fontSize: '12px', padding: '6px 10px' }}
+                      placeholder="https://xyzcompany.supabase.co"
+                      value={customSupabaseUrl}
+                      onChange={e => setCustomSupabaseUrl(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '11.5px', fontWeight: 600, display: 'block', marginBottom: '3px' }}>
+                      Anon / Public Key:
+                    </label>
+                    <input
+                      type="password"
+                      className="form-input font-mono"
+                      style={{ fontSize: '12px', padding: '6px 10px' }}
+                      placeholder="eyJhbGciOiJIUzI1NiIsIn..."
+                      value={customSupabaseAnonKey}
+                      onChange={e => setCustomSupabaseAnonKey(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '11.5px', fontWeight: 600, display: 'block', marginBottom: '3px' }}>
+                      Service Role Key ({isEn ? 'Optional - Full Bypass' : 'Opsional - Bypass RLS'}):
+                    </label>
+                    <input
+                      type="password"
+                      className="form-input font-mono"
+                      style={{ fontSize: '12px', padding: '6px 10px' }}
+                      placeholder="eyJhbGciOiJIUzI1NiIsIn..."
+                      value={customSupabaseServiceKey}
+                      onChange={e => setCustomSupabaseServiceKey(e.target.value)}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={handleSaveSupabaseCredentials}
+                      disabled={isSavingSupabase}
+                      style={{ flex: 1, padding: '6px 12px', fontSize: '12px' }}
+                    >
+                      {isSavingSupabase ? <span className="spinner" /> : <RefreshCw size={12} />}
+                      <span>{isEn ? 'Save & Test Connection' : 'Simpan & Uji Koneksi Supabase'}</span>
+                    </button>
+                  </div>
+
+                  {supabaseSaveMsg && (
+                    <div
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        fontSize: '11.5px',
+                        background: supabaseSaveMsg.success ? '#dcfce7' : '#fee2e2',
+                        color: supabaseSaveMsg.success ? '#166534' : '#991b1b',
+                        marginTop: '4px'
+                      }}
+                    >
+                      {supabaseSaveMsg.text}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

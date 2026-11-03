@@ -1,5 +1,8 @@
 // Daftar kunci localStorage yang disinkronkan ke akun pengguna (aman diimpor client & server).
 export const ACCOUNT_SYNC_KEYS = [
+  'custom_supabase_url',
+  'custom_supabase_anon_key',
+  'custom_supabase_service_key',
   'custom_ai_provider',
   'custom_gemini_key',
   'custom_gemini_model',
@@ -20,4 +23,3 @@ export const ACCOUNT_SYNC_KEYS = [
   'analyzer_language',
   'analyzer_records'
 ] as const;
-

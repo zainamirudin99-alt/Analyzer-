@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       throw new AuthError('Username dan password wajib diisi.', 400);
     }
 
-    const user = await authenticateUser(username, password);
+    const user = await authenticateUser(username, password, req);
     const token = await signSession(user.id, user.username);
     const res = NextResponse.json({
       success: true,

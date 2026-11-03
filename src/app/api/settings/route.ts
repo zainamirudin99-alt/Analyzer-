@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseServerClient, isSupabaseConfigured } from '@/lib/supabase';
+import { checkIsSupabaseConfigured, getSupabaseServerClient, isSupabaseConfigured, extractSupabaseCredentials } from '@/lib/supabase';
 import {
   ALL_SUPPORTED_MODELS,
   buildResilientModelQueue,
@@ -12,22 +12,27 @@ import { testClaudeConnection, ALL_CLAUDE_MODELS, CLAUDE_EFFORT_CONFIGS, ClaudeE
 export const dynamic = 'force-dynamic';
 
 // GET: Cek status koneksi Supabase & Multi-AI Provider
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   try {
     const defaultModel = (typeof process !== 'undefined' ? process.env.DEFAULT_GEMINI_MODEL : '') || 'gemini-3.7-flash';
     const hasServerGeminiKey = Boolean(typeof process !== 'undefined' && process.env.GEMINI_API_KEY);
     const hasServerOpenAIKey = Boolean(typeof process !== 'undefined' && process.env.OPENAI_API_KEY);
     const hasServerClaudeKey = Boolean(typeof process !== 'undefined' && process.env.ANTHROPIC_API_KEY);
 
+    const configured = checkIsSupabaseConfigured(req);
+    const creds = extractSupabaseCredentials(req);
+    const supabase = getSupabaseServerClient(req);
+
     const supabaseStatus = {
-      configured: isSupabaseConfigured,
+      configured,
       connected: false,
-      message: isSupabaseConfigured ? 'Terkoneksi' : 'Belum dikonfigurasi di .env.local / Vercel'
+      message: configured
+        ? (creds.isCustom ? 'Kredensial dari Pengaturan Browser' : 'Terkoneksi via Vercel / .env')
+        : 'Belum dikonfigurasi di .env.local / Vercel atau menu Pengaturan',
+      isCustom: creds.isCustom
     };
 
-    if (isSupabaseConfigured) {
-      const supabase = getSupabaseServerClient();
-      if (supabase) {
+    if (supabase) {
         const { error } = await supabase.from('ced_results').select('id').limit(1);
         let heartbeatInfo = null;
         try {
@@ -51,7 +56,6 @@ export async function GET(_req: NextRequest) {
           (supabaseStatus as any).heartbeat = heartbeatInfo;
         }
       }
-    }
 
     return NextResponse.json({
       success: true,

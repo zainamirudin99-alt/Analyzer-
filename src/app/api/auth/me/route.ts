@@ -10,13 +10,13 @@ export async function GET(req: NextRequest) {
     if (!session) {
       return NextResponse.json({ success: false, user: null }, { status: 401 });
     }
-    const user = await findUserById(session.uid, session.username);
+    const user = await findUserById(session.uid, session.username, req);
 
     // Self-heal: Pastikan user selalu tercatat di tabel public.app_users Supabase
     try {
-      const { getSupabaseServerClient, isSupabaseConfigured } = await import('@/lib/supabase');
-      if (isSupabaseConfigured) {
-        const supabase = getSupabaseServerClient();
+      const { getSupabaseServerClient, checkIsSupabaseConfigured } = await import('@/lib/supabase');
+      if (checkIsSupabaseConfigured(req)) {
+        const supabase = getSupabaseServerClient(req);
         if (supabase) {
           const { data: existingRow } = await supabase
             .from('app_users')
@@ -25,12 +25,12 @@ export async function GET(req: NextRequest) {
             .maybeSingle();
 
           if (!existingRow) {
-            await supabase.from('app_users').insert({
+            await supabase.from('app_users').upsert({
               id: session.uid,
               username: session.username,
               password_hash: user?.password_hash || '',
               settings_encrypted: user?.settings_encrypted || null
-            }).catch(() => {});
+            }, { onConflict: 'username' }).catch(() => {});
           }
         }
       }

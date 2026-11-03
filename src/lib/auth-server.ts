@@ -12,7 +12,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { promisify } from 'util';
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseServerClient, isSupabaseConfigured } from './supabase';
+import { getSupabaseServerClient, isSupabaseConfigured, RequestWithHeaders } from './supabase';
 import {
   SESSION_COOKIE,
   SESSION_HEADER,
@@ -200,11 +200,11 @@ async function saveUserToAppSettings(user: AppUserRecord): Promise<boolean> {
   }
 }
 
-export async function findUserByUsername(username: string): Promise<AppUserRecord | null> {
+export async function findUserByUsername(username: string, req?: RequestWithHeaders | null): Promise<AppUserRecord | null> {
   const clean = normalizeUsername(username);
   if (!clean) return null;
 
-  const supabase = isSupabaseConfigured ? getSupabaseServerClient() : null;
+  const supabase = getSupabaseServerClient(req);
   if (supabase) {
     // 1. Coba dari tabel public.app_users (hanya panggil kolom yang pasti ada di database)
     try {
@@ -241,9 +241,9 @@ export async function findUserByUsername(username: string): Promise<AppUserRecor
   return (await readLocalStore()).find(u => u.username === clean) || memoryUsersFallback.get(clean) || null;
 }
 
-export async function findUserById(id: string, usernameHint?: string): Promise<AppUserRecord | null> {
+export async function findUserById(id: string, usernameHint?: string, req?: RequestWithHeaders | null): Promise<AppUserRecord | null> {
   const cleanHint = usernameHint ? normalizeUsername(usernameHint) : undefined;
-  const supabase = isSupabaseConfigured ? getSupabaseServerClient() : null;
+  const supabase = getSupabaseServerClient(req);
   if (supabase) {
     try {
       const { data, error } = await supabase
@@ -280,11 +280,11 @@ export async function findUserById(id: string, usernameHint?: string): Promise<A
   );
 }
 
-export async function createUser(username: string, rawPassword: string): Promise<AppUserRecord> {
+export async function createUser(username: string, rawPassword: string, req?: RequestWithHeaders | null): Promise<AppUserRecord> {
   const cleanUsername = normalizeUsername(username);
   validateCredentials(cleanUsername, rawPassword);
 
-  const existing = await findUserByUsername(cleanUsername);
+  const existing = await findUserByUsername(cleanUsername, req);
   if (existing) {
     throw new AuthError('Username sudah terdaftar. Silakan langsung Login atau pilih username lain.', 409);
   }
@@ -293,7 +293,7 @@ export async function createUser(username: string, rawPassword: string): Promise
   const passwordHash = await hashPassword(rawPassword);
   let resolvedId = randomUUID();
 
-  const supabase = isSupabaseConfigured ? getSupabaseServerClient() : null;
+  const supabase = getSupabaseServerClient(req);
   let savedInSupabaseAuth = false;
   let savedInAppUsersTable = false;
   let savedInAppSettings = false;
@@ -358,15 +358,13 @@ export async function createUser(username: string, rawPassword: string): Promise
       if (record.settings_encrypted) {
         insertRow.settings_encrypted = record.settings_encrypted;
       }
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('app_users')
-        .insert(insertRow)
-        .select('id, username, password_hash, settings_encrypted')
-        .single();
+        .upsert(insertRow, { onConflict: 'username' });
 
-      if (!error && data) {
+      if (!error) {
         savedInAppUsersTable = true;
-      } else if (error) {
+      } else {
         lastSupabaseError = error.message;
         if (error.code === '23505') {
           throw new AuthError('Username sudah terdaftar. Silakan langsung Login.', 409);
@@ -387,7 +385,7 @@ export async function createUser(username: string, rawPassword: string): Promise
     }
 
     // 4. Verifikasi bahwa data benar-benar tersimpan di Supabase
-    if (!savedInSupabaseAuth && !savedInAppUsersTable && !savedInAppSettings) {
+    if (!savedInAppUsersTable && !savedInAppSettings && !savedInSupabaseAuth) {
       console.error('[createUser Failed Supabase Persistence]:', {
         savedInSupabaseAuth,
         savedInAppUsersTable,
@@ -395,7 +393,7 @@ export async function createUser(username: string, rawPassword: string): Promise
         lastSupabaseError
       });
       throw new AuthError(
-        `Gagal menyimpan akun ke Supabase (${lastSupabaseError || 'Tabel app_users atau app_settings belum siap'}). Silakan jalankan script SQL migrasi app_users di Supabase SQL Editor.`,
+        `Gagal menyimpan akun ke Supabase (${lastSupabaseError || 'Tabel app_users atau app_settings belum siap'}). Silakan pastikan RLS dinonaktifkan atau jalankan script SQL migrasi app_users di Supabase SQL Editor.`,
         500
       );
     }
@@ -420,17 +418,18 @@ export async function createUser(username: string, rawPassword: string): Promise
   return record;
 }
 
-export async function authenticateUser(username: string, rawPassword: string): Promise<AppUserRecord> {
+export async function authenticateUser(username: string, rawPassword: string, req?: RequestWithHeaders | null): Promise<AppUserRecord> {
   const cleanUsername = normalizeUsername(username);
   if (!cleanUsername || !rawPassword) {
     throw new AuthError('Username dan password wajib diisi.', 400);
   }
 
   // 1. Coba verifikasi dengan user yang ada di public.app_users atau public.app_settings
-  const existingUser = await findUserByUsername(cleanUsername);
+  const existingUser = await findUserByUsername(cleanUsername, req);
+  const supabase = getSupabaseServerClient(req);
+
   if (existingUser && (await verifyPassword(rawPassword, existingUser.password_hash))) {
     // Pastikan user pasti tercatat di tabel public.app_users
-    const supabase = isSupabaseConfigured ? getSupabaseServerClient() : null;
     if (supabase) {
       const upsertRow: Record<string, any> = {
         id: existingUser.id,
@@ -446,7 +445,6 @@ export async function authenticateUser(username: string, rawPassword: string): P
   }
 
   // 2. Jika belum ditemukan / hash tidak cocok, coba verifikasi dengan Supabase Native Auth
-  const supabase = isSupabaseConfigured ? getSupabaseServerClient() : null;
   if (supabase) {
     try {
       const syntheticEmail = toSyntheticEmail(cleanUsername);
@@ -497,11 +495,12 @@ export async function authenticateUser(username: string, rawPassword: string): P
 export async function updateUser(
   id: string,
   patch: Partial<Pick<AppUserRecord, 'settings_encrypted' | 'last_login_at'>>,
-  usernameHint?: string
+  usernameHint?: string,
+  req?: RequestWithHeaders | null
 ): Promise<void> {
   const cleanHint = usernameHint ? normalizeUsername(usernameHint) : undefined;
   const now = new Date().toISOString();
-  const supabase = isSupabaseConfigured ? getSupabaseServerClient() : null;
+  const supabase = getSupabaseServerClient(req);
 
   if (supabase) {
     try {

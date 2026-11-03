@@ -19,15 +19,15 @@ export async function GET(req: NextRequest) {
   try {
     const session = await getSessionFromRequest(req);
     if (!session) throw new AuthError('Sesi berakhir. Silakan login kembali.', 401);
-    let user = await findUserById(session.uid, session.username);
+    let user = await findUserById(session.uid, session.username, req);
     let rawEncrypted = user?.settings_encrypted;
 
     // Fallback: periksa juga dari tabel app_settings jika user di app_users baru dibuat
     if (!rawEncrypted) {
       try {
-        const { getSupabaseServerClient, isSupabaseConfigured } = await import('@/lib/supabase');
-        if (isSupabaseConfigured) {
-          const supabase = getSupabaseServerClient();
+        const { getSupabaseServerClient, checkIsSupabaseConfigured } = await import('@/lib/supabase');
+        if (checkIsSupabaseConfigured(req)) {
+          const supabase = getSupabaseServerClient(req);
           if (supabase) {
             const { data: stData } = await supabase
               .from('app_settings')
@@ -71,7 +71,7 @@ export async function PUT(req: NextRequest) {
       throw new AuthError('Ukuran pengaturan akun melebihi 2 MB.', 413);
     }
 
-    await updateUser(session.uid, { settings_encrypted: encryptSettings(allowed) }, session.username);
+    await updateUser(session.uid, { settings_encrypted: encryptSettings(allowed) }, session.username, req);
     return NextResponse.json({ success: true });
   } catch (err) {
     return authErrorResponse(err);

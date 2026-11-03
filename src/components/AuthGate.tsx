@@ -121,7 +121,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
       const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ username: cleanUsername, password })
       });
       const json = await res.json().catch(() => ({}));

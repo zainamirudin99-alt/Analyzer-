@@ -29,6 +29,9 @@ ALTER TABLE public.app_users ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "App Server Access Users" ON public.app_users;
 CREATE POLICY "App Server Access Users" ON public.app_users FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
 
+-- Catatan: Jika Anda mengalami kendala RLS policy saat pendaftaran, nonaktifkan RLS dengan perintah:
+-- ALTER TABLE public.app_users DISABLE ROW LEVEL SECURITY;
+
 -- Pastikan tabel fallback app_settings juga memiliki grant penuh
 CREATE TABLE IF NOT EXISTS public.app_settings (
     key VARCHAR(100) PRIMARY KEY,

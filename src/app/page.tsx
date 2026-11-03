@@ -22,7 +22,10 @@ export default function HomePage() {
 
   const checkConnection = async () => {
     try {
-      const res = await fetch('/api/settings');
+      const { getAuthHeaders } = await import('@/lib/account-sync');
+      const res = await fetch('/api/settings', {
+        headers: getAuthHeaders()
+      });
       const json = await res.json();
       if (json.success && json.data?.supabase) {
         setSupabaseStatus({
@@ -37,6 +40,13 @@ export default function HomePage() {
 
   useEffect(() => {
     checkConnection();
+    const handleUpdate = () => checkConnection();
+    window.addEventListener('analyzer-settings-changed', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('analyzer-settings-changed', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
   }, []);
 
   const handleSuccessfulAnalysis = () => {

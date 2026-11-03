@@ -33,7 +33,14 @@ export function clearStoredAuthSession(): void {
 
 export function getAuthHeaders(extra: Record<string, string> = {}): Record<string, string> {
   const token = getStoredAuthToken();
-  return token ? { ...extra, [SESSION_HEADER]: token } : extra;
+  const headers: Record<string, string> = token ? { ...extra, [SESSION_HEADER]: token } : { ...extra };
+  if (typeof window !== 'undefined') {
+    const customUrl = localStorage.getItem('custom_supabase_url');
+    const customKey = localStorage.getItem('custom_supabase_anon_key') || localStorage.getItem('custom_supabase_service_key');
+    if (customUrl) headers['x-supabase-url'] = customUrl.trim();
+    if (customKey) headers['x-supabase-key'] = customKey.trim();
+  }
+  return headers;
 }
 
 export function readLocalSnapshot(): Record<string, string> {
