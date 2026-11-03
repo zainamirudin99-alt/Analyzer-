@@ -23,6 +23,9 @@ import {
   getIndicatorTitle,
   ensurePresetsTranslated
 } from '@/lib/i18n';
+import { SUPPORTED_MODEL_CATEGORIES, ALL_SUPPORTED_MODELS } from '@/lib/gemini';
+import { DEFAULT_OPENAI_MODELS } from '@/lib/openai';
+import { CLAUDE_MODEL_CATEGORIES, ALL_CLAUDE_MODELS } from '@/lib/claude';
 
 interface UploadTabProps {
   onSuccessAnalysis: () => void;
@@ -75,6 +78,8 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
 
   const [activeProvider, setActiveProvider] = useState<'gemini' | 'openai' | 'claude'>('gemini');
   const [activeModel, setActiveModel] = useState<string>('gemini-3.7-flash');
+  const [openaiCustomModels, setOpenaiCustomModels] = useState<string[]>([]);
+  const [claudeCustomModels, setClaudeCustomModels] = useState<string[]>([]);
 
   // Preset Indikator & Custom Skills State (Multi-Select)
   const [presets, setPresets] = useState<IndicatorPreset[]>([]);
@@ -95,6 +100,24 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
     } else {
       const stored = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_model') || 'gemini-3.7-flash' : 'gemini-3.7-flash';
       setActiveModel(stored);
+    }
+
+    // Load Custom OpenAI & Claude Models
+    if (typeof window !== 'undefined') {
+      const storedOpenaiCustom = localStorage.getItem('custom_openai_custom_models');
+      if (storedOpenaiCustom) {
+        try {
+          const parsed = JSON.parse(storedOpenaiCustom);
+          if (Array.isArray(parsed)) setOpenaiCustomModels(parsed);
+        } catch {}
+      }
+      const storedClaudeCustom = localStorage.getItem('custom_claude_custom_models');
+      if (storedClaudeCustom) {
+        try {
+          const parsed = JSON.parse(storedClaudeCustom);
+          if (Array.isArray(parsed)) setClaudeCustomModels(parsed);
+        } catch {}
+      }
     }
 
     // 2. Sinkronisasi Preset Indikator
@@ -1007,36 +1030,82 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
               <select
                 className="form-select font-mono"
                 style={{ flex: 1, minWidth: '180px', background: '#ffffff', padding: '6px 10px', fontSize: '12px' }}
-                value={activeModel.split(' ')[0]}
+                value={activeModel}
                 onChange={e => handleModelChange(e.target.value)}
                 disabled={isAnalyzing || isExtracting}
               >
                 {activeProvider === 'gemini' && (
                   <>
-                    <option value="gemini-3.7-flash">gemini-3.7-flash ⭐ (Next-Gen High-Speed)</option>
-                    <option value="gemini-3.7-pro">gemini-3.7-pro (Next-Gen Flagship)</option>
-                    <option value="gemini-3.1-pro">gemini-3.1-pro (Deep Reasoning)</option>
-                    <option value="gemini-2.5-flash">gemini-2.5-flash (Enhanced 2.5)</option>
-                    <option value="gemini-2.0-flash">gemini-2.0-flash (Multimodal 2.0)</option>
-                    <option value="gemini-1.5-flash">gemini-1.5-flash (Stabil, 1M Context)</option>
-                    <option value="gemini-1.5-pro">gemini-1.5-pro (Penalaran Kompleks)</option>
+                    {SUPPORTED_MODEL_CATEGORIES.map(cat => (
+                      <optgroup key={cat.category} label={cat.category}>
+                        {cat.models.map(m => (
+                          <option key={m.id} value={m.id}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                    {!ALL_SUPPORTED_MODELS.includes(activeModel) && activeModel && (
+                      <optgroup label="✍️ Model Kustom">
+                        <option value={activeModel}>🤖 {activeModel}</option>
+                      </optgroup>
+                    )}
                   </>
                 )}
                 {activeProvider === 'openai' && (
                   <>
-                    <option value="gpt-4o">gpt-4o ⭐ (Flagship Multimodal)</option>
-                    <option value="gpt-4o-mini">gpt-4o-mini (Ringan & Cepat)</option>
-                    <option value="gpt-4-turbo">gpt-4-turbo (High Accuracy)</option>
-                    <option value="o1-mini">o1-mini (Reasoning)</option>
+                    <optgroup label="🌟 Model Bawaan OpenAI">
+                      {DEFAULT_OPENAI_MODELS.map(m => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                    {openaiCustomModels.length > 0 && (
+                      <optgroup label="✨ Model Kustom / Tambahan Pengguna">
+                        {openaiCustomModels.map(m => (
+                          <option key={m} value={m}>
+                            🤖 {m}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {!DEFAULT_OPENAI_MODELS.some(m => m.id === activeModel) &&
+                      !openaiCustomModels.includes(activeModel) &&
+                      activeModel && (
+                        <optgroup label="✍️ Model Kustom">
+                          <option value={activeModel}>🤖 {activeModel}</option>
+                        </optgroup>
+                      )}
                   </>
                 )}
                 {activeProvider === 'claude' && (
                   <>
-                    <option value="claude-3-7-sonnet-20250219">Claude 3.7 Sonnet (Hybrid Reasoning)</option>
-                    <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
-                    <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku</option>
-                    <option value="claude-3-opus-20240229">Claude 3 Opus</option>
-                    <option value="claude-fable-5-1">Claude Fable 5.1 (Riset)</option>
+                    {CLAUDE_MODEL_CATEGORIES.map(cat => (
+                      <optgroup key={cat.category} label={cat.category}>
+                        {cat.models.map(m => (
+                          <option key={m.id} value={m.id}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                    {claudeCustomModels.length > 0 && (
+                      <optgroup label="✨ Model Kustom / Tambahan Pengguna">
+                        {claudeCustomModels.map(m => (
+                          <option key={m} value={m}>
+                            🤖 {m}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {!ALL_CLAUDE_MODELS.some(m => m.id === activeModel) &&
+                      !claudeCustomModels.includes(activeModel) &&
+                      activeModel && (
+                        <optgroup label="✍️ Model Kustom">
+                          <option value={activeModel}>🤖 {activeModel}</option>
+                        </optgroup>
+                      )}
                   </>
                 )}
               </select>
