@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     const password = String(body?.password ?? '');
     validateCredentials(username, password);
 
-    const user = await createUser(username, await hashPassword(password));
+    const user = await createUser(username, password);
     const token = await signSession(user.id, user.username);
     const res = NextResponse.json({
       success: true,

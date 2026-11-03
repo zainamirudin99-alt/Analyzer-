@@ -95,7 +95,7 @@ EXCEPTION WHEN OTHERS THEN
     RAISE NOTICE 'pg_cron tidak tersedia (%)', SQLERRM;
 END $$;
 
--- Tabel Akun Aplikasi (username + password, tanpa email) - hanya diakses server
+-- Tabel Akun Aplikasi (username + password, tanpa email)
 CREATE TABLE IF NOT EXISTS public.app_users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     username VARCHAR(32) NOT NULL UNIQUE CHECK (username ~ '^[a-z0-9_.-]{3,32}$'),
@@ -105,9 +105,22 @@ CREATE TABLE IF NOT EXISTS public.app_users (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     last_login_at TIMESTAMPTZ
 );
+CREATE INDEX IF NOT EXISTS idx_app_users_username ON public.app_users(username);
+GRANT ALL ON TABLE public.app_users TO postgres, anon, authenticated, service_role;
 ALTER TABLE public.app_users ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "App Server Access Users" ON public.app_users;
-CREATE POLICY "App Server Access Users" ON public.app_users FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "App Server Access Users" ON public.app_users FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+
+-- Tabel fallback app_settings
+CREATE TABLE IF NOT EXISTS public.app_settings (
+    key VARCHAR(100) PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+GRANT ALL ON TABLE public.app_settings TO postgres, anon, authenticated, service_role;
+ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Access App Settings" ON public.app_settings;
+CREATE POLICY "Public Access App Settings" ON public.app_settings FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
 
 -- (Opsional) Tabel Kustom Preset Indikator & Custom AI Skills:
 CREATE TABLE IF NOT EXISTS public.custom_indicator_presets (

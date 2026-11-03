@@ -1,10 +1,10 @@
 // ============================================================
 // Akun aplikasi (username + password, tanpa email) — khusus server (Node runtime).
 // Multi-tier persistence:
-// 1. Tabel Supabase public.app_users
-// 2. Fallback otomatis ke tabel Supabase public.app_settings (key: user_account:<username>)
-//    sehingga langsung berjalan walaupun pengguna belum membuka Supabase SQL Editor.
-// 3. Fallback file lokal (.data/users.json) / in-memory saat mode lokal.
+// 1. Supabase Native Auth (auth.users via synthetic email <username>@analyzer.app)
+// 2. Tabel Supabase public.app_users (PostgreSQL)
+// 3. Fallback tabel Supabase public.app_settings (key: user_account:<username>)
+// 4. Fallback file lokal (.data/users.json) / in-memory untuk mode offline/standalone.
 // ============================================================
 
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'crypto';
@@ -26,7 +26,7 @@ import {
 const scryptAsync = promisify(scrypt) as (password: string, salt: Buffer, keylen: number) => Promise<Buffer>;
 
 export const USERNAME_PATTERN = /^[a-z0-9_.-]{3,32}$/;
-export const MIN_PASSWORD_LENGTH = 4;
+export const MIN_PASSWORD_LENGTH = 6;
 
 export interface AppUserRecord {
   id: string;
@@ -47,6 +47,11 @@ export function normalizeUsername(raw: unknown): string {
   return String(raw ?? '').trim().toLowerCase();
 }
 
+export function toSyntheticEmail(username: string): string {
+  const clean = normalizeUsername(username);
+  return `${clean}@analyzer.app`;
+}
+
 export function validateCredentials(username: string, password: string): void {
   if (!USERNAME_PATTERN.test(username)) {
     throw new AuthError('Username harus 3–32 karakter (huruf kecil, angka, titik, garis bawah, atau strip, tanpa spasi).', 400);
@@ -65,11 +70,16 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  if (!stored) return false;
   const [scheme, saltHex, hashHex] = stored.split('$');
   if (scheme !== 'scrypt' || !saltHex || !hashHex) return false;
-  const expected = Buffer.from(hashHex, 'hex');
-  const derived = await scryptAsync(password, Buffer.from(saltHex, 'hex'), expected.length);
-  return derived.length === expected.length && timingSafeEqual(derived, expected);
+  try {
+    const expected = Buffer.from(hashHex, 'hex');
+    const derived = await scryptAsync(password, Buffer.from(saltHex, 'hex'), expected.length);
+    return derived.length === expected.length && timingSafeEqual(derived, expected);
+  } catch {
+    return false;
+  }
 }
 
 // ---------- Enkripsi pengaturan akun (AES-256-GCM) ----------
@@ -89,10 +99,14 @@ export function decryptSettings(payload: string | null): Record<string, string> 
   if (!payload) return {};
   const [ivB64, tagB64, dataB64] = payload.split('.');
   if (!ivB64 || !tagB64 || !dataB64) return {};
-  const decipher = createDecipheriv('aes-256-gcm', getEncryptionKey(), Buffer.from(ivB64, 'base64'));
-  decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
-  const decrypted = Buffer.concat([decipher.update(Buffer.from(dataB64, 'base64')), decipher.final()]);
-  return JSON.parse(decrypted.toString('utf8'));
+  try {
+    const decipher = createDecipheriv('aes-256-gcm', getEncryptionKey(), Buffer.from(ivB64, 'base64'));
+    decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
+    const decrypted = Buffer.concat([decipher.update(Buffer.from(dataB64, 'base64')), decipher.final()]);
+    return JSON.parse(decrypted.toString('utf8'));
+  } catch {
+    return {};
+  }
 }
 
 // ---------- Penyimpanan akun Multi-Tier ----------
@@ -175,108 +189,277 @@ async function saveUserToAppSettings(user: AppUserRecord): Promise<boolean> {
         updated_at: now
       }
     ]);
-    return !error;
-  } catch {
+    if (error) {
+      console.warn('[saveUserToAppSettings error]:', error.message);
+      return false;
+    }
+    return true;
+  } catch (ex) {
+    console.warn('[saveUserToAppSettings exception]:', ex);
     return false;
   }
 }
 
 export async function findUserByUsername(username: string): Promise<AppUserRecord | null> {
+  const clean = normalizeUsername(username);
+  if (!clean) return null;
+
   const supabase = isSupabaseConfigured ? getSupabaseServerClient() : null;
   if (supabase) {
-    const { data, error } = await supabase
-      .from('app_users')
-      .select('id, username, password_hash, settings_encrypted, created_at, last_login_at')
-      .eq('username', username)
-      .maybeSingle();
+    // 1. Coba dari tabel public.app_users
+    try {
+      const { data, error } = await supabase
+        .from('app_users')
+        .select('id, username, password_hash, settings_encrypted, created_at, last_login_at')
+        .eq('username', clean)
+        .maybeSingle();
 
-    if (!error && data) {
-      return data as AppUserRecord;
+      if (!error && data) {
+        return data as AppUserRecord;
+      }
+    } catch (tblEx) {
+      console.warn('[findUserByUsername app_users exception]:', tblEx);
     }
 
-    if (!error || isMissingTableError(error.message)) {
-      const fromSettings = await readUserFromAppSettingsByUsername(username);
+    // 2. Coba dari tabel public.app_settings
+    try {
+      const fromSettings = await readUserFromAppSettingsByUsername(clean);
       if (fromSettings) return fromSettings;
+    } catch (setEx) {
+      console.warn('[findUserByUsername app_settings exception]:', setEx);
     }
   }
 
-  return (await readLocalStore()).find(u => u.username === username) || null;
+  // 3. Coba dari local storage / memory fallback
+  return (await readLocalStore()).find(u => u.username === clean) || memoryUsersFallback.get(clean) || null;
 }
 
 export async function findUserById(id: string, usernameHint?: string): Promise<AppUserRecord | null> {
+  const cleanHint = usernameHint ? normalizeUsername(usernameHint) : undefined;
   const supabase = isSupabaseConfigured ? getSupabaseServerClient() : null;
   if (supabase) {
-    const { data, error } = await supabase
-      .from('app_users')
-      .select('id, username, password_hash, settings_encrypted, created_at, last_login_at')
-      .eq('id', id)
-      .maybeSingle();
+    try {
+      const { data, error } = await supabase
+        .from('app_users')
+        .select('id, username, password_hash, settings_encrypted, created_at, last_login_at')
+        .eq('id', id)
+        .maybeSingle();
 
-    if (!error && data) {
-      return data as AppUserRecord;
-    }
-
-    if (!error || isMissingTableError(error.message)) {
-      if (usernameHint) {
-        const byName = await readUserFromAppSettingsByUsername(usernameHint);
-        if (byName) return byName;
+      if (!error && data) {
+        return data as AppUserRecord;
       }
-      const byId = await readUserFromAppSettingsById(id);
-      if (byId) return byId;
+    } catch {}
+
+    if (cleanHint) {
+      const byName = await readUserFromAppSettingsByUsername(cleanHint);
+      if (byName) return byName;
     }
+    const byId = await readUserFromAppSettingsById(id);
+    if (byId) return byId;
   }
 
   const localUsers = await readLocalStore();
-  return localUsers.find(u => u.id === id || (usernameHint && u.username === usernameHint)) || null;
+  return (
+    localUsers.find(u => u.id === id || (cleanHint && u.username === cleanHint)) ||
+    (cleanHint ? memoryUsersFallback.get(cleanHint) : null) ||
+    null
+  );
 }
 
-export async function createUser(username: string, passwordHash: string): Promise<AppUserRecord> {
-  const existing = await findUserByUsername(username);
+export async function createUser(username: string, rawPassword: string): Promise<AppUserRecord> {
+  const cleanUsername = normalizeUsername(username);
+  validateCredentials(cleanUsername, rawPassword);
+
+  const existing = await findUserByUsername(cleanUsername);
   if (existing) {
     throw new AuthError('Username sudah terdaftar. Silakan langsung Login atau pilih username lain.', 409);
   }
 
   const now = new Date().toISOString();
+  const passwordHash = await hashPassword(rawPassword);
+  let resolvedId = randomUUID();
+
+  const supabase = isSupabaseConfigured ? getSupabaseServerClient() : null;
+  let savedInSupabaseAuth = false;
+  let savedInAppUsersTable = false;
+  let savedInAppSettings = false;
+  let lastSupabaseError: string | null = null;
+
+  if (supabase) {
+    // 1. Daftarkan ke Supabase Native Auth (auth.users)
+    const syntheticEmail = toSyntheticEmail(cleanUsername);
+    try {
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+      if (serviceKey && (supabase.auth as any).admin?.createUser) {
+        const { data: adminUser, error: adminErr } = await (supabase.auth as any).admin.createUser({
+          email: syntheticEmail,
+          password: rawPassword,
+          email_confirm: true,
+          user_metadata: { username: cleanUsername }
+        });
+        if (!adminErr && adminUser?.user) {
+          resolvedId = adminUser.user.id;
+          savedInSupabaseAuth = true;
+        } else if (adminErr && /already registered/i.test(adminErr.message)) {
+          throw new AuthError('Username sudah terdaftar di Supabase Auth. Silakan langsung Login.', 409);
+        }
+      }
+
+      if (!savedInSupabaseAuth) {
+        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+          email: syntheticEmail,
+          password: rawPassword,
+          options: { data: { username: cleanUsername } }
+        });
+        if (!signUpErr && signUpData?.user) {
+          resolvedId = signUpData.user.id;
+          savedInSupabaseAuth = true;
+        } else if (signUpErr && /already registered/i.test(signUpErr.message)) {
+          throw new AuthError('Username sudah terdaftar di Supabase Auth. Silakan langsung Login.', 409);
+        } else if (signUpErr) {
+          console.warn('[Supabase Auth signUp note]:', signUpErr.message);
+        }
+      }
+    } catch (authEx: any) {
+      if (authEx instanceof AuthError) throw authEx;
+      console.warn('[Supabase Auth createUser exception]:', authEx?.message || authEx);
+    }
+
+    const record: AppUserRecord = {
+      id: resolvedId,
+      username: cleanUsername,
+      password_hash: passwordHash,
+      settings_encrypted: null,
+      created_at: now,
+      last_login_at: now
+    };
+
+    // 2. Simpan ke tabel public.app_users
+    try {
+      const { data, error } = await supabase
+        .from('app_users')
+        .insert({
+          id: record.id,
+          username: record.username,
+          password_hash: record.password_hash,
+          last_login_at: now
+        })
+        .select('id, username, password_hash, settings_encrypted, created_at, last_login_at')
+        .single();
+
+      if (!error && data) {
+        savedInAppUsersTable = true;
+      } else if (error) {
+        lastSupabaseError = error.message;
+        if (error.code === '23505') {
+          throw new AuthError('Username sudah terdaftar. Silakan langsung Login.', 409);
+        }
+        console.warn('[app_users insert error]:', error.message);
+      }
+    } catch (tblEx: any) {
+      if (tblEx instanceof AuthError) throw tblEx;
+      lastSupabaseError = tblEx?.message || String(tblEx);
+      console.warn('[app_users insert exception]:', tblEx);
+    }
+
+    // 3. Simpan ke tabel fallback public.app_settings
+    try {
+      savedInAppSettings = await saveUserToAppSettings(record);
+    } catch (setEx: any) {
+      console.warn('[saveUserToAppSettings exception]:', setEx);
+    }
+
+    // 4. Verifikasi bahwa data benar-benar tersimpan di Supabase
+    if (!savedInSupabaseAuth && !savedInAppUsersTable && !savedInAppSettings) {
+      console.error('[createUser Failed Supabase Persistence]:', {
+        savedInSupabaseAuth,
+        savedInAppUsersTable,
+        savedInAppSettings,
+        lastSupabaseError
+      });
+      throw new AuthError(
+        `Gagal menyimpan akun ke Supabase (${lastSupabaseError || 'Tabel app_users atau app_settings belum siap'}). Silakan jalankan script SQL migrasi app_users di Supabase SQL Editor.`,
+        500
+      );
+    }
+
+    // Juga simpan ke memory/local cache sebagai cadangan cepat
+    const users = await readLocalStore();
+    await writeLocalStore([...users.filter(u => u.username !== cleanUsername), record]);
+    return record;
+  }
+
+  // Jika Supabase tidak dikonfigurasi sama sekali (mode standalone lokal):
   const record: AppUserRecord = {
-    id: randomUUID(),
-    username,
+    id: resolvedId,
+    username: cleanUsername,
     password_hash: passwordHash,
     settings_encrypted: null,
     created_at: now,
     last_login_at: now
   };
+  const users = await readLocalStore();
+  await writeLocalStore([...users.filter(u => u.username !== cleanUsername), record]);
+  return record;
+}
 
+export async function authenticateUser(username: string, rawPassword: string): Promise<AppUserRecord> {
+  const cleanUsername = normalizeUsername(username);
+  if (!cleanUsername || !rawPassword) {
+    throw new AuthError('Username dan password wajib diisi.', 400);
+  }
+
+  // 1. Coba verifikasi dengan user yang ada di public.app_users atau public.app_settings
+  const existingUser = await findUserByUsername(cleanUsername);
+  if (existingUser && (await verifyPassword(rawPassword, existingUser.password_hash))) {
+    await updateUser(existingUser.id, { last_login_at: new Date().toISOString() }, existingUser.username).catch(() => {});
+    return existingUser;
+  }
+
+  // 2. Jika belum ditemukan / hash tidak cocok, coba verifikasi dengan Supabase Native Auth
   const supabase = isSupabaseConfigured ? getSupabaseServerClient() : null;
   if (supabase) {
-    const { data, error } = await supabase
-      .from('app_users')
-      .insert({
-        id: record.id,
-        username: record.username,
-        password_hash: record.password_hash,
-        last_login_at: now
-      })
-      .select('id, username, password_hash, settings_encrypted, created_at, last_login_at')
-      .single();
+    try {
+      const syntheticEmail = toSyntheticEmail(cleanUsername);
+      const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+        email: syntheticEmail,
+        password: rawPassword
+      });
 
-    if (!error && data) {
-      return data as AppUserRecord;
-    }
+      if (!signInErr && signInData?.user) {
+        // Otentikasi Supabase Auth sukses! Lakukan self-heal ke app_users & app_settings jika sebelumnya belum tersimpan
+        const now = new Date().toISOString();
+        const healedUser: AppUserRecord = {
+          id: signInData.user.id,
+          username: cleanUsername,
+          password_hash: await hashPassword(rawPassword),
+          settings_encrypted: existingUser?.settings_encrypted || null,
+          created_at: signInData.user.created_at || now,
+          last_login_at: now
+        };
 
-    if (error?.code === '23505') {
-      throw new AuthError('Username sudah terdaftar. Silakan langsung Login.', 409);
-    }
+        // Simpan self-heal ke Supabase
+        await saveUserToAppSettings(healedUser).catch(() => {});
+        await supabase
+          .from('app_users')
+          .upsert({
+            id: healedUser.id,
+            username: healedUser.username,
+            password_hash: healedUser.password_hash,
+            last_login_at: now
+          })
+          .catch(() => {});
 
-    // Fallback otomatis ke tabel app_settings bila tabel app_users belum dibuat
-    const savedInSettings = await saveUserToAppSettings(record);
-    if (savedInSettings) {
-      return record;
+        const users = await readLocalStore();
+        await writeLocalStore([...users.filter(u => u.username !== cleanUsername), healedUser]);
+        return healedUser;
+      }
+    } catch (authEx) {
+      console.warn('[authenticateUser Supabase Auth signIn exception]:', authEx);
     }
   }
 
-  const users = await readLocalStore();
-  await writeLocalStore([...users.filter(u => u.username !== username), record]);
-  return record;
+  throw new AuthError('Username atau password salah.', 401);
 }
 
 export async function updateUser(
@@ -284,25 +467,27 @@ export async function updateUser(
   patch: Partial<Pick<AppUserRecord, 'settings_encrypted' | 'last_login_at'>>,
   usernameHint?: string
 ): Promise<void> {
+  const cleanHint = usernameHint ? normalizeUsername(usernameHint) : undefined;
   const supabase = isSupabaseConfigured ? getSupabaseServerClient() : null;
   if (supabase) {
-    const { error } = await supabase
-      .from('app_users')
-      .update({ ...patch, updated_at: new Date().toISOString() })
-      .eq('id', id);
+    try {
+      const { error } = await supabase
+        .from('app_users')
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq('id', id);
 
-    if (!error) {
-      // Juga perbarui apabila disimpan di app_settings
-      if (usernameHint) {
-        const existingInSettings = await readUserFromAppSettingsByUsername(usernameHint);
-        if (existingInSettings) {
-          await saveUserToAppSettings({ ...existingInSettings, ...patch });
+      if (!error) {
+        if (cleanHint) {
+          const existingInSettings = await readUserFromAppSettingsByUsername(cleanHint);
+          if (existingInSettings) {
+            await saveUserToAppSettings({ ...existingInSettings, ...patch });
+          }
         }
+        return;
       }
-      return;
-    }
+    } catch {}
 
-    const current = await findUserById(id, usernameHint);
+    const current = await findUserById(id, cleanHint);
     if (current) {
       const saved = await saveUserToAppSettings({ ...current, ...patch });
       if (saved) return;
@@ -311,7 +496,7 @@ export async function updateUser(
 
   const users = await readLocalStore();
   await writeLocalStore(
-    users.map(u => (u.id === id || (usernameHint && u.username === usernameHint) ? { ...u, ...patch } : u))
+    users.map(u => (u.id === id || (cleanHint && u.username === cleanHint) ? { ...u, ...patch } : u))
   );
 }
 

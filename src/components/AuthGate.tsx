@@ -111,6 +111,10 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
       setErrorMsg(isEn ? 'Username and password are required.' : 'Username dan password wajib diisi.');
       return;
     }
+    if (password.length < 6) {
+      setErrorMsg(isEn ? 'Password must be at least 6 characters.' : 'Password minimal 6 karakter.');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -368,10 +372,16 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
                   padding: '10px 12px',
                   marginBottom: '14px',
                   fontSize: '12.5px',
-                  fontWeight: 600
+                  fontWeight: 600,
+                  lineHeight: 1.5
                 }}
               >
                 ⚠️ {errorMsg}
+                {errorMsg.includes('Supabase') && (
+                  <div style={{ marginTop: '8px', fontSize: '11.5px', color: '#7f1d1d' }}>
+                    Tip: Jika database Supabase baru, pastikan tabel <code>app_users</code> sudah dibuat dengan mengeksekusi SQL Setup yang ada di tab <strong>Pengaturan</strong>.
+                  </div>
+                )}
               </div>
             )}
 
@@ -457,7 +467,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
                     autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    placeholder={isEn ? 'Enter password...' : 'Masukkan password...'}
+                    placeholder={isEn ? 'Min. 6 characters...' : 'Minimal 6 karakter...'}
                     required
                     style={{
                       width: '100%',

@@ -3,10 +3,8 @@ import {
   AuthError,
   attachSessionCookie,
   authErrorResponse,
-  findUserByUsername,
-  normalizeUsername,
-  updateUser,
-  verifyPassword
+  authenticateUser,
+  normalizeUsername
 } from '@/lib/auth-server';
 import { signSession } from '@/lib/auth-token';
 
@@ -22,12 +20,7 @@ export async function POST(req: NextRequest) {
       throw new AuthError('Username dan password wajib diisi.', 400);
     }
 
-    const user = await findUserByUsername(username);
-    if (!user || !(await verifyPassword(password, user.password_hash))) {
-      throw new AuthError('Username atau password salah.', 401);
-    }
-
-    await updateUser(user.id, { last_login_at: new Date().toISOString() }, user.username);
+    const user = await authenticateUser(username, password);
     const token = await signSession(user.id, user.username);
     const res = NextResponse.json({
       success: true,

@@ -97,9 +97,11 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
     updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
+GRANT ALL ON TABLE public.app_settings TO postgres, anon, authenticated, service_role;
+
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public Access App Settings" ON public.app_settings;
-CREATE POLICY "Public Access App Settings" ON public.app_settings FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public Access App Settings" ON public.app_settings FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
 
 INSERT INTO public.app_settings (key, value)
 VALUES ('active_gemini_model', 'gemini-3.7-flash')
@@ -154,6 +156,10 @@ CREATE TABLE IF NOT EXISTS public.app_users (
     last_login_at TIMESTAMPTZ
 );
 
+CREATE INDEX IF NOT EXISTS idx_app_users_username ON public.app_users(username);
+
+GRANT ALL ON TABLE public.app_users TO postgres, anon, authenticated, service_role;
+
 ALTER TABLE public.app_users ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "App Server Access Users" ON public.app_users;
-CREATE POLICY "App Server Access Users" ON public.app_users FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "App Server Access Users" ON public.app_users FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
