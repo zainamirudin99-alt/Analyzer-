@@ -41,11 +41,21 @@ export default function HomePage() {
   useEffect(() => {
     checkConnection();
     const handleUpdate = () => checkConnection();
+    const handleWindowFocus = async () => {
+      try {
+        const { hydrateFromAccount } = await import('@/lib/account-sync');
+        await hydrateFromAccount();
+      } catch {}
+      checkConnection();
+    };
+
     window.addEventListener('analyzer-settings-changed', handleUpdate);
     window.addEventListener('storage', handleUpdate);
+    window.addEventListener('focus', handleWindowFocus);
     return () => {
       window.removeEventListener('analyzer-settings-changed', handleUpdate);
       window.removeEventListener('storage', handleUpdate);
+      window.removeEventListener('focus', handleWindowFocus);
     };
   }, []);
 

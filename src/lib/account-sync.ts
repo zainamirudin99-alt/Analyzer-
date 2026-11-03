@@ -64,6 +64,8 @@ export function applySnapshotToLocal(settings: Record<string, string>): void {
   window.dispatchEvent(new Event('analyzer_language_changed'));
   window.dispatchEvent(new Event('analyzer_presets_changed'));
   window.dispatchEvent(new Event('analyzer_skills_changed'));
+  window.dispatchEvent(new Event('analyzer-settings-changed'));
+  window.dispatchEvent(new Event('analyzer_account_settings_dirty'));
 }
 
 export function clearLocalSnapshot(): void {

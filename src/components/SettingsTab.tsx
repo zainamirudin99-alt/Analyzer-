@@ -496,13 +496,21 @@ export const SettingsTab: React.FC = () => {
     checkSystemStatus();
     loadSkillsData();
 
+    // Otomatis tarik pengaturan terbaru dari akun Supabase saat tab Pengaturan dibuka
+    hydrateFromAccount().then(() => {
+      loadLocalProviderSettings();
+      loadSkillsData();
+    }).catch(() => {});
+
     const handleSyncUpdate = () => {
       loadLocalProviderSettings();
       loadSkillsData();
     };
     window.addEventListener('analyzer-settings-changed', handleSyncUpdate);
+    window.addEventListener('storage', handleSyncUpdate);
     return () => {
       window.removeEventListener('analyzer-settings-changed', handleSyncUpdate);
+      window.removeEventListener('storage', handleSyncUpdate);
     };
   }, []);
 
@@ -599,7 +607,7 @@ export const SettingsTab: React.FC = () => {
     }
   };
 
-  const handleSaveLocalSettings = () => {
+  const handleSaveLocalSettings = async () => {
     const effectiveGemini = getEffectiveGeminiModel();
     const effectiveOpenai = getEffectiveOpenAIModel();
     const effectiveClaude = getEffectiveClaudeModel();
@@ -631,9 +639,21 @@ export const SettingsTab: React.FC = () => {
       currentProviderLabel = `Anthropic Claude (${effectiveClaude} - ${CLAUDE_EFFORT_CONFIGS[claudeEffort]?.label || claudeEffort})`;
     }
 
+    // Auto-push langsung ke akun Supabase Cloud seketika!
+    let cloudSynced = false;
+    try {
+      const snap = readLocalSnapshot();
+      const status = await pushAccountSettings(snap);
+      if (status === 'ok') {
+        cloudSynced = true;
+      }
+    } catch {}
+
     setTestResult({
       success: true,
-      message: `Pengaturan Provider Utama (${currentProviderLabel}) berhasil disimpan ke Akun Anda & Browser (tersinkronisasi otomatis lintas perangkat).`
+      message: cloudSynced
+        ? `Pengaturan Provider Utama (${currentProviderLabel}) berhasil disimpan di browser & disinkronkan ke Cloud Supabase! ✅`
+        : `Pengaturan Provider Utama (${currentProviderLabel}) berhasil disimpan di browser lokal.`
     });
   };
 
@@ -1389,24 +1409,15 @@ export const SettingsTab: React.FC = () => {
 
           {/* Tombol Simpan & Uji Koneksi & Cloud Sync */}
           <div style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
-            <button className="btn btn-primary" onClick={handleSaveLocalSettings}>
-              💾 Simpan di Browser
-            </button>
-            <button
-              className="btn btn-outline"
-              onClick={handlePushToCloud}
-              disabled={isCloudSyncing}
-              title="Kirim dan simpan seluruh API Key & Pengaturan lokal ke akun Supabase"
-              style={{ borderColor: 'var(--fern)', color: 'var(--fern)', fontWeight: 700 }}
-            >
-              {isCloudSyncing ? <span className="spinner" /> : <Upload size={14} />}
-              <span>{isEn ? 'Sync to Supabase' : 'Kirim ke Cloud Supabase'}</span>
+            <button className="btn btn-primary" onClick={handleSaveLocalSettings} style={{ fontWeight: 700 }}>
+              💾 {isEn ? 'Save & Sync to Supabase' : 'Simpan & Sinkronkan ke Cloud Supabase'}
             </button>
             <button
               className="btn btn-outline"
               onClick={handlePullFromCloud}
               disabled={isCloudSyncing}
               title="Tarik API Key & Pengaturan dari akun Supabase Anda ke browser ini"
+              style={{ fontWeight: 600 }}
             >
               {isCloudSyncing ? <span className="spinner" /> : <RefreshCw size={14} />}
               <span>{isEn ? 'Pull from Supabase' : 'Tarik dari Cloud Supabase'}</span>
