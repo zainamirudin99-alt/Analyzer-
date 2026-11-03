@@ -139,3 +139,6 @@ Dokumen ini memuat daftar tugas operasional dari Tahap 1 hingga Tahap 3 beserta 
 
 - [x] **T4.10**: Pemilihan Multi-Skill AI (lebih dari satu skill sekaligus) di menu Upload & Analisis beserta penggabungan prompt multi-skill.
 - [x] **T4.11**: Sinkronisasi dua arah preset indikator aktif, kolom dinamis, skor maksimal ($N \times 5$), dan proteksi skor indikator kustom pada Tabel Hasil Analisis & kartu hasil analisis.
+
+- [x] **T4.12**: Optimasi alur Regresi Linier (Gaya SPSS), validasi & diagnostik Time Series lengkap, serta Smart Remedial & Auto-Scan Optimasi $R^2$ sesuai kaidah statistika (`RegressionTab.tsx`, `RegressionResultsView.tsx`, `regression-remedial.ts`).
+- [x] **T4.13**: Implementasi alur 9-Langkah Regresi Data Panel (Gaya Stata): Input Data -> Cleaning Data & Pilihan Nilai `0` (True Zero vs Tidak Ada Pengungkapan) -> Analisis & Transformasi `LN` -> `xtset` -> `CEM`, `FEM`, `REM` -> Uji Chow Dummy, Hausman, & LM Adaptif -> Uji Asumsi Klasik (Uncentered VIF untuk `xtreg` FEM/REM vs Centered VIF untuk `reg` CEM + Transformasi `orthog` menggunakan variabel terakhir) -> Uji Normalitas (`predict e, e` vs `predict resid, residuals`, Histogram, `sktest`, `swilk`, `ksmirnov`) -> Hasil Akhir `vce(robust)` & Interpretasi Bahasa Mudah (`panel-types.ts`, `panel-engine.ts`, `panel-interpretation.ts`, `PanelStepper.tsx`, `PanelTab.tsx`).

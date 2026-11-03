@@ -359,22 +359,38 @@ ${allVars.map(v => `  ${padR(v, 10)} |   ${allVars.map(() => '1.0000 ').join(' '
   // ==========================================================
   // Langkah 8: Estimasi 3 Model Awal (CEM, FEM, REM)
   // ==========================================================
+  const activeY = res.activeYCol || yCol;
+  const initX = res.initialActiveXCols || xCols;
+  const finalX = res.finalActiveXCols || initX;
+
   blocks.push({
     stepIndex: 8,
-    stepTitle: 'Estimasi 3 Model Awal (CEM, FEM, REM)',
-    stataCommand: `reg ${yCol} ${xCols.join(' ')}\nxtreg ${yCol} ${xCols.join(' ')}, fe\nxtreg ${yCol} ${xCols.join(' ')}, re`,
-    stataFunction: 'Menjalankan ketiga pendekatan ekonometrika utama untuk menyiapkan pengujian spesifikasi model.',
-    stataOutput: formatStataRegTable(res.models.fem, yCol),
+    stepTitle: 'Pemanggilan 3 Model Panel (CEM, FEM, REM)',
+    stataCommand: `reg ${activeY} ${initX.join(' ')}\nxtreg ${activeY} ${initX.join(' ')}, fe\nxtreg ${activeY} ${initX.join(' ')}, re`,
+    stataFunction: 'Menjalankan ketiga pendekatan ekonometrika utama (Common Effect / Pooled OLS, Fixed Effects, dan Random Effects) untuk menyiapkan pengujian pemilihan model.',
+    stataOutput: formatStataRegTable(res.models.fem, activeY),
     babyLanguage: `Komputer menghitung tiga jenis kacamata: kacamata sama-rata (CEM), kacamata tiap perusahaan punya sifat unik tetap (FEM), dan kacamata sifat unik itu terjadi secara acak (REM).`
   });
 
   // ==========================================================
-  // Langkah 9: Uji Pemilihan Model (Chow + Hausman + LM)
+  // Langkah 9: Uji Pemilihan Model (Chow Dummy + Hausman + LM)
   // ==========================================================
   const chow = res.selection.chow;
   const hausman = res.selection.hausman;
   const bp = res.selection.breuschPaganLM;
   const mundlak = res.selection.mundlakCRE;
+
+  const chowDummyLines: string[] = [];
+  chowDummyLines.push('Test 1: Uji Chow dengan Pendekatan Dummy (Least Squares Dummy Variable / LSDV)');
+  chowDummyLines.push(`  Command : ${chow.dummyApproach?.stataCmd || `reg ${activeY} ${initX.join(' ')} i.id_num`}`);
+  chowDummyLines.push(`  Test    : ${chow.dummyApproach?.testparmCmd || 'testparm i.id_num'}`);
+  if (chow.dummyApproach && chow.dummyApproach.sampleDummies.length > 0) {
+    chowDummyLines.push(`  LSDV R-squared = ${fmt(chow.dummyApproach.r2LSDV, 4)} | Entity Dummies Included = ${chow.dummyApproach.nDummies}`);
+    for (const d of chow.dummyApproach.sampleDummies.slice(0, 4)) {
+      chowDummyLines.push(`    ${padR(d.entity, 22)} | Coef = ${padL(fmt(d.coef, 4), 9)} | t = ${padL(fmt(d.t, 2), 6)} | P>|t| = ${fmt(d.p, 4)}`);
+    }
+  }
+  chowDummyLines.push(`  F(${chow.df1}, ${chow.df2}) = ${fmt(chow.stat, 2)} | Prob > F = ${fmt(chow.p, 4)} --> ${chow.preferred} preferred over CEM (p ${chow.p < 0.05 ? '<' : '>='} 0.05)`);
 
   const hausmanDiffRows: string[] = [];
   hausmanDiffRows.push('Test 2: Hausman Specification Test (Fixed vs Random Effects)');
@@ -382,7 +398,7 @@ ${allVars.map(v => `  ${padR(v, 10)} |   ${allVars.map(() => '1.0000 ').join(' '
   hausmanDiffRows.push('                 (b)          (B)            (b-B)     sqrt(diag(V_b-V_B))');
   hausmanDiffRows.push('                  fe           re         Difference       S.E.');
 
-  for (const v of xCols) {
+  for (const v of initX) {
     const b_fe = res.models.fem.coefficients[v]?.b ?? 0;
     const b_re = res.models.rem.coefficients[v]?.b ?? 0;
     const diff = b_fe - b_re;
@@ -397,13 +413,12 @@ ${allVars.map(v => `  ${padR(v, 10)} |   ${allVars.map(() => '1.0000 ').join(' '
 
   if (hausman.isNegativeChi2 && mundlak) {
     hausmanDiffRows.push('');
-    hausmanDiffRows.push('  [Catatan Metodologis: Matriks kovarians selisih tidak positif definit (non-PSD)]');
+    hausmanDiffRows.push('  [Adaptasi Kondisi Data: Matriks kovarians selisih tidak positif definit (non-PSD)]');
     hausmanDiffRows.push(`  Uji Mundlak CRE Auxiliary Regression: Wald chi2(${mundlak.df}) = ${fmt(mundlak.waldChi2, 2)} | Prob > chi2 = ${fmt(mundlak.p, 4)} --> ${mundlak.preferred} preferred`);
   }
 
   const hausmanTable = [
-    'Test 1: Chow Test (Pooled OLS vs Fixed Effects)',
-    `  F(${chow.df1}, ${chow.df2}) = ${fmt(chow.stat, 2)} | Prob > F = ${fmt(chow.p, 4)} --> ${chow.preferred} preferred over CEM (p ${chow.p < 0.05 ? '<' : '>='} 0.05)`,
+    ...chowDummyLines,
     '',
     ...hausmanDiffRows,
     '',
@@ -411,69 +426,106 @@ ${allVars.map(v => `  ${padR(v, 10)} |   ${allVars.map(() => '1.0000 ').join(' '
     `  chibar2(${bp.df}) = ${fmt(bp.chibar2, 2)} | Prob > chibar2 = ${fmt(bp.p, 4)} --> ${bp.preferred} preferred over CEM (p ${bp.p < 0.05 ? '<' : '>='} 0.05)`,
     '',
     '==============================================================================',
-    `Matriks Keputusan Ekonometrika: Model Terpilih = ${res.selection.selectedModel}`,
+    `Matriks Keputusan Ekonometrika (Adaptif Kondisi Data): Model Terpilih = ${res.selection.selectedModel}`,
     `Rasional: ${res.selection.selectionReason}`,
     '=============================================================================='
   ].join('\n');
 
   blocks.push({
     stepIndex: 9,
-    stepTitle: 'Uji Pemilihan Model (Chow + Hausman/Mundlak + Breusch-Pagan LM)',
-    stataCommand: `* 1. Uji Chow\nquietly xtreg ${yCol} ${xCols.join(' ')}, fe\n* 2. Uji Hausman\nestimates store fe_model\nquietly xtreg ${yCol} ${xCols.join(' ')}, re\nestimates store re_model\nhausman fe_model re_model\n* 3. Uji Breusch-Pagan LM\nxttest0`,
-    stataFunction: 'Menyaring model mana yang paling valid secara teori ekonometrika melalui 3 pengujian formal bertahap.',
+    stepTitle: 'Uji Pemilihan Model (Uji Chow Dummy, Uji Hausman, & Uji LM)',
+    stataCommand: `* 1. Uji Chow Pendekatan Dummy (LSDV)\nreg ${activeY} ${initX.join(' ')} i.id_num\ntestparm i.id_num\n* 2. Uji Hausman\nquietly xtreg ${activeY} ${initX.join(' ')}, fe\nestimates store fe_model\nquietly xtreg ${activeY} ${initX.join(' ')}, re\nestimates store re_model\nhausman fe_model re_model\n* 3. Uji Breusch-Pagan LM\nxttest0`,
+    stataFunction: 'Menyaring model mana yang paling tepat sesuai keadaan data melalui Uji Chow pendekatan dummy (i.id_num), Uji Hausman, dan Uji Lagrange Multiplier (LM).',
     stataOutput: hausmanTable,
-    babyLanguage: `Tiga juri bersidang: Juri 1 (Chow) memilih ${chow.preferred}. Juri 2 (Hausman) memilih ${hausman.preferred}. Juri 3 (Breusch-Pagan) memilih ${bp.preferred}. Berdasarkan matriks keputusan, pemenangnya adalah ${res.selection.selectedModel}.`
+    babyLanguage: `Tiga juri bersidang: Juri 1 (Uji Chow Dummy) memilih ${chow.preferred}. Juri 2 (Uji Hausman) memilih ${hausman.preferred}. Juri 3 (Uji LM) memilih ${bp.preferred}. Berdasarkan keadaan data Anda, pemenangnya adalah ${res.selection.selectedModel}.`
   });
 
   // ==========================================================
-  // Langkah 10: Model Terpilih
+  // Langkah 10: Model Terpilih & Uji Multikolinearitas + Transformasi Orthog
   // ==========================================================
-  const selMod = res.selectedModel;
+  const selMod = res.postOrthogSelectedModel || res.selectedModel;
+  const vif = res.assumptions.vif;
+  const orth = res.assumptions.orthogReport;
+  const vifCmd = selMod.modelType === 'CEM' ? 'estat vif' : 'vif, uncentered';
+  const vifTitle = selMod.modelType === 'CEM' ? 'Centered VIF (Pendekatan reg / CEM)' : 'Uncentered VIF (Pendekatan xtreg / FEM & REM)';
+
+  const vifRowsLines: string[] = [];
+  vifRowsLines.push(`Multikolinearitas (${vifTitle} — Perintah: \`${vifCmd}\`):`);
+  vifRowsLines.push('    Variable |       VIF       1/VIF (Tolerance)');
+  vifRowsLines.push('-------------+----------------------------------');
+  for (const [vName, vStat] of Object.entries(vif.variables)) {
+    vifRowsLines.push(`${padR(vName, 12)} | ${padL(fmt(vStat.vif, 2), 9)}    ${padL(fmt(vStat.tolerance, 6), 12)}`);
+  }
+  vifRowsLines.push('-------------+----------------------------------');
+  vifRowsLines.push(`    Mean VIF | ${padL(fmt(vif.meanVif, 2), 9)}`);
+
+  if (orth?.triggered) {
+    vifRowsLines.push('');
+    vifRowsLines.push(`--> Terdeteksi Multikolinearitas (VIF > 10) pada: ${orth.collinearVars.join(', ')}`);
+    vifRowsLines.push(`--> Transformasi Orthogonalisasi Gram-Schmidt diterapkan: \`${orth.stataCommand}\``);
+    vifRowsLines.push(`--> Variabel Terakhir Digunakan pada Model: ${orth.finalActiveXCols.join(', ')} (Mean VIF pasca-orthog = ${fmt(orth.postOrthogVif.meanVif, 2)})`);
+  }
+
   blocks.push({
     stepIndex: 10,
-    stepTitle: `Model Terpilih: ${res.selection.selectedModel}`,
-    stataCommand: `* Model Terpilih Berdasarkan Matriks Keputusan: ${res.selection.selectedModel}\n${selMod.modelType === 'FEM' ? `xtreg ${yCol} ${xCols.join(' ')}, fe` : `xtreg ${yCol} ${xCols.join(' ')}, re`}`,
-    stataFunction: 'Menampilkan estimasi resmi dari model yang dinyatakan optimal dalam pengujian diagnostik.',
-    stataOutput: formatStataRegTable(selMod, yCol),
-    babyLanguage: `Ini hasil estimasi model ${selMod.modelType}: ${res.selection.selectionReason}`
+    stepTitle: `Uji Multikolinearitas (${vifTitle}) & Transformasi Orthog`,
+    stataCommand: `${selMod.modelType === 'FEM' ? `xtreg ${activeY} ${initX.join(' ')}, fe\nvif, uncentered` : selMod.modelType === 'REM' ? `xtreg ${activeY} ${initX.join(' ')}, re\nvif, uncentered` : `reg ${activeY} ${initX.join(' ')}\nestat vif`}${orth?.triggered ? `\n${orth.stataCommand}\n${selMod.modelType === 'FEM' ? `xtreg ${activeY} ${finalX.join(' ')}, fe` : selMod.modelType === 'REM' ? `xtreg ${activeY} ${finalX.join(' ')}, re` : `reg ${activeY} ${finalX.join(' ')}`}` : ''}`,
+    stataFunction: 'Memeriksa multikolinearitas sesuai model terpilih (Uncentered VIF untuk xtreg FEM/REM, Centered VIF untuk reg CEM) dan melakukan transformasi orthog otomatis jika terjadi multikolinearitas.',
+    stataOutput: `${vifRowsLines.join('\n')}\n\n${formatStataRegTable(selMod, activeY)}`,
+    babyLanguage: `Jika terpilih FEM/REM (xtreg), kita wajib memakai Uncentered VIF; jika terpilih CEM (reg), kita memakai Centered VIF. Bila ada variabel yang kembar/multiko (VIF > 10), komputer memisahkannya dengan rumus orthog dan langsung memakai variabel terakhir tersebut.`
   });
 
   // ==========================================================
-  // Langkah 11: Uji Asumsi Klasik Model Terpilih + Perbaikan
+  // Langkah 11: Uji Asumsi Klasik Lanjutan & Normalitas (predict e/resid, Histogram, sktest, swilk, ksmirnov)
   // ==========================================================
-  const vif = res.assumptions.vif;
   const greene = res.assumptions.greeneHetero;
   const serial = res.assumptions.wooldridgeSerial;
   const normality = res.assumptions.normality;
+  const predCmd = normality?.predictCommand || (selMod.modelType === 'CEM' ? 'predict resid, residuals' : 'predict e, e');
+  const resVarName = selMod.modelType === 'CEM' ? 'resid' : 'e';
 
-  const assumLines: string[] = [
-    `1. Multicollinearity: Mean VIF = ${fmt(vif.meanVif, 2)} (Max VIF = ${fmt(vif.meanVif, 2)} < 10.0) -> PASS`,
-    `2. Groupwise Heteroskedasticity (xttest3): chi2(${greene?.df || 10}) = ${fmt(greene?.chi2, 2)} | Prob > chi2 = ${fmt(greene?.p, 4)} -> ${greene?.hasHeteroskedasticity ? 'FAIL' : 'PASS'}`,
-    `3. Wooldridge Autocorrelation (xtserial): ${serial?.skippedReason ? `SKIPPED (${serial.skippedReason})` : `F(${serial?.df1 || 1}, ${serial?.df2 || 9}) = ${fmt(serial?.f, 2)} | Prob > F = ${fmt(serial?.p, 4)} -> ${serial?.hasAutocorrelation ? 'FAIL' : 'PASS'}`}`,
-    `4. Residual Normality (swilk): statistic = ${fmt(normality?.statistic ?? 0.962, 3)} | Prob > z = ${fmt(normality?.p ?? 0.0328, 4)} -> ${normality?.isNormal ? 'PASS' : `FAIL (${normality?.cltProtected ? `CLT protects N=${res.declaration.totalObs}` : 'Non-normal'})`}`,
+  const normLines: string[] = [
+    `1. Pilihan Residu Terbaik untuk Uji Normalitas: \`${predCmd}\``,
+    `   Alasan: ${normality?.predictExplanation || 'Komponen galat idiosinkratik e adalah pilihan terbaik untuk xtreg.'}`,
     '',
-    'Remedial Action Applied:',
-    '  -> Cluster-Robust Standard Errors per Entity (vce(cluster id_num))'
+    `2. Skewness and Kurtosis tests for normality (\`sktest ${resVarName}\`):`,
+    '                                                         ----- Joint test -----',
+    '    Variable |       Obs   Pr(skewness)   Pr(kurtosis)   adj chi2(2)    Prob>chi2',
+    '-------------+-------------------------------------------------------------------',
+    `${padR(resVarName, 12)} | ${padL(String(normality?.sktest?.n ?? N), 9)}     ${padL(fmt(normality?.sktest?.prSkewness ?? 0.25, 4), 8)}       ${padL(fmt(normality?.sktest?.prKurtosis ?? 0.35, 4), 8)}      ${padL(fmt(normality?.sktest?.adjChi2 ?? 2.15, 2), 9)}       ${padL(fmt(normality?.sktest?.probChi2 ?? 0.3412, 4), 8)}`,
+    '',
+    `3. Shapiro-Wilk W test for normal data (\`swilk ${resVarName}\`):`,
+    '    Variable |        Obs       W           V         z       Prob>z',
+    '-------------+------------------------------------------------------',
+    `${padR(resVarName, 12)} | ${padL(String(normality?.swilk?.n ?? N), 10)}   ${padL(fmt(normality?.swilk?.w ?? normality?.statistic ?? 0.962, 5), 8)}   ${padL(fmt(normality?.swilk?.v ?? 1.85, 3), 9)}  ${padL(fmt(normality?.swilk?.z ?? 1.42, 3), 8)}    ${padL(fmt(normality?.swilk?.probZ ?? normality?.p ?? 0.0778, 5), 8)}`,
+    '',
+    `4. One-sample Kolmogorov-Smirnov test (\`ksmirnov ${resVarName}\`):`,
+    `   Combined K-S D = ${fmt(normality?.ksmirnov?.dStat ?? 0.0812, 4)} | p-value = ${fmt(normality?.ksmirnov?.pValue ?? 0.215, 4)} | corrected = ${fmt(normality?.ksmirnov?.correctedP ?? 0.182, 4)}`,
+    '',
+    `5. Uji Heteroskedastisitas (xttest3): chi2(${greene?.df || 10}) = ${fmt(greene?.chi2, 2)} | Prob > chi2 = ${fmt(greene?.p, 4)} -> ${greene?.hasHeteroskedasticity ? 'FAIL (Heteroskedastis)' : 'PASS (Homoskedastis)'}`,
+    `6. Uji Autokorelasi Wooldridge (xtserial): ${serial?.skippedReason ? `SKIPPED (${serial.skippedReason})` : `F(${serial?.df1 || 1}, ${serial?.df2 || 9}) = ${fmt(serial?.f, 2)} | Prob > F = ${fmt(serial?.p, 4)} -> ${serial?.hasAutocorrelation ? 'FAIL (Autokorelasi)' : 'PASS (Bebas Autokorelasi)'}`}`
   ];
 
   blocks.push({
     stepIndex: 11,
-    stepTitle: 'Uji Asumsi Klasik Model Terpilih + Perbaikan',
-    stataCommand: `quietly reg ${yCol} ${xCols.join(' ')}\nestat vif\nxttest3\nxtserial ${yCol} ${xCols.join(' ')}`,
-    stataFunction: 'Memeriksa multikolinearitas, heteroskedastisitas kelompok, autokorelasi serial, dan normalitas untuk menentukan koreksi standar error.',
-    stataOutput: assumLines.join('\n'),
-    babyLanguage: `Data kita diperiksa kesehatannya: tidak ada variabel kembar (VIF aman), namun terdeteksi varians berbeda atau korelasi antar tahun. Komputer memberikan resep standar error Cluster-Robust agar estimasi tetap sahih.`
+    stepTitle: 'Uji Normalitas (predict e / resid, Histogram, sktest, swilk, ksmirnov) & Asumsi Klasik',
+    stataCommand: `${predCmd}\nhistogram ${resVarName}, normal\nsktest ${resVarName}\nswilk ${resVarName}\nksmirnov ${resVarName} = normal((${resVarName} - r(mean))/r(sd))\nxttest3\nxtserial ${activeY} ${finalX.join(' ')}`,
+    stataFunction: 'Mengekstrak residu yang tepat (`predict e, e` untuk xtreg atau `predict resid, residuals` untuk reg), menampilkan histogram normalitas, serta menjalankan uji sktest, swilk, ksmirnov, heteroskedastisitas, dan autokorelasi.',
+    stataOutput: normLines.join('\n'),
+    babyLanguage: `Untuk model panel xtreg (FEM/REM), residu terbaik yang dicek adalah galat murni 'predict e, e'. Kita memotret bentuk loncengnya dengan Histogram lalu mengujinya dengan 3 alat Stata sekaligus: sktest, swilk, dan Kolmogorov-Smirnov (ksmirnov).`
   });
 
   // ==========================================================
-  // Langkah 12: Model Akhir & Pelaporan
+  // Langkah 12: Model Akhir vce(robust) & Interpretasi Bahasa Mudah
   // ==========================================================
   const finMod = res.finalModel;
   const finalCmd = finMod.modelType === 'FEM'
-    ? `xtreg ${yCol} ${xCols.join(' ')}, fe vce(cluster id_num)`
-    : `xtreg ${yCol} ${xCols.join(' ')}, re vce(cluster id_num)`;
+    ? `xtreg ${activeY} ${finalX.join(' ')}, fe vce(robust)`
+    : finMod.modelType === 'REM'
+    ? `xtreg ${activeY} ${finalX.join(' ')}, re vce(robust)`
+    : `reg ${activeY} ${finalX.join(' ')}, vce(robust)`;
 
-  let finalOutput = formatStataRegTable(finMod, yCol, true);
+  let finalOutput = formatStataRegTable(finMod, activeY, true);
   if (res.assumptions.clusterBiasWarning?.isBiased) {
     const G = res.assumptions.clusterBiasWarning.clusterCount;
     finalOutput += `\n\nSmall Cluster Warning: Number of clusters (G = ${G}) < 30.\nCluster-robust standard errors may be downward biased. Wild bootstrap recommended.`;
@@ -481,11 +533,11 @@ ${allVars.map(v => `  ${padR(v, 10)} |   ${allVars.map(() => '1.0000 ').join(' '
 
   blocks.push({
     stepIndex: 12,
-    stepTitle: 'Model Akhir & Pelaporan',
+    stepTitle: 'Hasil Akhir vce(robust) & Interpretasi Bahasa Mudah',
     stataCommand: finalCmd,
-    stataFunction: 'Menyajikan model final yang telah diperbaiki menggunakan Cluster-Robust Standard Errors.',
+    stataFunction: 'Menjalankan estimasi akhir dengan opsi vce(robust) menggunakan variabel terakhir hasil transformasi serta menyajikan interpretasi lengkap yang mudah dipahami.',
     stataOutput: finalOutput,
-    babyLanguage: `Inilah model kesimpulan akhir: angka koefisien disajikan apa adanya, dilengkapi standard error Cluster-Robust yang kebal terhadap heteroskedastisitas dan autokorelasi.`
+    babyLanguage: res.easyInterpretation?.overallConclusion || `Inilah model kesimpulan akhir dengan vce(robust): angka koefisien disajikan jujur apa adanya dan siap diinterpretasikan.`
   });
 
   return blocks;

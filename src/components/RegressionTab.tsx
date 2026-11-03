@@ -872,18 +872,29 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                   <button className="btn btn-outline" onClick={() => setCurrentStep(3)} style={{ minHeight: '44px' }}>
                     <ArrowLeft size={16} style={{ marginRight: '6px' }} /> Kembali
                   </button>
-                  <button 
-                    className="btn btn-primary" 
-                    onClick={() => setCurrentStep(5)}
-                    disabled={!yCol || xCols.length === 0}
-                    style={{ minHeight: '44px' }}
-                  >
-                    Lanjut ke Konfigurasi <ArrowRight size={16} style={{ marginLeft: '6px' }} />
-                  </button>
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <button 
+                      className="btn btn-outline" 
+                      onClick={() => setCurrentStep(5)}
+                      disabled={!yCol || xCols.length === 0}
+                      style={{ minHeight: '44px' }}
+                    >
+                      Atur Time Series &amp; &alpha; <ArrowRight size={16} style={{ marginLeft: '6px' }} />
+                    </button>
+                    <button 
+                      className="btn btn-primary" 
+                      onClick={handleRunOLS}
+                      disabled={!yCol || xCols.length === 0 || isFitting}
+                      style={{ minHeight: '44px' }}
+                    >
+                      <Sparkles size={15} style={{ marginRight: '6px' }} />
+                      {isFitting ? 'Mengestimasi...' : 'Langsung Jalankan Analisis OLS (Hasil SPSS)'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -927,10 +938,10 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                     </button>
                   </div>
 
-                  {/* Pengaturan Tambahan jika Time Series */}
+                  {/* Pengaturan Tambahan & Panduan Kaidah Statistika jika Time Series */}
                   {isTimeSeries && (
                     <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '16px' }}>
                         <div>
                           <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, marginBottom: '4px' }}>
                             Kolom Penunjuk Waktu:
@@ -967,6 +978,21 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                             <option value="tidak_beraturan">Tidak Beraturan</option>
                           </select>
                         </div>
+                      </div>
+
+                      {/* Kaidah Statistika Wajib Time Series */}
+                      <div style={{ padding: '14px 16px', borderRadius: '10px', background: '#ffffff', border: '1px solid var(--border)', fontSize: '12.5px', color: 'var(--text)', lineHeight: 1.55 }}>
+                        <div style={{ fontWeight: 800, color: 'var(--moss)', marginBottom: '6px' }}>
+                          ✅ Kaidah Statistika Wajib Data Time Series (Otomatis Diterapkan Sistem):
+                        </div>
+                        <ol style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <li><strong>Pengurutan Kronologis (t = 1..T):</strong> Data wajib berurut waktu agar perhitungan selisih dan lag valid.</li>
+                          <li><strong>Uji Stasioneritas (ADF &amp; KPSS):</strong> Mengecek akar unit (unit root I(1)). Jika tidak stasioner, gunakan tombol <strong>First-Difference (&Delta;Y, &Delta;X)</strong> di menu Remedial.</li>
+                          <li><strong>Deteksi Regresi Lancung (Spurious Regression Granger-Newbold):</strong> Mengecek kondisi bahaya R&sup2; &gt; Durbin-Watson serta kointegrasi residual Engle-Granger.</li>
+                          <li><strong>Uji Autokorelasi Serial:</strong> Menguji Durbin-Watson, Breusch-Godfrey LM (serial correlation orde-p), Ljung-Box Q, dan plot ACF/PACF.</li>
+                          <li><strong>Uji Efek ARCH (Engle ARCH-LM):</strong> Mendeteksi pengelompokan volatilitas (heteroskedastisitas bersyarat) pada residual runtun waktu.</li>
+                          <li><strong>Perbaikan Time Series Sah:</strong> Tersedia koreksi <strong>Cochrane-Orcutt / Prais-Winsten AR(1)</strong>, <strong>Galat Baku HAC Newey-West</strong>, dan <strong>First-Difference</strong> pada halaman hasil.</li>
+                        </ol>
                       </div>
                     </div>
                   )}
@@ -1013,13 +1039,19 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                   <button className="btn btn-outline" onClick={() => setCurrentStep(4)} style={{ minHeight: '44px' }}>
                     <ArrowLeft size={16} style={{ marginRight: '6px' }} /> Kembali
                   </button>
-                  <button className="btn btn-primary" onClick={triggerValidation} style={{ minHeight: '44px' }}>
-                    Validasi & Buat Ringkasan <ArrowRight size={16} style={{ marginLeft: '6px' }} />
-                  </button>
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <button className="btn btn-outline" onClick={triggerValidation} style={{ minHeight: '44px' }}>
+                      Cek Ringkasan Validasi <ArrowRight size={16} style={{ marginLeft: '6px' }} />
+                    </button>
+                    <button className="btn btn-primary" onClick={handleRunOLS} disabled={isFitting} style={{ minHeight: '44px' }}>
+                      <Sparkles size={15} style={{ marginRight: '6px' }} />
+                      {isFitting ? 'Mengestimasi...' : 'Jalankan Analisis OLS (Hasil SPSS)'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -1223,6 +1255,21 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                 <span style={{ color: 'var(--stone)', display: 'block', fontSize: '11px' }}>Level Signifikansi (&alpha;):</span>
                 <strong>{alpha}</strong>
               </div>
+
+              {yCol && xCols.length > 0 && currentStep < 7 && (
+                <div style={{ paddingTop: '10px', borderTop: '1px solid var(--border)' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleRunOLS}
+                    disabled={isFitting}
+                    style={{ width: '100%', minHeight: '42px', fontSize: '12.5px', justifyContent: 'center' }}
+                  >
+                    <Sparkles size={14} style={{ marginRight: '6px' }} />
+                    {isFitting ? 'Mengestimasi...' : 'Jalankan Analisis OLS Sekarang'}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 

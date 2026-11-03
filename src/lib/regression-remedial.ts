@@ -46,11 +46,14 @@ export interface RemedialOption {
     | "quantile"
     | "bootstrap"
     | "wls"
+    | "orthog"
     | "collinearity_drop"
     | "ridge"
     | "pca"
     | "polynomial"
     | "hac_newey_west"
+    | "cochrane_orcutt"
+    | "first_difference"
     | "arx_lag"
     | "low_r2_pathway";
   title: string;
@@ -79,7 +82,9 @@ export function getPermittedRemedials(
     a.name.toLowerCase().includes("normalitas")
   );
   const hasHetero = failedAssumptions.some((a) =>
-    a.name.toLowerCase().includes("homoskedastisitas") || a.name.toLowerCase().includes("breusch-pagan")
+    a.name.toLowerCase().includes("homoskedastisitas") ||
+    a.name.toLowerCase().includes("breusch-pagan") ||
+    a.name.toLowerCase().includes("arch")
   );
   const hasMulticol = failedAssumptions.some((a) =>
     a.name.toLowerCase().includes("multikolinearitas") || a.name.toLowerCase().includes("vif")
@@ -94,7 +99,14 @@ export function getPermittedRemedials(
     (a) =>
       a.name.toLowerCase().includes("autokorelasi") ||
       a.name.toLowerCase().includes("durbin-watson") ||
-      a.name.toLowerCase().includes("breusch-godfrey")
+      a.name.toLowerCase().includes("breusch-godfrey") ||
+      a.name.toLowerCase().includes("ljung-box")
+  );
+  const hasNonStationary = failedAssumptions.some(
+    (a) =>
+      a.name.toLowerCase().includes("stasioneritas") ||
+      a.name.toLowerCase().includes("adf") ||
+      a.name.toLowerCase().includes("kpss")
   );
 
   // 1. Residu tidak normal
@@ -126,35 +138,28 @@ export function getPermittedRemedials(
       normalityPassRateApplicable: false,
       statusLabel: "Konfirmatori",
     });
-    options.push({
-      type: "quantile",
-      title: "Regresi Kuantil / Median",
-      description: "Mengestimasi median kondisional yang kebal terhadap pencilan dan skewness.",
-      targetAssumption: "Uji Normalitas",
-      notes: "Estimand berubah dari ekspektasi rata-rata menjadi median bersyarat.",
-      normalityPassRateApplicable: false,
-      statusLabel: "Eksploratori",
-    });
-    options.push({
-      type: "bootstrap",
-      title: "Bootstrap Resampling BCa 95%",
-      description: "Inferensi non-parametrik tanpa asumsi bentuk distribusi residual.",
-      targetAssumption: "Uji Normalitas",
-      notes: "B = 1000 iterasi dengan seed tetap. Melaporkan interval keyakinan empiris BCa.",
-      normalityPassRateApplicable: false,
-      statusLabel: "Konfirmatori",
-    });
   }
 
   // 2. Heteroskedastisitas
-  if (hasHetero && !options.some((o) => o.type === "robust_hc3")) {
+  if (hasHetero) {
+    if (!options.some((o) => o.type === "robust_hc3")) {
+      options.push({
+        type: "robust_hc3",
+        title: "Galat Baku Heteroskedasticity-Consistent (HC3)",
+        description: "Mengoreksi kovarians ragam galat baku terhadap heteroskedastisitas.",
+        targetAssumption: "Uji Homoskedastisitas",
+        notes: "Standar emas White-MacKinnon HC3 untuk sampel berukuran sedang-kecil.",
+        normalityPassRateApplicable: false,
+        statusLabel: "Konfirmatori",
+      });
+    }
     options.push({
-      type: "robust_hc3",
-      title: "Galat Baku Heteroskedasticity-Consistent (HC3)",
-      description: "Mengoreksi kovarians ragam galat baku terhadap heteroskedastisitas.",
+      type: "wls",
+      title: "Weighted Least Squares (WLS — Pembobotan Ragam)",
+      description: "Membobot observasi dengan 1/sigma_i dari regresi bantu ln(e^2) untuk memulihkan homoskedastisitas.",
       targetAssumption: "Uji Homoskedastisitas",
-      notes: "Standar emas White-MacKinnon HC3 untuk sampel berukuran sedang-kecil.",
-      normalityPassRateApplicable: false,
+      notes: "Efisien secara asimtotik ketika pola heteroskedastisitas proporsional terhadap prediktor.",
+      normalityPassRateApplicable: true,
       statusLabel: "Konfirmatori",
     });
   }
@@ -162,20 +167,20 @@ export function getPermittedRemedials(
   // 3. Multikolinearitas (VIF > 10)
   if (hasMulticol) {
     options.push({
-      type: "collinearity_drop",
-      title: "Eliminasi / Penggabungan Variabel Redundan",
-      description: "Menghapus salah satu variabel yang berkorelasi tinggi atau membentuk skor komposit.",
+      type: "orthog",
+      title: "Ortogonalisasi Gram-Schmidt (orthog — VIF = 1.00)",
+      description: "Mentransformasikan prediktor yang kolinear menjadi ortogonal saling bebas (VIF = 1.000) tanpa membuang variabel.",
       targetAssumption: "Uji Multikolinearitas",
-      notes: "Memerlukan justifikasi teoretis agar tidak memicu omitted variable bias.",
+      notes: "Mempertahankan seluruh informasi variabel X dan R² model secara eksak sambil menghilangkan multikolinearitas.",
       normalityPassRateApplicable: false,
-      statusLabel: "Eksploratori",
+      statusLabel: "Konfirmatori",
     });
     options.push({
-      type: "ridge",
-      title: "Regresi Ridge (L2 Penalization)",
-      description: "Menstabilkan invers matriks kovarians melalui shrinkage parameter lambda.",
+      type: "collinearity_drop",
+      title: "Eliminasi Variabel Redundan (Drop VIF Tertinggi)",
+      description: "Menghapus prediktor dengan VIF paling ekstrem untuk menstabilkan matriks desain X.",
       targetAssumption: "Uji Multikolinearitas",
-      notes: "Estimator menjadi bias (variance-bias tradeoff). CI klasik tidak berlaku.",
+      notes: "Memerlukan justifikasi teoretis agar tidak memicu omitted variable bias.",
       normalityPassRateApplicable: false,
       statusLabel: "Eksploratori",
     });
@@ -194,24 +199,33 @@ export function getPermittedRemedials(
     });
   }
 
-  // 5. Time Series Autokorelasi
-  if (isTimeSeries && hasAutocorr) {
+  // 5. Time Series Autokorelasi & Non-Stasioneritas
+  if (isTimeSeries || hasAutocorr || hasNonStationary) {
     options.push({
       type: "hac_newey_west",
-      title: "Galat Baku HAC Newey-West",
-      description: "Koreksi galat baku terhadap autokorelasi dan heteroskedastisitas time series.",
-      targetAssumption: "Uji Autokorelasi (Time Series)",
+      title: "Galat Baku HAC Newey-West (Bartlett Kernel)",
+      description: "Koreksi galat baku terhadap autokorelasi serial dan heteroskedastisitas time series.",
+      targetAssumption: "Uji Autokorelasi & Time Series",
       notes: "Lag otomatis L dihitung menurut kaidah Newey-West L = floor(4*(n/100)^(2/9)).",
       normalityPassRateApplicable: false,
       statusLabel: "Konfirmatori",
     });
     options.push({
-      type: "arx_lag",
-      title: "Model ARX (Penambahan Lag Dependen Yt-1)",
-      description: "Menyerap dependensi waktu langsung ke dalam spesifikasi model dinamis.",
-      targetAssumption: "Uji Autokorelasi (Time Series)",
-      notes: "Durbin-Watson tidak lagi valid setelah lag Y dimasukkan; evaluasi beralih ke Breusch-Godfrey.",
-      normalityPassRateApplicable: false,
+      type: "cochrane_orcutt",
+      title: "Transformasi Cochrane-Orcutt / Prais-Winsten AR(1) (GLSAR)",
+      description: "Mengestimasi koefisien autokorelasi rho dan mentransformasi Y_t - rho*Y_{t-1} agar Durbin-Watson mendekati 2.0.",
+      targetAssumption: "Uji Autokorelasi (Durbin-Watson / Breusch-Godfrey)",
+      notes: "Menghilangkan autokorelasi AR(1) secara struktural pada residual.",
+      normalityPassRateApplicable: true,
+      statusLabel: "Konfirmatori",
+    });
+    options.push({
+      type: "first_difference",
+      title: "Transformasi First-Difference (Delta Y_t, Delta X_t)",
+      description: "Menurunkan deret waktu I(1) menjadi selisih pertama untuk mengatasi ketidakstasioneran (ADF/KPSS) dan regresi lancung (Spurious Regression R² > DW).",
+      targetAssumption: "Stasioneritas Time Series & Regresi Lancung",
+      notes: "Solusi baku Granger-Newbold untuk data time series non-stasioner.",
+      normalityPassRateApplicable: true,
       statusLabel: "Konfirmatori",
     });
   }
@@ -790,3 +804,348 @@ export function calculateNormalityPassRate(
     heuristic,
   };
 }
+
+/**
+ * HAC Newey-West Heteroskedasticity & Autocorrelation Consistent Standard Errors (Bartlett Kernel)
+ * V_HAC = (X^T X)^-1 * (Omega_0 + sum_{l=1}^L w_l (Omega_l + Omega_l^T)) * (X^T X)^-1
+ */
+export function computeHACNeweyWestStandardErrors(
+  y: number[],
+  x: number[][],
+  b: number[],
+  lag?: number
+): { se: number[]; lagUsed: number } {
+  const n = y.length;
+  const X = x.map((row) => [1, ...row]);
+  const p = X[0].length;
+  const invXtX = invertMatrix(computeXtX(X));
+  const L = lag ?? computeHACNeweyWestLag(n);
+
+  const residuals: number[] = [];
+  for (let i = 0; i < n; i++) {
+    let pred = 0;
+    for (let j = 0; j < p; j++) {
+      pred += b[j] * X[i][j];
+    }
+    residuals.push(y[i] - pred);
+  }
+
+  // Omega_0 = sum_{t=1}^n e_t^2 x_t x_t^T
+  const S: number[][] = Array.from({ length: p }, () => Array(p).fill(0));
+  for (let t = 0; t < n; t++) {
+    const e2 = residuals[t] * residuals[t];
+    for (let r = 0; r < p; r++) {
+      for (let c = 0; c < p; c++) {
+        S[r][c] += e2 * X[t][r] * X[t][c];
+      }
+    }
+  }
+
+  // Bartlett kernel lags l = 1..L
+  for (let l = 1; l <= L; l++) {
+    const wl = 1 - l / (L + 1);
+    for (let t = l; t < n; t++) {
+      const ee = residuals[t] * residuals[t - l];
+      for (let r = 0; r < p; r++) {
+        for (let c = 0; c < p; c++) {
+          const term = ee * (X[t][r] * X[t - l][c] + X[t - l][r] * X[t][c]);
+          S[r][c] += wl * term;
+        }
+      }
+    }
+  }
+
+  // Small-sample correction n / (n - p)
+  const dofFactor = n > p ? n / (n - p) : 1;
+
+  // V_HAC = dofFactor * invXtX * S * invXtX
+  const temp: number[][] = Array.from({ length: p }, () => Array(p).fill(0));
+  for (let r = 0; r < p; r++) {
+    for (let c = 0; c < p; c++) {
+      for (let k = 0; k < p; k++) {
+        temp[r][c] += invXtX[r][k] * S[k][c];
+      }
+    }
+  }
+
+  const V_HAC: number[][] = Array.from({ length: p }, () => Array(p).fill(0));
+  for (let r = 0; r < p; r++) {
+    for (let c = 0; c < p; c++) {
+      for (let k = 0; k < p; k++) {
+        V_HAC[r][c] += dofFactor * temp[r][k] * invXtX[k][c];
+      }
+    }
+  }
+
+  return {
+    se: V_HAC.map((row, idx) => Math.sqrt(Math.max(1e-12, row[idx]))),
+    lagUsed: L,
+  };
+}
+
+/**
+ * Transformasi Cochrane-Orcutt / Prais-Winsten AR(1) (GLSAR) untuk Autokorelasi Time Series
+ */
+export function applyCochraneOrcuttAR1(
+  rows: Record<string, any>[],
+  yCol: string,
+  xCols: string[],
+  b: number[]
+): { rows: Record<string, any>[]; rho: number } {
+  const validRows = rows.filter(
+    (r) =>
+      r[yCol] !== undefined &&
+      r[yCol] !== null &&
+      !isNaN(Number(r[yCol])) &&
+      xCols.every((c) => r[c] !== undefined && r[c] !== null && !isNaN(Number(r[c])))
+  );
+  const n = validRows.length;
+  if (n < 4) {
+    return { rows: validRows, rho: 0 };
+  }
+
+  const residuals: number[] = [];
+  for (let i = 0; i < n; i++) {
+    let pred = b[0] || 0;
+    for (let j = 0; j < xCols.length; j++) {
+      pred += (b[j + 1] || 0) * Number(validRows[i][xCols[j]]);
+    }
+    residuals.push(Number(validRows[i][yCol]) - pred);
+  }
+
+  let num = 0;
+  let den = 0;
+  for (let t = 1; t < n; t++) {
+    num += residuals[t] * residuals[t - 1];
+    den += residuals[t - 1] * residuals[t - 1];
+  }
+  const rho = den > 1e-12 ? Math.max(-0.95, Math.min(0.95, num / den)) : 0;
+  const pwFactor = Math.sqrt(Math.max(1e-6, 1 - rho * rho));
+
+  const transformedRows: Record<string, any>[] = [];
+  for (let t = 0; t < n; t++) {
+    const newRow: Record<string, any> = { ...validRows[t] };
+    if (t === 0) {
+      // Prais-Winsten first observation retention
+      newRow[yCol] = Number(validRows[0][yCol]) * pwFactor;
+      for (const c of xCols) {
+        newRow[c] = Number(validRows[0][c]) * pwFactor;
+      }
+    } else {
+      newRow[yCol] = Number(validRows[t][yCol]) - rho * Number(validRows[t - 1][yCol]);
+      for (const c of xCols) {
+        newRow[c] = Number(validRows[t][c]) - rho * Number(validRows[t - 1][c]);
+      }
+    }
+    transformedRows.push(newRow);
+  }
+
+  return {
+    rows: transformedRows,
+    rho: Number(rho.toFixed(4)),
+  };
+}
+
+/**
+ * Transformasi First-Difference (Delta Y_t, Delta X_t) untuk Data Time Series Non-Stasioner / Spurious Regression
+ */
+export function applyFirstDifferenceTimeSeries(
+  rows: Record<string, any>[],
+  yCol: string,
+  xCols: string[]
+): { rows: Record<string, any>[]; diffYCol: string; diffXCols: string[] } {
+  const validRows = rows.filter(
+    (r) =>
+      r[yCol] !== undefined &&
+      r[yCol] !== null &&
+      !isNaN(Number(r[yCol])) &&
+      xCols.every((c) => r[c] !== undefined && r[c] !== null && !isNaN(Number(r[c])))
+  );
+  const diffYCol = `d_${yCol}`;
+  const diffXCols = xCols.map((c) => `d_${c}`);
+  const diffRows: Record<string, any>[] = [];
+
+  for (let t = 1; t < validRows.length; t++) {
+    const newRow: Record<string, any> = { ...validRows[t] };
+    newRow[diffYCol] = Number(validRows[t][yCol]) - Number(validRows[t - 1][yCol]);
+    xCols.forEach((c, idx) => {
+      newRow[diffXCols[idx]] = Number(validRows[t][c]) - Number(validRows[t - 1][c]);
+    });
+    diffRows.push(newRow);
+  }
+
+  return {
+    rows: diffRows,
+    diffYCol,
+    diffXCols,
+  };
+}
+
+/**
+ * Weighted Least Squares (WLS) via Auxiliary Log-Squared Residual Variance Estimation
+ */
+export function applyWLSRegression(
+  rows: Record<string, any>[],
+  yCol: string,
+  xCols: string[],
+  b: number[]
+): { rows: Record<string, any>[] } {
+  const validRows = rows.filter(
+    (r) =>
+      r[yCol] !== undefined &&
+      r[yCol] !== null &&
+      !isNaN(Number(r[yCol])) &&
+      xCols.every((c) => r[c] !== undefined && r[c] !== null && !isNaN(Number(r[c])))
+  );
+  const n = validRows.length;
+  const X = validRows.map((r) => [1, ...xCols.map((c) => Number(r[c]))]);
+  const p = X[0].length;
+
+  // Compute log(e_i^2)
+  const logE2: number[] = [];
+  for (let i = 0; i < n; i++) {
+    let pred = 0;
+    for (let j = 0; j < p; j++) {
+      pred += (b[j] || 0) * X[i][j];
+    }
+    const e = Number(validRows[i][yCol]) - pred;
+    logE2.push(Math.log(Math.max(1e-8, e * e)));
+  }
+
+  // Regress log(e_i^2) on X to estimate sigma_i
+  const invXtX = invertMatrix(computeXtX(X));
+  const Xty = new Array(p).fill(0);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < p; j++) {
+      Xty[j] += X[i][j] * logE2[i];
+    }
+  }
+  const gamma = new Array(p).fill(0);
+  for (let i = 0; i < p; i++) {
+    for (let j = 0; j < p; j++) {
+      gamma[i] += invXtX[i][j] * Xty[j];
+    }
+  }
+
+  const wlsRows: Record<string, any>[] = [];
+  for (let i = 0; i < n; i++) {
+    let logVarHat = 0;
+    for (let j = 0; j < p; j++) {
+      logVarHat += gamma[j] * X[i][j];
+    }
+    const sigmaHat = Math.exp(0.5 * Math.max(-10, Math.min(10, logVarHat)));
+    const weightSqrt = 1 / Math.max(1e-4, sigmaHat);
+    const newRow: Record<string, any> = { ...validRows[i] };
+    newRow[yCol] = Number(validRows[i][yCol]) * weightSqrt;
+    for (const c of xCols) {
+      newRow[c] = Number(validRows[i][c]) * weightSqrt;
+    }
+    wlsRows.push(newRow);
+  }
+
+  return { rows: wlsRows };
+}
+
+/**
+ * Modified Gram-Schmidt Orthogonalization (orthog) untuk Mengatasi Multikolinearitas (VIF = 1.000)
+ */
+export function applyOrthogLinearRegression(
+  rows: Record<string, any>[],
+  yCol: string,
+  xCols: string[]
+): { rows: Record<string, any>[]; orthXCols: string[] } {
+  const validRows = rows.filter(
+    (r) =>
+      r[yCol] !== undefined &&
+      r[yCol] !== null &&
+      !isNaN(Number(r[yCol])) &&
+      xCols.every((c) => r[c] !== undefined && r[c] !== null && !isNaN(Number(r[c])))
+  );
+  const n = validRows.length;
+  const k = xCols.length;
+  if (n === 0 || k === 0) {
+    return { rows: validRows, orthXCols: xCols };
+  }
+
+  const colsData: number[][] = xCols.map((col) => {
+    const raw = validRows.map((r) => Number(r[col]));
+    const mean = raw.reduce((s, v) => s + v, 0) / n;
+    return raw.map((v) => v - mean);
+  });
+
+  const orthoBasis: number[][] = [];
+  for (let j = 0; j < k; j++) {
+    const v = [...colsData[j]];
+    for (let m = 0; m < j; m++) {
+      const u = orthoBasis[m];
+      let dotVU = 0;
+      let dotUU = 0;
+      for (let i = 0; i < n; i++) {
+        dotVU += v[i] * u[i];
+        dotUU += u[i] * u[i];
+      }
+      const proj = dotUU > 1e-12 ? dotVU / dotUU : 0;
+      for (let i = 0; i < n; i++) {
+        v[i] -= proj * u[i];
+      }
+    }
+    let ss = 0;
+    for (let i = 0; i < n; i++) ss += v[i] * v[i];
+    const std = Math.sqrt(ss / Math.max(1, n - 1));
+    orthoBasis.push(std > 1e-12 ? v.map((val) => val / std) : v);
+  }
+
+  const orthXCols = xCols.map((c) => (c.startsWith("orth_") ? c : `orth_${c}`));
+  const orthRows = validRows.map((r, i) => {
+    const nextRow: Record<string, any> = { ...r };
+    orthXCols.forEach((orthCol, j) => {
+      nextRow[orthCol] = Number(orthoBasis[j][i].toFixed(6));
+    });
+    return nextRow;
+  });
+
+  return { rows: orthRows, orthXCols };
+}
+
+/**
+ * Transformasi Double-Log (Log-Log: ln(Y) dan ln(X)) untuk Kelinearan & Optimasi R²
+ */
+export function applyDoubleLogTransformation(
+  rows: Record<string, any>[],
+  yCol: string,
+  xCols: string[]
+): { rows: Record<string, any>[]; lnYCol: string; lnXCols: string[] } {
+  const validRows = rows.filter(
+    (r) =>
+      r[yCol] !== undefined &&
+      r[yCol] !== null &&
+      !isNaN(Number(r[yCol])) &&
+      xCols.every((c) => r[c] !== undefined && r[c] !== null && !isNaN(Number(r[c])))
+  );
+  const allCols = [yCol, ...xCols];
+  const shifts: Record<string, number> = {};
+  for (const col of allCols) {
+    const vals = validRows.map((r) => Number(r[col]));
+    const minVal = vals.length > 0 ? Math.min(...vals) : 1;
+    shifts[col] = minVal <= 0 ? Math.abs(minVal) + 1 : 0;
+  }
+
+  const lnYCol = yCol.startsWith("ln_") ? yCol : `ln_${yCol}`;
+  const lnXCols = xCols.map((c) => (c.startsWith("ln_") ? c : `ln_${c}`));
+
+  const transformedRows = validRows.map((r) => {
+    const nextRow: Record<string, any> = { ...r };
+    nextRow[lnYCol] = Number(Math.log(Number(r[yCol]) + shifts[yCol]).toFixed(6));
+    xCols.forEach((c, idx) => {
+      nextRow[lnXCols[idx]] = Number(Math.log(Number(r[c]) + shifts[c]).toFixed(6));
+    });
+    return nextRow;
+  });
+
+  return {
+    rows: transformedRows,
+    lnYCol,
+    lnXCols,
+  };
+}
+

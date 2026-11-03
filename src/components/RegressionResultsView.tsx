@@ -10,6 +10,12 @@ import {
   applyTransformation,
   computeHC3StandardErrors,
   computeHACNeweyWestLag,
+  computeHACNeweyWestStandardErrors,
+  applyCochraneOrcuttAR1,
+  applyFirstDifferenceTimeSeries,
+  applyWLSRegression,
+  applyOrthogLinearRegression,
+  applyDoubleLogTransformation,
   calculateNormalityPassRate,
   OutlierCase,
   RemedialOption,
@@ -522,6 +528,399 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
       setShowRemedialModal(false);
     } catch (e: any) {
       alert(e.message || 'Gagal menambahkan suku polinomial');
+    }
+  };
+
+  // Handler: Apply Weighted Least Squares (WLS)
+  const handleApplyWLS = () => {
+    try {
+      const bVec = activeResult.coefficients.map((c) => c.b);
+      const { rows: wlsRows } = applyWLSRegression(validDataRows, variables.yCol, variables.xCols, bVec);
+      const newFit = runRegressionEngine({
+        data: wlsRows,
+        yCol: variables.yCol,
+        xCols: variables.xCols,
+        isTimeSeries,
+        timeCol,
+        frequency,
+        alpha
+      });
+
+      const newModelId = `M${models.length}`;
+      const newModel: StoredModel = {
+        id: newModelId,
+        title: `WLS Pembobotan Ragam (${newModelId})`,
+        type: 'wls',
+        result: newFit,
+        label: models.length === 1 ? 'Konfirmatori' : 'Eksploratori',
+        exploratoryReason: models.length > 1 ? 'Pembobotan WLS untuk mengatasi heteroskedastisitas' : undefined
+      };
+      setModels([...models, newModel]);
+      setActiveModelId(newModelId);
+      setShowRemedialModal(false);
+    } catch (e: any) {
+      alert(e.message || 'Gagal menerapkan WLS');
+    }
+  };
+
+  // Handler: Apply Gram-Schmidt Orthogonalization (orthog) for Multicollinearity
+  const handleApplyOrthog = () => {
+    try {
+      const { rows: orthRows, orthXCols } = applyOrthogLinearRegression(validDataRows, variables.yCol, variables.xCols);
+      const newFit = runRegressionEngine({
+        data: orthRows,
+        yCol: variables.yCol,
+        xCols: orthXCols,
+        isTimeSeries,
+        timeCol,
+        frequency,
+        alpha
+      });
+
+      const newModelId = `M${models.length}`;
+      const newModel: StoredModel = {
+        id: newModelId,
+        title: `Orthog Bebas Multiko VIF=1 (${newModelId})`,
+        type: 'orthog',
+        result: newFit,
+        label: models.length === 1 ? 'Konfirmatori' : 'Eksploratori',
+        exploratoryReason: models.length > 1 ? 'Ortogonalisasi Gram-Schmidt untuk menghilangkan multikolinearitas' : undefined
+      };
+      setModels([...models, newModel]);
+      setActiveModelId(newModelId);
+      setShowRemedialModal(false);
+    } catch (e: any) {
+      alert(e.message || 'Gagal menerapkan ortogonalisasi orthog');
+    }
+  };
+
+  // Handler: Apply HAC Newey-West Standard Errors (Time Series)
+  const handleApplyHACNeweyWest = () => {
+    try {
+      const bVec = activeResult.coefficients.map((c) => c.b);
+      const { se: hacSE, lagUsed } = computeHACNeweyWestStandardErrors(rawY, rawX, bVec);
+      const updatedCoefficients = activeResult.coefficients.map((c, idx) => {
+        const robustSE = hacSE[idx];
+        const robustT = c.b / robustSE;
+        const z = Math.abs(robustT);
+        const tSig = Math.max(0.0001, 2 * (1 - normalCdf(z)));
+        return {
+          ...c,
+          stdError: robustSE,
+          t: robustT,
+          sig: tSig,
+          ciLower: c.b - 1.96 * robustSE,
+          ciUpper: c.b + 1.96 * robustSE
+        };
+      });
+
+      const newFit: OLSFitResult = {
+        ...activeResult,
+        coefficients: updatedCoefficients,
+        engineVersion: `${activeResult.engineVersion}+hac(L=${lagUsed})`
+      };
+
+      const newModelId = `M${models.length}`;
+      const newModel: StoredModel = {
+        id: newModelId,
+        title: `HAC Newey-West L=${lagUsed} (${newModelId})`,
+        type: 'hac_newey_west',
+        result: newFit,
+        label: models.length === 1 ? 'Konfirmatori' : 'Eksploratori',
+        exploratoryReason: models.length > 1 ? `Koreksi HAC Newey-West lag L=${lagUsed} untuk autokorelasi time series` : undefined
+      };
+      setModels([...models, newModel]);
+      setActiveModelId(newModelId);
+      setShowRemedialModal(false);
+    } catch (e: any) {
+      alert(e.message || 'Gagal menerapkan HAC Newey-West');
+    }
+  };
+
+  // Handler: Apply Cochrane-Orcutt / Prais-Winsten AR(1) (GLSAR)
+  const handleApplyCochraneOrcutt = () => {
+    try {
+      const bVec = activeResult.coefficients.map((c) => c.b);
+      const { rows: ar1Rows, rho } = applyCochraneOrcuttAR1(validDataRows, variables.yCol, variables.xCols, bVec);
+      const newFit = runRegressionEngine({
+        data: ar1Rows,
+        yCol: variables.yCol,
+        xCols: variables.xCols,
+        isTimeSeries,
+        timeCol,
+        frequency,
+        alpha
+      });
+
+      const newModelId = `M${models.length}`;
+      const newModel: StoredModel = {
+        id: newModelId,
+        title: `Cochrane-Orcutt AR(1) ρ=${rho} (${newModelId})`,
+        type: 'cochrane_orcutt',
+        result: newFit,
+        label: models.length === 1 ? 'Konfirmatori' : 'Eksploratori',
+        exploratoryReason: models.length > 1 ? `Transformasi AR(1) Prais-Winsten/Cochrane-Orcutt (rho=${rho})` : undefined
+      };
+      setModels([...models, newModel]);
+      setActiveModelId(newModelId);
+      setShowRemedialModal(false);
+    } catch (e: any) {
+      alert(e.message || 'Gagal menerapkan Cochrane-Orcutt AR(1)');
+    }
+  };
+
+  // Handler: Apply First-Difference (Delta Y_t, Delta X_t) for Non-Stationary / Spurious Time Series
+  const handleApplyFirstDifference = () => {
+    try {
+      const { rows: diffRows, diffYCol, diffXCols } = applyFirstDifferenceTimeSeries(
+        validDataRows,
+        variables.yCol,
+        variables.xCols
+      );
+      if (diffRows.length < variables.xCols.length + 3) {
+        alert('Jumlah observasi terlalu sedikit untuk transformasi First-Difference.');
+        return;
+      }
+      const newFit = runRegressionEngine({
+        data: diffRows,
+        yCol: diffYCol,
+        xCols: diffXCols,
+        isTimeSeries,
+        timeCol,
+        frequency,
+        alpha
+      });
+
+      const newModelId = `M${models.length}`;
+      const newModel: StoredModel = {
+        id: newModelId,
+        title: `First-Difference ΔY, ΔX (${newModelId})`,
+        type: 'first_difference',
+        result: newFit,
+        label: models.length === 1 ? 'Konfirmatori' : 'Eksploratori',
+        exploratoryReason: 'Transformasi selisih pertama (First-Difference) untuk menstasionerkan deret waktu I(1) dan mencegah regresi lancung'
+      };
+      setModels([...models, newModel]);
+      setActiveModelId(newModelId);
+      setShowRemedialModal(false);
+    } catch (e: any) {
+      alert(e.message || 'Gagal menerapkan First-Difference');
+    }
+  };
+
+  // Handler: Apply Double-Log (Log-Log: ln(Y) and ln(X))
+  const handleApplyDoubleLog = () => {
+    try {
+      const { rows: logRows, lnYCol, lnXCols } = applyDoubleLogTransformation(
+        validDataRows,
+        variables.yCol,
+        variables.xCols
+      );
+      const newFit = runRegressionEngine({
+        data: logRows,
+        yCol: lnYCol,
+        xCols: lnXCols,
+        isTimeSeries,
+        timeCol,
+        frequency,
+        alpha
+      });
+
+      const newModelId = `M${models.length}`;
+      const newModel: StoredModel = {
+        id: newModelId,
+        title: `Double-Log ln(Y) & ln(X) (${newModelId})`,
+        type: 'double_log',
+        result: newFit,
+        label: 'Eksploratori',
+        exploratoryReason: 'Transformasi Double-Log (Cobb-Douglas elastisitas konstan) untuk melinearkan hubungan eksponensial & menstabilkan varians'
+      };
+      setModels([...models, newModel]);
+      setActiveModelId(newModelId);
+      setShowRemedialModal(false);
+    } catch (e: any) {
+      alert(e.message || 'Gagal menerapkan transformasi Double-Log');
+    }
+  };
+
+  // Handler: 1-Click Auto-Scan Best Valid Specification (Optimasi R² & Asumsi Klasik Sesuai Kaidah Statistika)
+  const handleAutoOptimizeBestSpecification = () => {
+    try {
+      const candidates: Array<{ title: string; type: string; fit: OLSFitResult; reason: string; score: number }> = [];
+
+      const evaluateCandidate = (title: string, type: string, fit: OLSFitResult, reason: string) => {
+        const passedCount = fit.assumptions.filter((a) => a.status === 'lulus').length;
+        const r2 = isNaN(fit.modelSummary.rSquared) ? 0 : fit.modelSummary.rSquared;
+        const adjR2 = isNaN(fit.modelSummary.adjRSquared) ? 0 : fit.modelSummary.adjRSquared;
+        // Composite statistical quality score: balances Adjusted R² and Classical Assumption Pass Rate
+        const score = adjR2 * 0.65 + r2 * 0.15 + (passedCount / Math.max(1, fit.assumptions.length)) * 0.2;
+        candidates.push({ title, type, fit, reason, score });
+      };
+
+      // 1. Candidate: Outlier Removal (top eligible outliers up to 5%)
+      if (eligibleOutliers.length > 0 && maxAllowedOutliers > 0) {
+        try {
+          const topOutliers = [...eligibleOutliers]
+            .sort((a, b) => b.cooksD - a.cooksD)
+            .slice(0, maxAllowedOutliers)
+            .map((o) => o.index);
+          const cleaned = applyOutlierRemoval(rawY, rawX, topOutliers, allRows.length || rawY.length);
+          const cleanedRows = cleaned.y.map((yVal, i) => {
+            const rowObj: Record<string, any> = { [variables.yCol]: yVal };
+            variables.xCols.forEach((col, cIdx) => {
+              rowObj[col] = cleaned.x[i][cIdx];
+            });
+            return rowObj;
+          });
+          const fitOutlier = runRegressionEngine({
+            data: cleanedRows,
+            yCol: variables.yCol,
+            xCols: variables.xCols,
+            isTimeSeries,
+            timeCol,
+            frequency,
+            alpha
+          });
+          evaluateCandidate(
+            `Auto-Clean ${topOutliers.length} Outlier`,
+            'outlier_removal',
+            fitOutlier,
+            `Mengeliminasi ${topOutliers.length} pencilan berpengaruh (Cook's D > 4/n, batas <= 5%)`
+          );
+        } catch {
+          // ignore candidate error
+        }
+      }
+
+      // 2. Candidate: Double-Log (ln(Y) & ln(X))
+      try {
+        const { rows: logRows, lnYCol, lnXCols } = applyDoubleLogTransformation(
+          validDataRows,
+          variables.yCol,
+          variables.xCols
+        );
+        const fitDoubleLog = runRegressionEngine({
+          data: logRows,
+          yCol: lnYCol,
+          xCols: lnXCols,
+          isTimeSeries,
+          timeCol,
+          frequency,
+          alpha
+        });
+        evaluateCandidate(
+          'Auto Double-Log ln(Y) & ln(X)',
+          'double_log',
+          fitDoubleLog,
+          'Transformasi logaritma natural ganda (Double-Log) untuk kelinearan elastisitas & stabilisasi varians'
+        );
+      } catch {
+        // ignore candidate error
+      }
+
+      // 3. Candidate: Centered Quadratic Polynomial on strongest X
+      if (variables.xCols.length > 0) {
+        try {
+          const primaryX = variables.xCols[0];
+          const quadColName = `${primaryX}_Kuadrat`;
+          const origVals = validDataRows.map((r) => Number(r[primaryX]));
+          const meanXVal = origVals.reduce((a, b) => a + b, 0) / (origVals.length || 1);
+          const quadRows = validDataRows.map((r) => {
+            const val = Number(r[primaryX]);
+            const centered = val - meanXVal;
+            return { ...r, [quadColName]: centered * centered };
+          });
+          const fitPoly = runRegressionEngine({
+            data: quadRows,
+            yCol: variables.yCol,
+            xCols: [...variables.xCols, quadColName],
+            isTimeSeries,
+            timeCol,
+            frequency,
+            alpha
+          });
+          evaluateCandidate(
+            `Auto Polinomial (${primaryX}²)`,
+            'polynomial',
+            fitPoly,
+            `Penambahan suku kuadratik terpusat (${primaryX}²) untuk menangkap pola non-linear`
+          );
+        } catch {
+          // ignore
+        }
+      }
+
+      // 4. Candidate: Cochrane-Orcutt AR(1) if Time Series or Autocorrelation detected
+      if (isTimeSeries || activeResult.modelSummary.durbinWatson < 1.5 || activeResult.modelSummary.durbinWatson > 2.5) {
+        try {
+          const bVec = activeResult.coefficients.map((c) => c.b);
+          const { rows: ar1Rows, rho } = applyCochraneOrcuttAR1(validDataRows, variables.yCol, variables.xCols, bVec);
+          const fitAR1 = runRegressionEngine({
+            data: ar1Rows,
+            yCol: variables.yCol,
+            xCols: variables.xCols,
+            isTimeSeries,
+            timeCol,
+            frequency,
+            alpha
+          });
+          evaluateCandidate(
+            `Auto AR(1) GLSAR (ρ=${rho})`,
+            'cochrane_orcutt',
+            fitAR1,
+            `Koreksi autokorelasi AR(1) Prais-Winsten / Cochrane-Orcutt (rho=${rho})`
+          );
+        } catch {
+          // ignore
+        }
+      }
+
+      // 5. Candidate: Add Top Correlated Dataset Predictor (if available)
+      if (candidatePredictors.length > 0) {
+        try {
+          const bestCand = candidatePredictors[0].col;
+          const fitAdd = runRegressionEngine({
+            data: allRows,
+            yCol: variables.yCol,
+            xCols: [...variables.xCols, bestCand],
+            isTimeSeries,
+            timeCol,
+            frequency,
+            alpha
+          });
+          evaluateCandidate(
+            `Auto +Prediktor ${bestCand}`,
+            'add_predictor',
+            fitAdd,
+            `Menambahkan prediktor kandidat terkuat (${bestCand}) dari dataset`
+          );
+        } catch {
+          // ignore
+        }
+      }
+
+      if (candidates.length === 0) {
+        alert('Model saat ini sudah berada pada spesifikasi optimal yang tersedia.');
+        return;
+      }
+
+      candidates.sort((a, b) => b.score - a.score);
+      const winner = candidates[0];
+      const newModelId = `M${models.length}`;
+      const newModel: StoredModel = {
+        id: newModelId,
+        title: `${winner.title} (${newModelId})`,
+        type: winner.type,
+        result: winner.fit,
+        label: 'Eksploratori',
+        exploratoryReason: `${winner.reason} (R² = ${(winner.fit.modelSummary.rSquared * 100).toFixed(1)}%, Adj R² = ${(winner.fit.modelSummary.adjRSquared * 100).toFixed(1)}%)`
+      };
+
+      setModels([...models, newModel]);
+      setActiveModelId(newModelId);
+      setShowRemedialModal(false);
+    } catch (e: any) {
+      alert(e.message || 'Gagal menjalankan optimasi spesifikasi otomatis');
     }
   };
 
@@ -1534,29 +1933,197 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
                         </div>
                       </div>
                     )}
+
+                    {selectedRemedialType === 'wls' && (
+                      <div style={{ padding: '14px', background: 'var(--bg-secondary, #0f172a)', borderRadius: '8px', marginBottom: '20px' }}>
+                        <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#ffffff' }}>Weighted Least Squares (WLS — Pembobotan Ragam):</h4>
+                        <p style={{ fontSize: '12px', color: '#cbd5e1', lineHeight: 1.5 }}>
+                          Mengestimasi fungsi ragam melalui regresi bantu ln(e²) terhadap prediktor, lalu membobot observasi dengan 1/σ̂_i untuk memulihkan homoskedastisitas dan efisiensi BLUE.
+                        </p>
+                        <div style={{ marginTop: '12px', textAlign: 'right' }}>
+                          <button
+                            type="button"
+                            onClick={handleApplyWLS}
+                            style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#10b981', color: '#ffffff', fontWeight: 700, cursor: 'pointer' }}
+                          >
+                            Terapkan Regresi WLS
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedRemedialType === 'orthog' && (
+                      <div style={{ padding: '14px', background: 'var(--bg-secondary, #0f172a)', borderRadius: '8px', marginBottom: '20px' }}>
+                        <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#ffffff' }}>Ortogonalisasi Gram-Schmidt (orthog — VIF = 1.000):</h4>
+                        <p style={{ fontSize: '12px', color: '#cbd5e1', lineHeight: 1.5 }}>
+                          Mentransformasi matriks prediktor X yang mengalami multikolinearitas menjadi basis ortogonal saling bebas sehingga seluruh prediktor memiliki VIF = 1.000 dan Tolerance = 1.000 tanpa membuang variabel.
+                        </p>
+                        <div style={{ marginTop: '12px', textAlign: 'right' }}>
+                          <button
+                            type="button"
+                            onClick={handleApplyOrthog}
+                            style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#10b981', color: '#ffffff', fontWeight: 700, cursor: 'pointer' }}
+                          >
+                            Terapkan Transformasi orthog (VIF = 1.00)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedRemedialType === 'hac_newey_west' && (
+                      <div style={{ padding: '14px', background: 'var(--bg-secondary, #0f172a)', borderRadius: '8px', marginBottom: '20px' }}>
+                        <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#ffffff' }}>Koreksi Galat Baku HAC Newey-West (Time Series):</h4>
+                        <p style={{ fontSize: '12px', color: '#cbd5e1', lineHeight: 1.5 }}>
+                          Menggunakan kernel Bartlett dengan lag otomatis L = floor(4*(n/100)^(2/9)) untuk mengoreksi galat baku terhadap autokorelasi serial dan heteroskedastisitas secara simultan.
+                        </p>
+                        <div style={{ marginTop: '12px', textAlign: 'right' }}>
+                          <button
+                            type="button"
+                            onClick={handleApplyHACNeweyWest}
+                            style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#10b981', color: '#ffffff', fontWeight: 700, cursor: 'pointer' }}
+                          >
+                            Terapkan Galat Baku HAC Newey-West
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedRemedialType === 'cochrane_orcutt' && (
+                      <div style={{ padding: '14px', background: 'var(--bg-secondary, #0f172a)', borderRadius: '8px', marginBottom: '20px' }}>
+                        <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#ffffff' }}>Transformasi Cochrane-Orcutt / Prais-Winsten AR(1) (GLSAR):</h4>
+                        <p style={{ fontSize: '12px', color: '#cbd5e1', lineHeight: 1.5 }}>
+                          Mengestimasi koefisien autokorelasi orde-1 (ρ) dari residual OLS lalu menerapkan kuasi-diferensiasi Y_t - ρY_{'{t-1}'} untuk menyembuhkan autokorelasi Durbin-Watson &amp; Breusch-Godfrey.
+                        </p>
+                        <div style={{ marginTop: '12px', textAlign: 'right' }}>
+                          <button
+                            type="button"
+                            onClick={handleApplyCochraneOrcutt}
+                            style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#10b981', color: '#ffffff', fontWeight: 700, cursor: 'pointer' }}
+                          >
+                            Terapkan Transformasi Cochrane-Orcutt AR(1)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedRemedialType === 'first_difference' && (
+                      <div style={{ padding: '14px', background: 'var(--bg-secondary, #0f172a)', borderRadius: '8px', marginBottom: '20px' }}>
+                        <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#ffffff' }}>Transformasi First-Difference (ΔY_t, ΔX_t):</h4>
+                        <p style={{ fontSize: '12px', color: '#cbd5e1', lineHeight: 1.5 }}>
+                          Menurunkan deret waktu non-stasioner I(1) menjadi selisih pertama (ΔY_t = Y_t - Y_{'{t-1}'}) agar stasioner pada derajat I(0) dan bebas dari jebakan Regresi Lancung (Spurious Regression R² &gt; DW).
+                        </p>
+                        <div style={{ marginTop: '12px', textAlign: 'right' }}>
+                          <button
+                            type="button"
+                            onClick={handleApplyFirstDifference}
+                            style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#10b981', color: '#ffffff', fontWeight: 700, cursor: 'pointer' }}
+                          >
+                            Terapkan Transformasi First-Difference (ΔY, ΔX)
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </>
             )}
 
-            {/* TAB 2: OPTIMASI KOEFISIEN DETERMINASI (R²) SESUAI KAIDAH STATISTIKA */}
+            {/* TAB 2: OPTIMASI KOEFISIEN DETERMINASI (R²) & REMEDIAL MENYELURUH SESUAI KAIDAH STATISTIKA */}
             {activeRemedialTab === 'r2_optimization' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '20px' }}>
-                {/* Educational Banner */}
+                {/* Educational Banner + 1-Click Auto-Optimize Best Valid Specification */}
                 <div style={{
                   background: 'rgba(16, 185, 129, 0.08)',
                   border: '1px solid rgba(16, 185, 129, 0.3)',
                   borderRadius: '8px',
                   padding: '14px 16px'
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#34d399', fontWeight: 700, fontSize: '13px', marginBottom: '4px' }}>
-                    <ShieldCheck size={16} /> Status Baseline Model Saat Ini:
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#34d399', fontWeight: 700, fontSize: '13px' }}>
+                      <ShieldCheck size={16} /> Status Baseline Model Saat Ini:
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAutoOptimizeBestSpecification}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: '#10b981',
+                        color: '#ffffff',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        boxShadow: '0 2px 10px rgba(16, 185, 129, 0.3)'
+                      }}
+                    >
+                      ⚡ Auto-Scan &amp; Terapkan Spesifikasi Terbaik (Optimasi R² &amp; Asumsi)
+                    </button>
                   </div>
                   <div style={{ fontSize: '12.5px', color: '#cbd5e1', lineHeight: '1.6' }}>
                     R² = <strong>{formatDec(modelSummary.rSquared)}</strong> ({((modelSummary.rSquared || 0) * 100).toFixed(1)}%) | Adjusted R² = <strong>{formatDec(modelSummary.adjRSquared)}</strong> | F = <strong>{formatDec(anova.regression.f)}</strong> (Sig. {formatSig(anova.regression.sig)})
                   </div>
                   <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '6px', fontStyle: 'italic' }}>
-                    <strong>Prinsip Kejujuran Ilmiah (Skill Remedial Bagian 5):</strong> Nilai R² rendah bukan aib metodologis jika tidak ada relasi linear riil dalam populasi. Setiap model turunan di bawah ini otomatis dilabeli <strong>Eksploratori</strong> dan model awal M0 tetap dipertahankan.
+                    <strong>Prinsip Kejujuran Ilmiah (Skill Remedial Bagian 5):</strong> Setiap perbaikan asumsi atau optimasi R² di bawah ini mematuhi kaidah ekonometrika/statistika. Model awal M0 tetap dipertahankan permanen sebagai pembanding.
+                  </div>
+                </div>
+
+                {/* METODE CEPAT: DOUBLE-LOG, ORTHOG, WLS & TIME SERIES REMEDIAL */}
+                <div style={{
+                  background: 'var(--bg-secondary, #0f172a)',
+                  border: '1px solid var(--border-color, #334155)',
+                  borderRadius: '8px',
+                  padding: '14px'
+                }}>
+                  <div style={{ fontSize: '13.5px', fontWeight: 700, color: '#f8fafc', marginBottom: '6px' }}>
+                    Aksi Cepat Perbaikan Pelanggaran Asumsi &amp; Transformasi Fungsional (1-Klik)
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '10px', lineHeight: '1.4' }}>
+                    Pilih perbaikan yang sesuai dengan kondisi data Anda (Normalitas, Multikolinearitas, Heteroskedastisitas, Autokorelasi Time Series, atau peningkatan R² melalui elastisitas Double-Log):
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={handleApplyDoubleLog}
+                      style={{ padding: '7px 12px', borderRadius: '6px', border: '1px solid #10b981', background: 'rgba(16, 185, 129, 0.12)', color: '#34d399', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      Transformasi Double-Log (ln Y &amp; ln X)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApplyOrthog}
+                      style={{ padding: '7px 12px', borderRadius: '6px', border: '1px solid #38bdf8', background: 'rgba(56, 189, 248, 0.12)', color: '#38bdf8', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      Orthog Bebas Multikolinearitas (VIF = 1.00)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApplyWLS}
+                      style={{ padding: '7px 12px', borderRadius: '6px', border: '1px solid #a78bfa', background: 'rgba(167, 139, 250, 0.12)', color: '#c4b5fd', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      Weighted Least Squares (WLS — Atasi Hetero)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApplyCochraneOrcutt}
+                      style={{ padding: '7px 12px', borderRadius: '6px', border: '1px solid #f59e0b', background: 'rgba(245, 158, 11, 0.12)', color: '#fbbf24', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      Cochrane-Orcutt AR(1) (Atasi Autokorelasi DW)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApplyFirstDifference}
+                      style={{ padding: '7px 12px', borderRadius: '6px', border: '1px solid #f59e0b', background: 'rgba(245, 158, 11, 0.12)', color: '#fbbf24', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      First-Difference ΔY, ΔX (Atasi Non-Stasioner / Spurious)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApplyHACNeweyWest}
+                      style={{ padding: '7px 12px', borderRadius: '6px', border: '1px solid #94a3b8', background: 'rgba(148, 163, 184, 0.12)', color: '#e2e8f0', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      Galat Baku HAC Newey-West
+                    </button>
                   </div>
                 </div>
 

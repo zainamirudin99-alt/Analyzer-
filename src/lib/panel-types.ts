@@ -93,6 +93,102 @@ export interface StataConsoleBlockData {
   babyLanguage: string;
 }
 
+export type ZeroValuePolicy = 'true_zero' | 'no_disclosure_drop' | 'no_disclosure_impute_mean' | 'no_disclosure_impute_median';
+
+export interface VariableLNAnalysis {
+  variable: string;
+  role: 'Y' | 'X';
+  n: number;
+  min: number;
+  max: number;
+  mean: number;
+  sd: number;
+  skewness: number;
+  kurtosis: number;
+  hasZero: boolean;
+  hasNegative: boolean;
+  needsLN: boolean;
+  reason: string;
+  lnVarName: string;
+  shiftUsed: number;
+}
+
+export interface PanelLNTransformReport {
+  analyses: VariableLNAnalysis[];
+  recommendedVars: string[];
+  appliedVars: string[];
+  activeYCol: string;
+  activeXCols: string[];
+  transformedRows: Record<string, any>[];
+  stataCommands: string[];
+}
+
+export interface PanelOrthogReport {
+  triggered: boolean;
+  vifApproach: 'uncentered' | 'centered';
+  collinearVars: string[];
+  orthogMapping: Record<string, string>; // originalVar -> orth_var
+  finalActiveXCols: string[];
+  transformedRows: Record<string, any>[];
+  stataCommand: string;
+  postOrthogVif: {
+    meanVif: number;
+    variables: Record<string, { vif: number; tolerance: number }>;
+  };
+}
+
+export interface NormalityHistogramBin {
+  binStart: number;
+  binEnd: number;
+  mid: number;
+  count: number;
+  density: number;
+  normalDensity: number;
+}
+
+export interface DetailedPanelNormalityResult {
+  statistic: number;
+  p: number;
+  testName: string;
+  isNormal: boolean;
+  cltProtected?: boolean;
+  reason?: string;
+  // Stata predict choice
+  predictCommand?: 'predict e, e' | 'predict resid, residuals';
+  predictExplanation?: string;
+  residualsUsed?: number[];
+  altResiduals?: number[];
+  meanResidual?: number;
+  sdResidual?: number;
+  skewness?: number;
+  kurtosis?: number;
+  histogramBins?: NormalityHistogramBin[];
+  // 3 Stata Normality Tests
+  sktest?: {
+    n: number;
+    prSkewness: number;
+    prKurtosis: number;
+    adjChi2: number;
+    probChi2: number;
+    isNormal: boolean;
+  };
+  swilk?: {
+    n: number;
+    w: number;
+    v: number;
+    z: number;
+    probZ: number;
+    isNormal: boolean;
+  };
+  ksmirnov?: {
+    n: number;
+    dStat: number;
+    pValue: number;
+    correctedP: number;
+    isNormal: boolean;
+  };
+}
+
 export interface ModelSelectionResult {
   chow: {
     stat: number;
@@ -100,6 +196,13 @@ export interface ModelSelectionResult {
     df2: number;
     p: number;
     preferred: 'CEM' | 'FEM';
+    dummyApproach?: {
+      stataCmd: string;
+      testparmCmd: string;
+      nDummies: number;
+      r2LSDV: number;
+      sampleDummies: Array<{ entity: string; coef: number; se: number; t: number; p: number }>;
+    };
   };
   hausman: {
     chi2: number;
@@ -107,6 +210,7 @@ export interface ModelSelectionResult {
     p: number;
     preferred: 'FEM' | 'REM';
     isNegativeChi2?: boolean;
+    dataConditionNote?: string;
   };
   mundlakCRE: {
     waldChi2: number;
@@ -119,6 +223,7 @@ export interface ModelSelectionResult {
     df: number;
     p: number;
     preferred: 'CEM' | 'REM';
+    adaptedNote?: string;
   };
   selectedModel: PanelModelType;
   selectionReason: string;
@@ -128,8 +233,20 @@ export interface ModelSelectionResult {
 export interface PanelAssumptionsResult {
   vif: {
     meanVif: number;
+    approach?: 'uncentered' | 'centered';
+    stataCmd?: string;
+    hasMulticollinearity?: boolean;
     variables: Record<string, { vif: number; tolerance: number }>;
   };
+  centeredVif?: {
+    meanVif: number;
+    variables: Record<string, { vif: number; tolerance: number }>;
+  };
+  uncenteredVif?: {
+    meanVif: number;
+    variables: Record<string, { vif: number; tolerance: number }>;
+  };
+  orthogReport?: PanelOrthogReport;
   greeneHetero?: {
     chi2: number;
     df: number;
@@ -149,19 +266,31 @@ export interface PanelAssumptionsResult {
     hasAutocorrelation: boolean;
     skippedReason?: string;
   };
-  normality?: {
-    statistic: number;
-    p: number;
-    testName: string;
-    isNormal: boolean;
-    cltProtected?: boolean;
-    reason?: string;
-  };
+  normality?: DetailedPanelNormalityResult;
   clusterBiasWarning?: {
     isBiased: boolean;
     clusterCount: number;
     message: string;
   };
+}
+
+export interface EasyPanelInterpretation {
+  modelSummaryLine: string;
+  simultaneousTestLine: string;
+  rSquaredLine: string;
+  transformationNotes: string[];
+  predictorInterpretations: Array<{
+    variable: string;
+    originalVariable: string;
+    coef: number;
+    se: number;
+    tOrZ: number;
+    pValue: number;
+    isSignificant: boolean;
+    direction: 'positif' | 'negatif' | 'netral';
+    easyMeaning: string;
+  }>;
+  overallConclusion: string;
 }
 
 export interface PanelFitResult {
@@ -174,8 +303,14 @@ export interface PanelFitResult {
   };
   selection: ModelSelectionResult;
   selectedModel: PanelModelResult;
+  postOrthogSelectedModel?: PanelModelResult;
   finalModel: PanelModelResult;
   assumptions: PanelAssumptionsResult;
+  lnReport?: PanelLNTransformReport;
+  activeYCol?: string;
+  initialActiveXCols?: string[];
+  finalActiveXCols?: string[];
+  easyInterpretation?: EasyPanelInterpretation;
   consoleBlocks: StataConsoleBlockData[];
   errors?: string[];
 }

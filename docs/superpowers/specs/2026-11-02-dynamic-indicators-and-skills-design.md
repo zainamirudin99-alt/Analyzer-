@@ -163,3 +163,61 @@ export interface CustomAISkill {
 2. Menampilkan banner informasi preset aktif beserta daftar kode indikator dan skor maksimal ($\text{Jumlah Indikator} \times 5$) di `ResultsTab.tsx`.
 3. Mempertahankan `preset_id`, `preset_name`, dan skor indikator kustom dari penyimpanan lokal saat menggabungkan data dengan Supabase agar kolom indikator kustom tidak hilang.
 4. Kartu hasil analisis di `UploadTab.tsx` menampilkan skor maksimal dinamis ($N \times 5$), persentase pengungkapan dinamis, dan tombol salin sesuai jumlah indikator dari preset aktif.
+
+
+---
+
+## 8. Spesifikasi Fase 4: Optimasi Alur Regresi Linier (Gaya SPSS) & Regresi Data Panel 9-Langkah (Gaya Stata)
+
+**Tanggal**: 3 November 2026  
+**Status**: Disetujui (Approved)
+
+### A. Menu Analisis Regresi Statistik (`RegressionTab.tsx`, `RegressionResultsView.tsx`, `regression-remedial.ts`) — Output Gaya SPSS
+1. **Penyederhanaan Alur Konfigurasi (Quick Run & Streamlined Flow)**:
+   - Memungkinkan pengguna memilih Sumber Data, Sheet, Variabel ($Y$ & $X$), dan konfigurasi Time Series secara ringkas serta menyediakan tombol **"⚡ Jalankan Analisis OLS (Hasil SPSS) Sekarang"** begitu variabel $Y$ dan $X$ valid tanpa harus melewati 6 layar terpisah secara kaku.
+2. **Kaidah Statistika Data Time Series**:
+   - Ketika `isTimeSeries === true`, menampilkan panduan dan pemeriksaan otomatis:
+     - Pengurutan kronologis berdasarkan `timeCol` dan deteksi jeda/duplikasi waktu.
+     - Uji Stasioneritas (**ADF & KPSS**) pada $Y, X$, dan residual $e_t$, deteksi **Regresi Lancung (Spurious Regression / Granger-Newbold)** jika $R^2 > DW$, serta dukungan **First Difference ($\Delta Y_t, \Delta X_t$)** dan **Uji Kointegrasi Engle-Granger**.
+     - Uji Autokorelasi Serial (**Durbin-Watson**, **Breusch-Godfrey LM**, **Ljung-Box Q**) dan **Heteroskedastisitas Bersyarat ARCH-LM**.
+3. **Perbaikan Pelanggaran Asumsi & Optimasi $R^2$ Komprehensif Sesuai Kaidah Statistika**:
+   - Mempertahankan Model `M0` secara utuh dan memberi label **Konfirmatori** vs **Eksploratori** sesuai `.agents/skills/regresi-statistik-remedial/SKILL.md`:
+     - **Pelanggaran Normalitas**: Eliminasi outlier ekstrem ($|\text{Stud. Deleted Res}| > 3$ atau $\text{Cook's } D > 4/n$, maks 5%), Transformasi variabel ($\ln$, $\log_{10}$, $\sqrt{}$, Box-Cox $\lambda$ dengan auto-shift positif), Regresi Robust (Huber/Bisquare M-Estimator), WLS, atau Bootstrap BCa.
+     - **Pelanggaran Heteroskedastisitas**: Robust Standard Errors **HC3** atau **Weighted Least Squares (WLS)**.
+     - **Pelanggaran Multikolinearitas ($\text{VIF} > 10$)**: **Transformasi Ortogonal Gram-Schmidt (`orthog`)**, **Mean-Centering**, **Ridge Regression ($L_2$)**, atau eliminasi prediktor redundan.
+     - **Pelanggaran Time Series (Autokorelasi / Non-Stasioner)**: **HAC Newey-West SE**, **Cochrane-Orcutt / Prais-Winsten AR(1) (GLSAR)**, **First Difference ($\Delta Y_t, \Delta X_t$)**, dan penambahan Lag Dependen ($Y_{t-1}$).
+     - **Optimasi $R^2$ Kecil (Auto-Scan & Best Valid Specification)**: Tombol pemindaian pintar 1-klik yang menguji bentuk fungsional sah (Double-Log $\ln Y$ & $\ln X$, Semi-Log, Polinomial Kuadratik Terpusat, Interaksi $X_1 \times X_2$, kombinasi prediktor kandidat, dan pembersihan outlier leverage) lalu merekomendasikan spesifikasi terbaik dengan $R^2$ & Adjusted $R^2$ tertinggi yang sah secara statistika.
+
+### B. Menu Regresi Data Panel (`PanelTab.tsx`, `PanelStepper.tsx`, `panel-engine.ts`, `panel-types.ts`, `panel-interpretation.ts`) — Output Gaya Stata
+Mengimplementasikan alur 9 langkah terstruktur bergaya Stata sesuai kaidah ekonometrika data panel:
+1. **Langkah 1 — Input Data & Pemetaan Variabel Awal**:
+   - Menggabungkan Impor Data (File / Link Google Sheets / Preset Grunfeld), Pemilihan Sheet, dan Pemetaan Kolom (`idCol`, `timeCol`, `yCol`, `xCols`). Begitu input terpenuhi, langsung siap lanjut ke **Langkah 2: Cleaning Data**.
+2. **Langkah 2 — Cleaning Data Pintar & Pilihan Perlakuan Nilai `0` (Nol)**:
+   - Sistem menganalisis dataset untuk mendeteksi *missing values*, duplikasi `(id, time)`, dan **nilai `0` (nol)** pada setiap variabel.
+   - Jika terdeteksi nilai `0`, sistem menampilkan pilihan interaktif kepada pengguna:
+     - **Opsi A: Data `0` adalah Nilai Sebenarnya (`True Zero`)** — Nilai `0` dipertahankan sebagai angka riil (dan bila ditransformasi `LN` pada langkah berikutnya, menggunakan $\ln(x + 1)$ atau konstanta shift agar tidak menghasilkan `NaN`/`-Inf`).
+     - **Opsi B: Data `0` berarti Tidak Ada Pengungkapan / Missing (`Zero as Missing / No Disclosure`)** — Nilai `0` diperlakukan sebagai data hilang dengan pilihan *Listwise Deletion (Drop Baris)* atau *Imputasi Mean / Median Entitas*.
+3. **Langkah 3 — Analisis Distribusi Lanjutan & Transformasi `LN` (`gen ln_var = ln(...)`)**:
+   - Setelah data bersih, sistem menganalisis kecondongan (*skewness*), *kurtosis*, dan rentang skala tiap variabel serta merekomendasikan variabel mana yang perlu ditransformasi **`LN`**.
+   - Pengguna dapat memilih/menerapkan transformasi `LN` (`ln_<var>`) dan variabel hasil transformasi tersebut menjadi variabel aktif untuk langkah-langkah selanjutnya.
+4. **Langkah 4 — Deklarasi `xtset` (`xtset id year` + `xtsum` + `pwcorr`)**:
+   - Mengunci struktur panel (`strongly balanced` vs `unbalanced`) dan menampilkan statistik tiga dimensi (`overall`, `between`, `within`).
+5. **Langkah 5 — Pemanggilan 3 Model Panel (`CEM`, `FEM`, `REM`)**:
+   - Menjalankan dan menampilkan output bergaya Stata untuk **CEM (`reg`)**, **FEM (`xtreg, fe`)**, dan **REM (`xtreg, re`)**.
+6. **Langkah 6 — Uji Pemilihan Model Adaptif (`Uji Chow Pendekatan Dummy`, `Uji Hausman`, & `Uji LM`)**:
+   - **Uji Chow Pendekatan Dummy (`reg y x1 ... i.id` + `testparm i.id`)**: Menguji signifikansi simultan variabel dummy entitas (CEM vs FEM).
+   - **Uji Hausman (`hausman fe re`)**: Menguji FEM vs REM dan otomatis menyesuaikan dengan kondisi data (dilengkapi fallback/pendamping **Mundlak CRE** bila matriks kovarians selisih non-positif definit atau terdapat variabel *time-invariant*).
+   - **Uji Breusch-Pagan LM (`xttest0`)**: Menguji CEM vs REM secara adaptif.
+7. **Langkah 7 — Uji Asumsi Klasik & Transformasi `orthog` untuk Multikolinearitas**:
+   - **Pendekatan Multikolinearitas Sesuai Model Terpilih**:
+     - Jika terpilih **FEM atau REM (`xtreg`)** $\rightarrow$ menggunakan **Uncentered VIF (`vif, uncentered`)**.
+     - Jika terpilih **CEM (`reg`)** $\rightarrow$ menggunakan **Centered VIF (`estat vif`)**.
+   - **Transformasi `orthog` Otomatis**: Jika terdapat variabel yang mengalami multikolinearitas ($\text{VIF} > 10$), variabel tersebut ditransformasi menggunakan ortogonalisasi Gram-Schmidt (`orthog var1 var2, generate(orth_var1 orth_var2)`) dan **variabel terakhir hasil transformasi (`orth_` / `ln_`) digunakan pada estimasi model `xtreg` / `reg` selanjutnya**.
+   - Menampilkan juga **Uji Heteroskedastisitas** (`xttest3` / `hettest`) dan **Uji Autokorelasi Wooldridge** (`xtserial`).
+8. **Langkah 8 — Uji Normalitas Residual (`predict e, e` vs `predict resid, residuals`), Histogram Visual, serta `sktest`, `swilk`, & `ksmirnov`**:
+   - Menjelaskan dan memilih secara tepat antara **`predict e, e`** (komponen galat idiosinkratik $e_{it}$ untuk model panel `xtreg` FEM/REM) dan **`predict resid, residuals`** (residual total untuk `reg` CEM), dengan opsi toggle untuk membandingkan keduanya.
+   - Menampilkan **Histogram Residual dengan Kurva Normal Overlay** (`histogram e, normal`).
+   - Menampilkan tabel gaya Stata untuk **`sktest`** (Skewness & Kurtosis test), **`swilk`** (Shapiro-Wilk $W$ test), dan **`ksmirnov`** (Kolmogorov-Smirnov / Lilliefors test).
+9. **Langkah 9 — Hasil Akhir `vce(robust)` & Interpretasi Bahasa Mudah**:
+   - Mengestimasi ulang model terpilih menggunakan **variabel terakhir yang aktif** (setelah `ln_` dan/atau `orthog`) dengan **`vce(robust)`** (Cluster-Robust Standard Errors).
+   - Menyajikan tabel akhir gaya Stata beserta kartu **Interpretasi Hasil Akhir dengan Bahasa yang Mudah Dipahami** untuk uji simultan ($F / \text{Wald } \chi^2$), $R^2$, dan arti ekonomi/praktis tiap variabel independen.

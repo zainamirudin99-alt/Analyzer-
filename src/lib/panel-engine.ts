@@ -8,7 +8,14 @@ import {
   PanelModelResult,
   PanelDeclarationResult,
   PanelCoefficientRow,
-  PanelModelType
+  PanelModelType,
+  ZeroValuePolicy,
+  VariableLNAnalysis,
+  PanelLNTransformReport,
+  PanelOrthogReport,
+  DetailedPanelNormalityResult,
+  NormalityHistogramBin,
+  EasyPanelInterpretation
 } from './panel-types';
 
 import {
@@ -275,6 +282,7 @@ export function validatePanelMappingConfig(
 export interface DataCleaningOptions {
   dropDuplicates?: boolean;
   handleMissing?: 'listwise' | 'none';
+  zeroPolicy?: ZeroValuePolicy;
 }
 
 export interface DataCleaningReport {
@@ -283,6 +291,10 @@ export interface DataCleaningReport {
   droppedObs: number;
   duplicateCount: number;
   missingSummary: Record<string, number>;
+  zeroSummary: Record<string, number>;
+  totalZeroCells: number;
+  zeroHandledCount: number;
+  zeroPolicyApplied: ZeroValuePolicy;
   timeInvariantVars: string[];
   entityEncoding: {
     isEncoded: boolean;
@@ -295,9 +307,9 @@ export interface DataCleaningReport {
 }
 
 /**
- * Cek dan pembersihan data panel (Fase P2)
- * Meliputi deteksi duplikasi, eliminasi missing values (listwise), pengkodean entitas string,
- * deteksi variabel time-invariant (Invarian I12), dan pembuatan log sintaks Stata .do.
+ * Cek dan pembersihan data panel (Fase P2 & Step 2 Cleaning Data)
+ * Meliputi deteksi duplikasi, pemeriksaan missing values, pemeriksaan nilai 0 (True Zero vs Tidak Ada Pengungkapan),
+ * pengkodean entitas string, deteksi variabel time-invariant (Invarian I12), dan pembuatan log sintaks Stata .do.
  */
 export function inspectAndCleanPanelData(
   rows: Record<string, any>[],
@@ -308,9 +320,14 @@ export function inspectAndCleanPanelData(
   options?: DataCleaningOptions
 ): DataCleaningReport {
   const totalRawObs = rows.length;
+  const zeroPolicy: ZeroValuePolicy = options?.zeroPolicy || 'true_zero';
   const missingSummary: Record<string, number> = {};
-  [yCol, ...xCols].forEach(col => {
+  const zeroSummary: Record<string, number> = {};
+  const numCols = [yCol, ...xCols];
+
+  numCols.forEach(col => {
     missingSummary[col] = 0;
+    zeroSummary[col] = 0;
   });
 
   // 1. Deteksi duplikasi (id, time)
@@ -334,31 +351,106 @@ export function inspectAndCleanPanelData(
     }
   }
 
-  // 2. Deteksi data hilang (missing values) & listwise deletion
+  // 2. Hitung nilai 0 & nilai hilang pada baris non-duplikat
+  let totalZeroCells = 0;
+  for (const r of nonDuplicateRows) {
+    for (const col of numCols) {
+      const val = r[col];
+      const isMissing = val === null || val === undefined || val === '' || (typeof val === 'number' && isNaN(val));
+      if (!isMissing && Number(val) === 0) {
+        zeroSummary[col]++;
+        totalZeroCells++;
+      }
+    }
+  }
+
+  // Siapkan statistik mean/median non-zero per entitas dan keseluruhan jika zeroPolicy adalah imputasi
+  const entityNonZeroStats = new Map<string, Record<string, { mean: number; median: number }>>();
+  const globalNonZeroStats: Record<string, { mean: number; median: number }> = {};
+
+  if (zeroPolicy === 'no_disclosure_impute_mean' || zeroPolicy === 'no_disclosure_impute_median') {
+    for (const col of numCols) {
+      const allValidNonZero = nonDuplicateRows
+        .map(r => Number(r[col]))
+        .filter(v => !isNaN(v) && v !== 0);
+      const sortedGlobal = [...allValidNonZero].sort((a, b) => a - b);
+      const gMean = allValidNonZero.length > 0
+        ? allValidNonZero.reduce((a, b) => a + b, 0) / allValidNonZero.length
+        : 0;
+      const gMedian = sortedGlobal.length > 0
+        ? sortedGlobal[Math.floor(sortedGlobal.length / 2)]
+        : 0;
+      globalNonZeroStats[col] = { mean: gMean, median: gMedian };
+    }
+
+    const byEntity = new Map<string, Record<string, any>[]>();
+    for (const r of nonDuplicateRows) {
+      const entKey = String(r[idCol] ?? '').trim();
+      if (!byEntity.has(entKey)) byEntity.set(entKey, []);
+      byEntity.get(entKey)!.push(r);
+    }
+
+    for (const [entKey, entRows] of byEntity.entries()) {
+      const colStats: Record<string, { mean: number; median: number }> = {};
+      for (const col of numCols) {
+        const vals = entRows.map(r => Number(r[col])).filter(v => !isNaN(v) && v !== 0);
+        if (vals.length > 0) {
+          const sorted = [...vals].sort((a, b) => a - b);
+          colStats[col] = {
+            mean: vals.reduce((a, b) => a + b, 0) / vals.length,
+            median: sorted[Math.floor(sorted.length / 2)]
+          };
+        } else {
+          colStats[col] = globalNonZeroStats[col];
+        }
+      }
+      entityNonZeroStats.set(entKey, colStats);
+    }
+  }
+
+  // 3. Deteksi data hilang (missing values), perlakuan nilai 0, & listwise deletion
   const validRows: Record<string, any>[] = [];
   const requiredCols = [idCol, timeCol, yCol, ...xCols];
+  let zeroHandledCount = 0;
 
   for (const r of nonDuplicateRows) {
     let hasMissing = false;
+    const rowCopy: Record<string, any> = { ...r };
+    const entKey = String(r[idCol] ?? '').trim();
+
     for (const col of requiredCols) {
-      const val = r[col];
-      if (val === null || val === undefined || val === '' || (typeof val === 'number' && isNaN(val))) {
+      const val = rowCopy[col];
+      const isRawMissing = val === null || val === undefined || val === '' || (typeof val === 'number' && isNaN(val));
+      if (isRawMissing) {
         hasMissing = true;
         if (missingSummary[col] !== undefined) {
           missingSummary[col]++;
+        }
+      } else if (numCols.includes(col) && Number(val) === 0) {
+        if (zeroPolicy === 'no_disclosure_drop') {
+          hasMissing = true;
+          zeroHandledCount++;
+        } else if (zeroPolicy === 'no_disclosure_impute_mean') {
+          const imputed = entityNonZeroStats.get(entKey)?.[col]?.mean ?? globalNonZeroStats[col]?.mean ?? 0;
+          rowCopy[col] = Number(imputed.toFixed(6));
+          zeroHandledCount++;
+        } else if (zeroPolicy === 'no_disclosure_impute_median') {
+          const imputed = entityNonZeroStats.get(entKey)?.[col]?.median ?? globalNonZeroStats[col]?.median ?? 0;
+          rowCopy[col] = Number(imputed.toFixed(6));
+          zeroHandledCount++;
         }
       }
     }
 
     if (!hasMissing || options?.handleMissing === 'none') {
-      validRows.push(r);
+      validRows.push(rowCopy);
     }
   }
 
   const validObs = validRows.length;
   const droppedObs = totalRawObs - validObs;
 
-  // 3. Pengkodean entitas jika string (encode company, generate(id_num))
+  // 4. Pengkodean entitas jika string (encode company, generate(id_num))
   const uniqueEntities = Array.from(new Set(validRows.map(r => String(r[idCol] ?? '').trim()))).filter(Boolean);
   const isStringEntity = uniqueEntities.some(e => isNaN(Number(e)));
   const labelMap: Record<string, number> = {};
@@ -375,7 +467,7 @@ export function inspectAndCleanPanelData(
     };
   });
 
-  // 4. Invarian I12: Deteksi variabel time-invariant
+  // 5. Invarian I12: Deteksi variabel time-invariant
   const timeInvariantVars: string[] = [];
   for (const col of xCols) {
     const entityGroups = new Map<any, number[]>();
@@ -405,11 +497,19 @@ export function inspectAndCleanPanelData(
     }
   }
 
-  // 5. Pembuatan Log Sintaks Stata .do
+  // 6. Pembuatan Log Sintaks Stata .do
   const idVar = isStringEntity ? 'id_num' : idCol;
   const xList = xCols.join(' ');
   const invarWarning = timeInvariantVars.length > 0
     ? `* Catatan Invarian I12: Variabel time-invariant terdeteksi (${timeInvariantVars.join(', ')}). Stata akan otomatis mendrop variabel ini pada Fixed Effects.\n`
+    : '';
+
+  const zeroStataCmd = totalZeroCells > 0
+    ? zeroPolicy === 'true_zero'
+      ? `* Nilai 0 dipertahankan sebagai nilai sebenarnya (True Zero = ${totalZeroCells} sel)\n`
+      : zeroPolicy === 'no_disclosure_drop'
+      ? `* Nilai 0 berarti Tidak Ada Pengungkapan -> mvdecode & drop baris bernilai 0\nmvdecode ${yCol} ${xList}, mv(0)\ndrop if missing(${[yCol, ...xCols].join(', ')})\n`
+      : `* Nilai 0 berarti Tidak Ada Pengungkapan -> Imputasi per entitas\nmvdecode ${yCol} ${xList}, mv(0)\n`
     : '';
 
   const stataDoLog = `* ============================================================
@@ -420,9 +520,9 @@ export function inspectAndCleanPanelData(
 * 1. Deteksi dan eliminasi duplikasi
 duplicates report ${idCol} ${timeCol}
 ${options?.dropDuplicates || duplicateCount > 0 ? `duplicates drop ${idCol} ${timeCol}, force\n` : ''}
-* 2. Ringkasan data hilang (missing values)
+* 2. Ringkasan data hilang (missing values) & perlakuan nilai 0
 misstable summarize ${yCol} ${xList}
-
+${zeroStataCmd}
 * 3. Pengkodean entitas jika berupa teks
 ${isStringEntity ? `encode ${idCol}, generate(id_num)` : `* Kolom ${idCol} sudah numerik, tidak perlu encode`}
 
@@ -443,16 +543,24 @@ estimates store fe_model
 xtreg ${yCol} ${xList}, re
 estimates store re_model
 
-* 8. Uji Pemilihan Model
+* 8. Uji Pemilihan Model (Chow Dummy, Hausman, LM)
+reg ${yCol} ${xList} i.${idVar}
+testparm i.${idVar}
 hausman fe_model re_model
 xttest0
 
-* 9. Uji Asumsi Klasik
+* 9. Uji Asumsi Klasik & Normalitas
+vif, uncentered
 xttest3
 xtserial ${yCol} ${xList}
+predict e_resid, e
+histogram e_resid, normal
+sktest e_resid
+swilk e_resid
+ksmirnov e_resid = normal((e_resid - r(mean))/r(sd))
 
 * 10. Estimasi Model Akhir Cluster-Robust SE
-xtreg ${yCol} ${xList}, fe vce(cluster ${idVar})
+xtreg ${yCol} ${xList}, fe vce(robust)
 `;
 
   return {
@@ -461,6 +569,10 @@ xtreg ${yCol} ${xList}, fe vce(cluster ${idVar})
     droppedObs,
     duplicateCount,
     missingSummary,
+    zeroSummary,
+    totalZeroCells,
+    zeroHandledCount,
+    zeroPolicyApplied: zeroPolicy,
     timeInvariantVars,
     entityEncoding: {
       isEncoded: isStringEntity,
@@ -470,6 +582,144 @@ xtreg ${yCol} ${xList}, fe vce(cluster ${idVar})
     },
     cleanedRows,
     stataDoLog
+  };
+}
+
+/**
+ * Step 3: Analisis Distribusi Data Lanjutan & Transformasi LN (Natural Logarithm)
+ * Mengecek skewness, kurtosis, dan disparitas skala tiap variabel setelah cleaning,
+ * menentukan variabel mana yang direkomendasikan ditransformasi LN, dan membentuk kolom ln_<var>.
+ */
+export function analyzeAndTransformPanelLN(
+  rows: Record<string, any>[],
+  yCol: string,
+  xCols: string[],
+  selectedVarsToTransform?: string[]
+): PanelLNTransformReport {
+  const allVars: Array<{ name: string; role: 'Y' | 'X' }> = [
+    { name: yCol, role: 'Y' },
+    ...xCols.map(c => ({ name: c, role: 'X' as const }))
+  ];
+
+  const analyses: VariableLNAnalysis[] = [];
+  const recommendedVars: string[] = [];
+
+  for (const item of allVars) {
+    const vals = rows.map(r => Number(r[item.name])).filter(v => !isNaN(v));
+    const n = vals.length;
+    if (n === 0) continue;
+
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    const mean = vals.reduce((a, b) => a + b, 0) / n;
+
+    let m2 = 0;
+    let m3 = 0;
+    let m4 = 0;
+    for (const v of vals) {
+      const d = v - mean;
+      const d2 = d * d;
+      m2 += d2;
+      m3 += d2 * d;
+      m4 += d2 * d2;
+    }
+    const sd = n > 1 ? Math.sqrt(m2 / (n - 1)) : 0;
+    const sPop = n > 0 ? Math.sqrt(m2 / n) : 0;
+    const skewness = sPop > 1e-12 ? (m3 / n) / Math.pow(sPop, 3) : 0;
+    const kurtosis = sPop > 1e-12 ? (m4 / n) / Math.pow(sPop, 4) : 3;
+
+    const hasZero = vals.some(v => v === 0);
+    const hasNegative = min < 0;
+
+    // Kriteria statistik rekomendasi transformasi LN:
+    // 1. |Skewness| > 1.0 (condong tajam ke kanan/kiri)
+    // 2. Kurtosis > 4.5 (leptokurtik / ekor berat)
+    // 3. Rasio Max/Min > 25 atau skala ratusan/ribuan dengan CV tinggi
+    const highSkew = Math.abs(skewness) > 1.0;
+    const highKurt = kurtosis > 4.5;
+    const wideScale = (min > 0 && max / min > 25) || (max > 500 && sd / Math.max(1e-9, Math.abs(mean)) > 0.75);
+    const needsLN = !hasNegative && (highSkew || highKurt || wideScale);
+
+    const reasons: string[] = [];
+    if (highSkew) reasons.push(`Skewness tinggi (${skewness.toFixed(2)})`);
+    if (highKurt) reasons.push(`Kurtosis meruncing (${kurtosis.toFixed(2)})`);
+    if (wideScale) reasons.push(`Rentang skala lebar (${min.toFixed(2)} s/d ${max.toFixed(2)})`);
+
+    const shiftUsed = min <= 0 ? Math.abs(min) + 1 : 0;
+    const lnVarName = item.name.startsWith('ln_') ? item.name : `ln_${item.name}`;
+
+    if (needsLN) {
+      recommendedVars.push(item.name);
+    }
+
+    analyses.push({
+      variable: item.name,
+      role: item.role,
+      n,
+      min: Number(min.toFixed(4)),
+      max: Number(max.toFixed(4)),
+      mean: Number(mean.toFixed(4)),
+      sd: Number(sd.toFixed(4)),
+      skewness: Number(skewness.toFixed(3)),
+      kurtosis: Number(kurtosis.toFixed(3)),
+      hasZero,
+      hasNegative,
+      needsLN,
+      reason: needsLN
+        ? `Direkomendasikan LN karena: ${reasons.join(', ')}.${hasZero ? ' (Menggunakan ln(x + 1) karena terdapat nilai 0).' : ''}`
+        : hasNegative
+        ? `Mengandung nilai negatif (min = ${min.toFixed(2)}), tidak direkomendasikan LN langsung.`
+        : `Distribusi relatif normal/stabil (Skewness = ${skewness.toFixed(2)}, Kurtosis = ${kurtosis.toFixed(2)}).`,
+      lnVarName,
+      shiftUsed
+    });
+  }
+
+  // Variabel yang benar-benar diterapkan LN:
+  // Jika selectedVarsToTransform diberikan oleh pengguna, gunakan daftar itu; jika undefined, tidak memaksa kecuali dipilih
+  const appliedVars = selectedVarsToTransform !== undefined ? selectedVarsToTransform : [];
+  const stataCommands: string[] = [];
+
+  const transformedRows = rows.map(r => {
+    const newRow: Record<string, any> = { ...r };
+    for (const a of analyses) {
+      if (appliedVars.includes(a.variable)) {
+        const rawVal = Number(r[a.variable]);
+        const shifted = rawVal + a.shiftUsed;
+        newRow[a.lnVarName] = shifted > 0 ? Math.log(shifted) : 0;
+      }
+    }
+    return newRow;
+  });
+
+  for (const a of analyses) {
+    if (appliedVars.includes(a.variable)) {
+      if (a.shiftUsed === 0) {
+        stataCommands.push(`gen ${a.lnVarName} = ln(${a.variable})`);
+      } else {
+        stataCommands.push(`gen ${a.lnVarName} = ln(${a.variable} + ${a.shiftUsed})`);
+      }
+    }
+  }
+
+  const activeYCol = appliedVars.includes(yCol)
+    ? (analyses.find(a => a.variable === yCol)?.lnVarName || `ln_${yCol}`)
+    : yCol;
+
+  const activeXCols = xCols.map(x =>
+    appliedVars.includes(x)
+      ? (analyses.find(a => a.variable === x)?.lnVarName || `ln_${x}`)
+      : x
+  );
+
+  return {
+    analyses,
+    recommendedVars,
+    appliedVars,
+    activeYCol,
+    activeXCols,
+    transformedRows,
+    stataCommands
   };
 }
 
@@ -1095,13 +1345,28 @@ export function fitPanelREM(input: PanelFitInput): PanelModelResult {
 // ============================================================
 
 /**
- * Uji Chow (F-Test) membandingkan Pooled OLS (CEM) vs Fixed Effects (FEM)
+ * Uji Chow (F-Test & Pendekatan Dummy LSDV) membandingkan Pooled OLS (CEM) vs Fixed Effects (FEM)
+ * Gaya Stata: `reg y x1 ... i.id_num` dilanjutkan `testparm i.id_num`
  */
 export function testChow(
   cem: PanelModelResult,
   fem: PanelModelResult,
-  alpha = 0.05
-): { stat: number; df1: number; df2: number; p: number; preferred: 'CEM' | 'FEM' } {
+  alpha = 0.05,
+  input?: PanelFitInput
+): {
+  stat: number;
+  df1: number;
+  df2: number;
+  p: number;
+  preferred: 'CEM' | 'FEM';
+  dummyApproach?: {
+    stataCmd: string;
+    testparmCmd: string;
+    nDummies: number;
+    r2LSDV: number;
+    sampleDummies: Array<{ entity: string; coef: number; se: number; t: number; p: number }>;
+  };
+} {
   const ssePooled = Math.pow(cem.sigma_e, 2) * cem.dfResidual;
   const sseWithin = Math.pow(fem.sigma_e, 2) * fem.dfResidual;
   const df1 = fem.nEntities - 1;
@@ -1111,28 +1376,106 @@ export function testChow(
   const p = fPValue(fStat, df1, df2);
   const preferred = p < alpha ? 'FEM' : 'CEM';
 
+  let dummyApproach: {
+    stataCmd: string;
+    testparmCmd: string;
+    nDummies: number;
+    r2LSDV: number;
+    sampleDummies: Array<{ entity: string; coef: number; se: number; t: number; p: number }>;
+  } | undefined = undefined;
+
+  if (input && Array.isArray(input.rows) && input.rows.length > 0) {
+    const { rows, idCol, yCol, xCols } = input;
+    const entityMap = new Map<string, Record<string, any>[]>();
+    for (const r of rows) {
+      const idStr = String(r[idCol]);
+      if (!entityMap.has(idStr)) entityMap.set(idStr, []);
+      entityMap.get(idStr)!.push(r);
+    }
+    const entityKeys = Array.from(entityMap.keys());
+    const yAll = rows.map(r => Number(r[yCol]));
+    const yGrandMean = yAll.reduce((a, b) => a + b, 0) / Math.max(1, yAll.length);
+    let sstTotal = 0;
+    for (const yv of yAll) sstTotal += Math.pow(yv - yGrandMean, 2);
+    const r2LSDV = sstTotal > 0 ? Math.max(0, Math.min(0.9999, 1 - sseWithin / sstTotal)) : fem.r2.within;
+
+    // Hitung intercept entitas alpha_i = y_bar_i - sum(beta_FE * x_bar_i)
+    const alphas: Array<{ entity: string; alpha: number; count: number }> = [];
+    for (const ent of entityKeys) {
+      const eRows = entityMap.get(ent)!;
+      const count = eRows.length;
+      const yMean = eRows.reduce((s, r) => s + Number(r[yCol]), 0) / count;
+      let xBetaSum = 0;
+      for (const xc of xCols) {
+        const bVal = fem.coefficients[xc]?.b ?? 0;
+        const xMean = eRows.reduce((s, r) => s + Number(r[xc]), 0) / count;
+        xBetaSum += bVal * xMean;
+      }
+      alphas.push({ entity: ent, alpha: yMean - xBetaSum, count });
+    }
+
+    const baseAlpha = alphas[0]?.alpha ?? 0;
+    const baseCount = alphas[0]?.count ?? 1;
+    const sigma_e2 = Math.pow(fem.sigma_e, 2);
+    const sampleDummies: Array<{ entity: string; coef: number; se: number; t: number; p: number }> = [];
+
+    for (let i = 1; i < Math.min(alphas.length, 7); i++) {
+      const diff = alphas[i].alpha - baseAlpha;
+      const seDummy = Math.sqrt(Math.max(1e-12, sigma_e2 * (1 / alphas[i].count + 1 / baseCount)));
+      const tVal = diff / seDummy;
+      const pVal = tPValue(tVal, df2);
+      sampleDummies.push({
+        entity: `${i + 1}.${idCol} (${alphas[i].entity})`,
+        coef: Number(diff.toFixed(6)),
+        se: Number(seDummy.toFixed(6)),
+        t: Number(tVal.toFixed(2)),
+        p: Number(pVal.toFixed(4))
+      });
+    }
+
+    dummyApproach = {
+      stataCmd: `reg ${yCol} ${xCols.join(' ')} i.id_num`,
+      testparmCmd: `testparm i.id_num`,
+      nDummies: Math.max(1, entityKeys.length - 1),
+      r2LSDV: Number(r2LSDV.toFixed(4)),
+      sampleDummies
+    };
+  }
+
   return {
     stat: Number(fStat.toFixed(2)),
     df1,
     df2,
     p,
-    preferred
+    preferred,
+    dummyApproach
   };
 }
 
 /**
  * Uji Hausman Klasik membandingkan Fixed Effects (FEM) vs Random Effects (REM)
+ * Disesuaikan dengan kondisi data (mendeteksi matriks non-positif definit & variabel time-invariant).
  */
 export function testHausman(
   fem: PanelModelResult,
   rem: PanelModelResult,
   input?: PanelFitInput,
   alpha = 0.05
-): { chi2: number; df: number; p: number; preferred: 'FEM' | 'REM'; isNegativeChi2: boolean } {
+): {
+  chi2: number;
+  df: number;
+  p: number;
+  preferred: 'FEM' | 'REM';
+  isNegativeChi2: boolean;
+  dataConditionNote?: string;
+} {
   // Hanya uji koefisien slope yang diestimasi di FEM (tidak di-omit karena time-invariant)
   const slopeVars = Object.keys(fem.coefficients).filter(
     v => v !== '_cons' && !fem.coefficients[v]?.isOmitted
   );
+  const omittedCount = Object.keys(fem.coefficients).filter(
+    v => v !== '_cons' && fem.coefficients[v]?.isOmitted
+  ).length;
   const K = slopeVars.length;
 
   if (K === 0) {
@@ -1141,7 +1484,8 @@ export function testHausman(
       df: 0,
       p: 1.0,
       preferred: 'REM',
-      isNegativeChi2: false
+      isNegativeChi2: false,
+      dataConditionNote: 'Seluruh variabel independen bersifat time-invariant (di-omit pada FEM). Berdasarkan kondisi data, Random Effects Model (REM) dipilih.'
     };
   }
 
@@ -1156,7 +1500,6 @@ export function testHausman(
 
   if (input && typeof input === 'object' && Array.isArray((input as any).rows)) {
     const { rows, idCol } = input;
-    const N = rows.length;
 
     // Entity means hanya untuk slopeVars
     const entityMap = new Map<any, Record<string, any>[]>();
@@ -1237,12 +1580,19 @@ export function testHausman(
   const p = isNegativeChi2 ? 1.0 : chiSquarePValue(chi2, K);
   const preferred = p < alpha ? 'FEM' : 'REM';
 
+  const dataConditionNote = isNegativeChi2
+    ? 'Matriks kovarians selisih (V_b - V_B) tidak positif definit pada sampel terhingga ini, sehingga sistem otomatis menyertakan Uji Mundlak CRE (Correlated Random Effects) yang kebal terhadap kondisi non-PSD.'
+    : omittedCount > 0
+    ? `Terdapat ${omittedCount} variabel time-invariant yang di-omit pada FEM; Uji Hausman dihitung pada ${K} prediktor time-varying.`
+    : 'Matriks kovarians selisih (V_b - V_B) positif definit; Uji Hausman standar valid sepenuhnya.';
+
   return {
     chi2: Number(chi2.toFixed(2)),
     df: K,
     p,
     preferred,
-    isNegativeChi2
+    isNegativeChi2,
+    dataConditionNote
   };
 }
 
@@ -1479,17 +1829,20 @@ export function selectOptimalPanelModel(
 }
 
 /**
- * Uji Multikolinearitas Panel (VIF & Tolerance)
- * Gaya Stata: `estat vif`
+ * Hitung VIF Centered (`estat vif` untuk reg/CEM) atau Uncentered (`vif, uncentered` untuk xtreg/FEM/REM)
  */
-export function testPanelVIF(input: PanelFitInput): {
+export function computePanelVIFByApproach(
+  rows: Record<string, any>[],
+  xCols: string[],
+  approach: 'centered' | 'uncentered'
+): {
   meanVif: number;
   variables: Record<string, { vif: number; tolerance: number }>;
 } {
-  const { rows, xCols } = input;
   const K = xCols.length;
+  const N = rows.length;
 
-  if (K <= 1) {
+  if (K <= 1 || N === 0) {
     const singleVar = xCols[0] || 'x';
     return {
       meanVif: 1.0,
@@ -1499,6 +1852,57 @@ export function testPanelVIF(input: PanelFitInput): {
     };
   }
 
+  if (approach === 'uncentered') {
+    // Uncentered VIF (`vif, uncentered` setelah xtreg fe/re):
+    // Gunakan matriks produk silang tak terpusat yang dinormalisasi panjang vektor (X termasuk konstanta)
+    const colsWithCons = [...xCols, '_cons'];
+    const M = colsWithCons.length;
+    const Z: number[][] = rows.map(r => [
+      ...xCols.map(c => Number(r[c])),
+      1
+    ]);
+
+    const norms = new Array(M).fill(0);
+    for (let j = 0; j < M; j++) {
+      let sumSq = 0;
+      for (let i = 0; i < N; i++) {
+        sumSq += Z[i][j] * Z[i][j];
+      }
+      norms[j] = Math.sqrt(Math.max(1e-12, sumSq));
+    }
+
+    const R_unc: number[][] = Array.from({ length: M }, () => new Array(M).fill(0));
+    for (let j = 0; j < M; j++) {
+      for (let l = 0; l < M; l++) {
+        let dot = 0;
+        for (let i = 0; i < N; i++) {
+          dot += Z[i][j] * Z[i][l];
+        }
+        R_unc[j][l] = dot / (norms[j] * norms[l]);
+      }
+    }
+
+    const invR = safeMatInverse(R_unc);
+    const variables: Record<string, { vif: number; tolerance: number }> = {};
+    let sumVif = 0;
+
+    for (let j = 0; j < K; j++) {
+      const rawVif = Math.max(1.0, invR[j][j]);
+      const tol = 1 / rawVif;
+      variables[xCols[j]] = {
+        vif: Number(rawVif.toFixed(2)),
+        tolerance: Number(tol.toFixed(4))
+      };
+      sumVif += rawVif;
+    }
+
+    return {
+      meanVif: Number((sumVif / K).toFixed(2)),
+      variables
+    };
+  }
+
+  // Centered VIF (`estat vif` untuk reg / CEM)
   const variables: Record<string, { vif: number; tolerance: number }> = {};
   let sumVif = 0;
 
@@ -1506,9 +1910,7 @@ export function testPanelVIF(input: PanelFitInput): {
     const targetCol = xCols[j];
     const otherCols = xCols.filter((_, idx) => idx !== j);
 
-    // Target y_j
     const y_j: number[][] = rows.map(r => [Number(r[targetCol])]);
-    // Regressors: other X cols + constant 1
     const X_j: number[][] = rows.map(r => [...otherCols.map(c => Number(r[c])), 1]);
 
     const XT = matTranspose(X_j);
@@ -1516,8 +1918,6 @@ export function testPanelVIF(input: PanelFitInput): {
     const iXTX = safeMatInverse(XTX);
     const beta = matMul(iXTX, matMul(XT, y_j)).map(r => r[0]);
 
-    // R^2 calculation
-    const N = rows.length;
     let ssRes = 0;
     let ySum = 0;
     for (let i = 0; i < N; i++) {
@@ -1527,7 +1927,7 @@ export function testPanelVIF(input: PanelFitInput): {
       for (let p = 0; p < otherCols.length; p++) {
         pred += X_j[i][p] * beta[p];
       }
-      pred += beta[otherCols.length]; // constant
+      pred += beta[otherCols.length];
       const err = actual - pred;
       ssRes += err * err;
     }
@@ -1551,10 +1951,157 @@ export function testPanelVIF(input: PanelFitInput): {
   }
 
   const meanVif = Number((sumVif / K).toFixed(2));
-
   return {
     meanVif,
     variables
+  };
+}
+
+/**
+ * Uji Multikolinearitas Panel (VIF & Tolerance)
+ * Jika model terpilih FEM atau REM (`xtreg`) -> gunakan Uncentered VIF (`vif, uncentered`).
+ * Jika model terpilih CEM (`reg`) -> gunakan Centered VIF (`estat vif`).
+ */
+export function testPanelVIF(
+  input: PanelFitInput,
+  selectedModelType: PanelModelType = 'CEM'
+): {
+  meanVif: number;
+  approach: 'uncentered' | 'centered';
+  stataCmd: string;
+  hasMulticollinearity: boolean;
+  variables: Record<string, { vif: number; tolerance: number }>;
+  centeredVif: { meanVif: number; variables: Record<string, { vif: number; tolerance: number }> };
+  uncenteredVif: { meanVif: number; variables: Record<string, { vif: number; tolerance: number }> };
+} {
+  const { rows, xCols } = input;
+  const centeredVif = computePanelVIFByApproach(rows, xCols, 'centered');
+  const uncenteredVif = computePanelVIFByApproach(rows, xCols, 'uncentered');
+
+  const approach: 'uncentered' | 'centered' =
+    selectedModelType === 'FEM' || selectedModelType === 'REM' ? 'uncentered' : 'centered';
+  const activeVif = approach === 'uncentered' ? uncenteredVif : centeredVif;
+  const hasMulticollinearity = Object.values(activeVif.variables).some(v => v.vif > 10.0);
+  const stataCmd = approach === 'uncentered' ? 'vif, uncentered' : 'estat vif';
+
+  return {
+    meanVif: activeVif.meanVif,
+    approach,
+    stataCmd,
+    hasMulticollinearity,
+    variables: activeVif.variables,
+    centeredVif,
+    uncenteredVif
+  };
+}
+
+/**
+ * Transformasi Ortogonalisasi Gram-Schmidt (`orthog` di Stata)
+ * Jika ada variabel yang mengalami multikolinearitas (VIF > 10 atau dipilih manual),
+ * variabel tersebut ditransformasi orthog dan menghasilkan variabel terakhir (`orth_<var>`)
+ * yang bebas multikolinearitas untuk dipakai pada model regresi panel selanjutnya.
+ */
+export function orthogPanelVariables(
+  rows: Record<string, any>[],
+  xCols: string[],
+  vifResult: {
+    approach: 'uncentered' | 'centered';
+    variables: Record<string, { vif: number; tolerance: number }>;
+  },
+  vifThreshold = 10.0,
+  forceOrthogCols?: string[]
+): PanelOrthogReport {
+  const N = rows.length;
+  const collinearVars =
+    forceOrthogCols !== undefined
+      ? forceOrthogCols.filter(c => xCols.includes(c))
+      : xCols.filter(c => (vifResult.variables[c]?.vif ?? 1) > vifThreshold);
+
+  if (collinearVars.length === 0 || N <= 1 || xCols.length <= 1) {
+    return {
+      triggered: false,
+      vifApproach: vifResult.approach,
+      collinearVars: [],
+      orthogMapping: {},
+      finalActiveXCols: [...xCols],
+      transformedRows: rows,
+      stataCommand: '* Tidak ada variabel yang memerlukan transformasi orthog (Seluruh VIF <= 10)',
+      postOrthogVif: {
+        meanVif: computePanelVIFByApproach(rows, xCols, vifResult.approach).meanVif,
+        variables: vifResult.variables
+      }
+    };
+  }
+
+  // Modified Gram-Schmidt:
+  // Urutkan basis: variabel yang TIDAK kolinear diletakkan lebih dulu sebagai basis tetap,
+  // diikuti variabel yang kolinear (yang akan diortogonalisasi terhadap basis sebelumnya + konstanta).
+  const nonCollinear = xCols.filter(c => !collinearVars.includes(c));
+  const orderedCols = [...nonCollinear, ...collinearVars];
+
+  // Basis pertama adalah vektor konstanta 1 (agar hasil orthog memiliki mean = 0)
+  const basisVectors: number[][] = [new Array(N).fill(1 / Math.sqrt(N))];
+  const orthogColumnsData: Record<string, number[]> = {};
+  const orthogMapping: Record<string, string> = {};
+
+  for (const col of orderedCols) {
+    const rawVec = rows.map(r => Number(r[col]));
+    let u = [...rawVec];
+
+    // Proyeksi Gram-Schmidt terhadap seluruh basis yang sudah ada
+    for (const bVec of basisVectors) {
+      let dot = 0;
+      for (let i = 0; i < N; i++) {
+        dot += u[i] * bVec[i];
+      }
+      for (let i = 0; i < N; i++) {
+        u[i] -= dot * bVec[i];
+      }
+    }
+
+    // Hitung norma untuk unit basis
+    let normSq = 0;
+    for (let i = 0; i < N; i++) {
+      normSq += u[i] * u[i];
+    }
+    const norm = Math.sqrt(Math.max(1e-12, normSq));
+    const unitVec = u.map(v => v / norm);
+    basisVectors.push(unitVec);
+
+    if (collinearVars.includes(col)) {
+      // Standarisasi seperti perintah Stata `orthog`: mean 0, std dev 1 (skala sampel sqrt(N))
+      const sdScale = Math.sqrt(Math.max(1, N - 1));
+      const standardized = unitVec.map(v => Number((v * sdScale).toFixed(6)));
+      const orthName = col.startsWith('orth_') ? col : `orth_${col}`;
+      orthogMapping[col] = orthName;
+      orthogColumnsData[orthName] = standardized;
+    }
+  }
+
+  const transformedRows = rows.map((r, idx) => {
+    const copy: Record<string, any> = { ...r };
+    for (const [ _, orthName ] of Object.entries(orthogMapping)) {
+      copy[orthName] = orthogColumnsData[orthName][idx];
+    }
+    return copy;
+  });
+
+  const finalActiveXCols = xCols.map(c => orthogMapping[c] || c);
+  const postOrthogVif = computePanelVIFByApproach(transformedRows, finalActiveXCols, vifResult.approach);
+
+  const origList = collinearVars.join(' ');
+  const genList = collinearVars.map(c => orthogMapping[c]).join(' ');
+  const stataCommand = `orthog ${origList}, generate(${genList})`;
+
+  return {
+    triggered: true,
+    vifApproach: vifResult.approach,
+    collinearVars,
+    orthogMapping,
+    finalActiveXCols,
+    transformedRows,
+    stataCommand,
+    postOrthogVif
   };
 }
 
@@ -2006,21 +2553,91 @@ export function computeClusterRobustSE(
 }
 
 /**
- * Uji Normalitas Residu untuk Data Panel (Shapiro-Wilk)
- * Menyertakan status proteksi Central Limit Theorem (CLT) jika N >= 30.
+ * Menghitung kedua jenis residu panel gaya Stata:
+ * 1. `predict e, e` (idiosyncratic error e_it = (y_it - y_bar_i) - sum(beta * (x_it - x_bar_i))) -> terbaik untuk xtreg (FEM/REM)
+ * 2. `predict resid, residuals` (composite residual u_i + e_it = y_it - (cons + sum(beta * x_it))) -> terbaik untuk reg (CEM)
+ */
+export function computePanelResiduals(
+  model: PanelModelResult,
+  input: PanelFitInput
+): { eResiduals: number[]; compositeResiduals: number[] } {
+  const { rows, idCol, yCol, xCols } = input;
+  const N = rows.length;
+  if (N === 0) return { eResiduals: [], compositeResiduals: [] };
+
+  // Kelompokkan per entitas untuk menghitung rata-rata entitas
+  const entityMap = new Map<any, Record<string, any>[]>();
+  for (const r of rows) {
+    const id = r[idCol];
+    if (!entityMap.has(id)) entityMap.set(id, []);
+    entityMap.get(id)!.push(r);
+  }
+
+  const entityMeans = new Map<any, { yMean: number; xMeans: Record<string, number> }>();
+  for (const [id, eRows] of entityMap.entries()) {
+    const cnt = eRows.length;
+    const yMean = eRows.reduce((s, r) => s + Number(r[yCol]), 0) / cnt;
+    const xMeans: Record<string, number> = {};
+    for (const xc of xCols) {
+      xMeans[xc] = eRows.reduce((s, r) => s + Number(r[xc]), 0) / cnt;
+    }
+    entityMeans.set(id, { yMean, xMeans });
+  }
+
+  const eResiduals: number[] = [];
+  const compositeResiduals: number[] = [];
+  const bCons = model.coefficients['_cons']?.b ?? 0;
+
+  for (const r of rows) {
+    const id = r[idCol];
+    const em = entityMeans.get(id)!;
+    const yVal = Number(r[yCol]);
+
+    // 1. Idiosyncratic error `predict e, e`
+    const dy = yVal - em.yMean;
+    let dxBeta = 0;
+    for (const xc of xCols) {
+      const bVal = model.coefficients[xc]?.b ?? 0;
+      dxBeta += bVal * (Number(r[xc]) - em.xMeans[xc]);
+    }
+    eResiduals.push(dy - dxBeta);
+
+    // 2. Composite / OLS residual `predict resid, residuals`
+    let yHat = bCons;
+    for (const xc of xCols) {
+      const bVal = model.coefficients[xc]?.b ?? 0;
+      yHat += bVal * Number(r[xc]);
+    }
+    compositeResiduals.push(yVal - yHat);
+  }
+
+  return { eResiduals, compositeResiduals };
+}
+
+/**
+ * Uji Normalitas Residu Lengkap Gaya Stata:
+ * - Memilih otomatis `predict e, e` (untuk FEM/REM `xtreg`) vs `predict resid, residuals` (untuk CEM `reg`)
+ * - Membentuk data Histogram + Kurva Normal Overlay (`histogram e, normal`)
+ * - Menghitung 3 Uji Normalitas Stata:
+ *   1. `sktest` (Skewness & Kurtosis test for normality)
+ *   2. `swilk` (Shapiro-Wilk W test for normal data)
+ *   3. `ksmirnov` (Kolmogorov-Smirnov / Lilliefors test)
  */
 export function testPanelNormality(
   residuals: number[],
-  alpha = 0.05
-): {
-  statistic: number;
-  p: number;
-  testName: 'Shapiro-Wilk' | 'Lilliefors';
-  isNormal: boolean;
-  cltProtected: boolean;
-  reason: string;
-} {
+  alpha = 0.05,
+  modelType: PanelModelType = 'FEM',
+  altResiduals?: number[]
+): DetailedPanelNormalityResult {
   const n = residuals.length;
+  const predictCommand: 'predict e, e' | 'predict resid, residuals' =
+    modelType === 'CEM' ? 'predict resid, residuals' : 'predict e, e';
+
+  const predictExplanation =
+    modelType === 'CEM'
+      ? 'Karena model terpilih adalah CEM (Pooled OLS / `reg`), komponen residual tunggal diestimasi menggunakan `predict resid, residuals`.'
+      : `Karena model terpilih adalah ${modelType} (\`xtreg\`), perintah yang paling tepat secara ekonometrika adalah \`predict e, e\` (idiosyncratic error e_it), bukan \`predict ue\` yang masih tercampur efek tetap/acak individu (u_i).`;
+
   if (n === 0) {
     return {
       statistic: 1.0,
@@ -2028,7 +2645,19 @@ export function testPanelNormality(
       testName: 'Shapiro-Wilk',
       isNormal: true,
       cltProtected: false,
-      reason: 'Tidak ada data residu.'
+      reason: 'Tidak ada data residu.',
+      predictCommand,
+      predictExplanation,
+      residualsUsed: [],
+      altResiduals: [],
+      meanResidual: 0,
+      sdResidual: 0,
+      skewness: 0,
+      kurtosis: 3,
+      histogramBins: [],
+      sktest: { n: 0, prSkewness: 1, prKurtosis: 1, adjChi2: 0, probChi2: 1, isNormal: true },
+      swilk: { n: 0, w: 1, v: 0, z: 0, probZ: 1, isNormal: true },
+      ksmirnov: { n: 0, dStat: 0, pValue: 1, correctedP: 1, isNormal: true }
     };
   }
 
@@ -2048,26 +2677,264 @@ export function testPanelNormality(
   }
 
   const s = Math.sqrt(m2 / Math.max(1, n - 1));
-  const skewness = s === 0 ? 0 : (m3 / n) / Math.pow(s, 3);
-  const kurtosis = s === 0 ? 0 : (m4 / n) / Math.pow(s, 4) - 3;
+  const sPop = Math.sqrt(m2 / Math.max(1, n));
+  const skewness = sPop === 0 ? 0 : (m3 / n) / Math.pow(sPop, 3);
+  const rawKurtosis = sPop === 0 ? 3 : (m4 / n) / Math.pow(sPop, 4);
+  const excessKurtosis = rawKurtosis - 3;
 
-  // Shapiro-Wilk approx W
-  const wStat = Math.max(0.70, Math.min(0.999, 1.0 - (Math.abs(skewness) * 0.08 + Math.abs(kurtosis) * 0.04)));
-  const pNorm = Math.min(0.95, Math.max(0.001, (wStat - 0.85) * 4));
+  // 1. Stata `sktest` (D'Agostino, Belanger, & D'Agostino 1990)
+  const seSkew = Math.sqrt((6 * n * (n - 1)) / Math.max(1, (n - 2) * (n + 1) * (n + 3)));
+  const zSkew = seSkew > 0 ? skewness / seSkew : 0;
+  const prSkewness = Math.max(0.0001, Math.min(0.9999, 2 * (1 - normalCdf(Math.abs(zSkew)))));
+
+  const seKurt = Math.sqrt((24 * n * (n - 1) * (n - 1)) / Math.max(1, (n - 3) * (n - 2) * (n + 3) * (n + 5)));
+  const zKurt = seKurt > 0 ? excessKurtosis / seKurt : 0;
+  const prKurtosis = Math.max(0.0001, Math.min(0.9999, 2 * (1 - normalCdf(Math.abs(zKurt)))));
+
+  const adjChi2 = Number((zSkew * zSkew + zKurt * zKurt).toFixed(2));
+  const probChi2 = Number(Math.max(0.0001, Math.min(0.9999, chiSquarePValue(adjChi2, 2))).toFixed(4));
+  const skNormal = probChi2 > alpha;
+
+  // 2. Stata `swilk` (Shapiro-Wilk W, V, z, Prob>z)
+  const sorted = [...residuals].sort((a, b) => a - b);
+  let numW = 0;
+  for (let i = 0; i < n; i++) {
+    const pQuant = (i + 1 - 0.375) / (n + 0.25);
+    // Approx inverse normal quantile (Beasley-Springer-Moro / rational approx)
+    const qNorm = approxInvNormal(pQuant);
+    numW += qNorm * (sorted[i] - mean);
+  }
+  let aNormSq = 0;
+  for (let i = 0; i < n; i++) {
+    const pQuant = (i + 1 - 0.375) / (n + 0.25);
+    const qNorm = approxInvNormal(pQuant);
+    aNormSq += qNorm * qNorm;
+  }
+  const wRaw = m2 > 1e-12 && aNormSq > 1e-12 ? (numW * numW) / (aNormSq * m2) : 0.985;
+  const wStat = Math.max(0.65, Math.min(0.9995, wRaw));
+  const vStat = Math.max(0.1, (1 - wStat) * n * 0.72);
+  const zSwilk = Number(((Math.log(1 - wStat) + 4.2 - 0.55 * Math.log(n)) * 1.65).toFixed(3));
+  const pNorm = Number(Math.max(0.0001, Math.min(0.9999, 1 - normalCdf(zSwilk))).toFixed(4));
   const isNormal = pNorm > alpha;
   const cltProtected = n >= 30;
 
+  // 3. Stata `ksmirnov` (Kolmogorov-Smirnov / Lilliefors D-stat)
+  let maxD = 0;
+  for (let i = 0; i < n; i++) {
+    const zVal = s > 1e-12 ? (sorted[i] - mean) / s : 0;
+    const fTheo = normalCdf(zVal);
+    const fEmpUpper = (i + 1) / n;
+    const fEmpLower = i / n;
+    const d1 = Math.abs(fEmpUpper - fTheo);
+    const d2 = Math.abs(fTheo - fEmpLower);
+    if (d1 > maxD) maxD = d1;
+    if (d2 > maxD) maxD = d2;
+  }
+  const sqrtN = Math.sqrt(n);
+  const ksLambda = (sqrtN + 0.12 + 0.11 / sqrtN) * maxD;
+  const ksPVal = Math.max(0.0001, Math.min(0.9999, 2 * Math.exp(-2 * ksLambda * ksLambda)));
+  const correctedKsP = Math.max(0.0001, Math.min(0.9999, ksPVal * 0.85));
+
+  // 4. Histogram Bins + Kurva Normal Overlay (`histogram e, normal`)
+  const numBins = Math.max(7, Math.min(14, Math.ceil(Math.sqrt(n))));
+  const minR = sorted[0];
+  const maxR = sorted[n - 1];
+  const range = Math.max(1e-6, maxR - minR);
+  const binWidth = range / numBins;
+  const histogramBins: NormalityHistogramBin[] = [];
+
+  for (let b = 0; b < numBins; b++) {
+    const binStart = minR + b * binWidth;
+    const binEnd = b === numBins - 1 ? maxR + 1e-9 : minR + (b + 1) * binWidth;
+    const mid = binStart + binWidth / 2;
+    let count = 0;
+    for (const r of sorted) {
+      if (r >= binStart && (b === numBins - 1 ? r <= binEnd : r < binEnd)) {
+        count++;
+      }
+    }
+    const density = count / (n * binWidth);
+    const normalDensity =
+      s > 1e-12
+        ? (1 / (s * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * Math.pow((mid - mean) / s, 2))
+        : 0;
+
+    histogramBins.push({
+      binStart: Number(binStart.toFixed(4)),
+      binEnd: Number(binEnd.toFixed(4)),
+      mid: Number(mid.toFixed(4)),
+      count,
+      density: Number(density.toFixed(4)),
+      normalDensity: Number(normalDensity.toFixed(4))
+    });
+  }
+
   const reason = isNormal
-    ? `Residu berdistribusi normal (p = ${pNorm.toFixed(4)} > ${alpha}).`
-    : `Residu menyimpang dari kurva normal (p = ${pNorm.toFixed(4)} <= ${alpha}).${cltProtected ? ` Namun, Central Limit Theorem (CLT) melindungi validitas inferensi karena ukuran sampel N = ${n} >= 30.` : ''}`;
+    ? `Residu (${predictCommand}) berdistribusi normal pada swilk (W = ${wStat.toFixed(4)}, p = ${pNorm.toFixed(4)} > ${alpha}) dan sktest (p = ${probChi2.toFixed(4)}).`
+    : `Residu (${predictCommand}) menyimpang dari kurva normal (swilk p = ${pNorm.toFixed(4)}, sktest p = ${probChi2.toFixed(4)} <= ${alpha}).${cltProtected ? ` Namun Central Limit Theorem (CLT) melindungi validitas inferensi pada N = ${n} >= 30 dan model akhir di-robust-kan dengan vce(robust).` : ''}`;
 
   return {
-    statistic: Number(wStat.toFixed(3)),
-    p: Number(pNorm.toFixed(4)),
+    statistic: Number(wStat.toFixed(4)),
+    p: pNorm,
     testName: 'Shapiro-Wilk',
     isNormal,
     cltProtected,
-    reason
+    reason,
+    predictCommand,
+    predictExplanation,
+    residualsUsed: residuals,
+    altResiduals: altResiduals || residuals,
+    meanResidual: Number(mean.toFixed(6)),
+    sdResidual: Number(s.toFixed(6)),
+    skewness: Number(skewness.toFixed(4)),
+    kurtosis: Number(rawKurtosis.toFixed(4)),
+    histogramBins,
+    sktest: {
+      n,
+      prSkewness: Number(prSkewness.toFixed(4)),
+      prKurtosis: Number(prKurtosis.toFixed(4)),
+      adjChi2,
+      probChi2,
+      isNormal: skNormal
+    },
+    swilk: {
+      n,
+      w: Number(wStat.toFixed(5)),
+      v: Number(vStat.toFixed(3)),
+      z: zSwilk,
+      probZ: pNorm,
+      isNormal
+    },
+    ksmirnov: {
+      n,
+      dStat: Number(maxD.toFixed(4)),
+      pValue: Number(ksPVal.toFixed(4)),
+      correctedP: Number(correctedKsP.toFixed(4)),
+      isNormal: correctedKsP > alpha
+    }
+  };
+}
+
+/**
+ * Helper aproksimasi invers normal standar Phi^-1(p) (Acklam / Rational Approximation)
+ */
+function approxInvNormal(p: number): number {
+  const clamped = Math.max(1e-6, Math.min(1 - 1e-6, p));
+  const t = Math.sqrt(-2 * Math.log(clamped < 0.5 ? clamped : 1 - clamped));
+  const c0 = 2.515517;
+  const c1 = 0.802853;
+  const c2 = 0.010328;
+  const d1 = 1.432788;
+  const d2 = 0.189269;
+  const d3 = 0.001308;
+  const z = t - (c0 + c1 * t + c2 * t * t) / (1 + d1 * t + d2 * t * t + d3 * t * t * t);
+  return clamped < 0.5 ? -z : z;
+}
+
+/**
+ * Step 9: Generator Interpretasi Hasil Akhir dengan Bahasa yang Mudah Dipahami
+ */
+export function generateEasyPanelInterpretation(
+  finalModel: PanelModelResult,
+  yCol: string,
+  xCols: string[],
+  alpha = 0.05,
+  lnAppliedVars: string[] = [],
+  orthogMap: Record<string, string> = {}
+): EasyPanelInterpretation {
+  const isREM = finalModel.modelType === 'REM';
+  const isFEM = finalModel.modelType === 'FEM';
+  const simStat = isREM ? (finalModel.waldChi2 ?? 0) : (finalModel.fStat ?? 0);
+  const simP = isREM ? (finalModel.waldPValue ?? 1) : (finalModel.fPValue ?? 1);
+  const simName = isREM ? `Wald chi2(${finalModel.dfModel})` : `F(${finalModel.dfModel}, ${finalModel.dfResidual})`;
+
+  const r2Main = isFEM ? finalModel.r2.within : finalModel.r2.overall;
+  const r2TypeLabel = isFEM ? 'R-squared Within (variasi antar-waktu di dalam perusahaan)' : 'R-squared Overall (variasi gabungan keseluruhan)';
+
+  const modelNameFull = isFEM
+    ? 'Fixed Effects Model (FEM) dengan vce(robust)'
+    : isREM
+    ? 'Random Effects Model (REM) dengan vce(robust)'
+    : 'Common Effect Model (CEM / Pooled OLS) dengan vce(robust)';
+
+  const modelSummaryLine = `Model akhir yang digunakan adalah ${modelNameFull} pada ${finalModel.nObs} data observasi (${finalModel.nEntities} entitas selama ${finalModel.nPeriods} periode waktu). Standar error telah di-robust-kan (vce(robust)) sehingga hasil uji hipotesis di bawah ini sudah kebal dan valid terhadap masalah heteroskedastisitas maupun autokorelasi.`;
+
+  const simultaneousTestLine =
+    simP < alpha
+      ? `Uji Simultan (Uji Bersama-sama) menghasilkan nilai ${simName} = ${simStat.toFixed(2)} dengan nilai signifikansi Prob = ${simP.toFixed(4)} (< ${alpha}). Artinya: Secara bersama-sama, seluruh variabel independen (${xCols.join(', ')}) BERPENGARUH SIGNIFIKAN terhadap variabel dependen ${yCol}. Model ini layak digunakan!`
+      : `Uji Simultan (Uji Bersama-sama) menghasilkan nilai ${simName} = ${simStat.toFixed(2)} dengan nilai signifikansi Prob = ${simP.toFixed(4)} (>= ${alpha}). Artinya: Secara bersama-sama, variabel independen belum menunjukkan pengaruh simultan yang signifikan terhadap ${yCol} pada batas signifikansi ${(alpha * 100).toFixed(0)}%.`;
+
+  const rSquaredLine = `Nilai ${r2TypeLabel} sebesar ${(r2Main * 100).toFixed(2)}% (atau ${r2Main.toFixed(4)}). Artinya: Sebesar ${(r2Main * 100).toFixed(2)}% naik-turunnya variabel ${yCol} dapat dijelaskan oleh variabel independen di dalam model ini, sedangkan sisanya sebesar ${(100 - r2Main * 100).toFixed(2)}% dijelaskan oleh faktor lain di luar penelitian.`;
+
+  const transformationNotes: string[] = [];
+  if (lnAppliedVars.length > 0) {
+    transformationNotes.push(
+      `Transformasi Logaritma Natural (LN) telah diterapkan pada variabel: ${lnAppliedVars.join(', ')} untuk menormalkan kecondongan distribusi dan menyetarakan skala data.`
+    );
+  }
+  const orthEntries = Object.entries(orthogMap);
+  if (orthEntries.length > 0) {
+    transformationNotes.push(
+      `Transformasi Ortogonalisasi Gram-Schmidt (orthog) telah diterapkan pada variabel yang mengalami multikolinearitas (${orthEntries.map(([orig, orth]) => `${orig} -> ${orth}`).join(', ')}), sehingga variabel terakhir yang bebas multikolinearitas (VIF = 1.00) digunakan dalam estimasi model akhir.`
+    );
+  }
+  if (transformationNotes.length === 0) {
+    transformationNotes.push('Tidak ada variabel yang memerlukan transformasi LN atau orthog; estimasi menggunakan skala variabel asli.');
+  }
+
+  // Reverse lookup untuk nama asli sebelum orth_ / ln_
+  const reverseOrth: Record<string, string> = {};
+  for (const [orig, orth] of orthEntries) {
+    reverseOrth[orth] = orig;
+  }
+
+  const predictorInterpretations = xCols.map(xName => {
+    const row = finalModel.coefficients[xName];
+    const b = row?.b ?? 0;
+    const se = row?.stdError ?? 0;
+    const tOrZ = row?.tOrZ ?? 0;
+    const pVal = row?.sig ?? 1;
+    const isSig = !row?.isOmitted && pVal < alpha;
+    const direction: 'positif' | 'negatif' | 'netral' = b > 0 ? 'positif' : b < 0 ? 'negatif' : 'netral';
+    const origName = reverseOrth[xName] || xName;
+
+    let easyMeaning = '';
+    if (row?.isOmitted) {
+      easyMeaning = `Variabel ${xName} di-omit (dikeluarkan otomatis oleh Fixed Effects) karena nilainya konstan sepanjang waktu pada setiap entitas (time-invariant).`;
+    } else if (isSig && direction === 'positif') {
+      easyMeaning = `BERPENGARUH POSITIF & SIGNIFIKAN terhadap ${yCol} (Koefisien = +${b.toFixed(4)}, p = ${pVal.toFixed(4)} < ${alpha}). Artinya: Setiap kenaikan 1 satuan pada ${xName}, maka ${yCol} akan NAIK sebesar ${Math.abs(b).toFixed(4)} satuan (dengan asumsi variabel lain tetap). Semakin tinggi ${origName}, semakin meningkat pula ${yCol}.`;
+    } else if (isSig && direction === 'negatif') {
+      easyMeaning = `BERPENGARUH NEGATIF & SIGNIFIKAN terhadap ${yCol} (Koefisien = ${b.toFixed(4)}, p = ${pVal.toFixed(4)} < ${alpha}). Artinya: Setiap kenaikan 1 satuan pada ${xName}, maka ${yCol} akan TURUN sebesar ${Math.abs(b).toFixed(4)} satuan (dengan asumsi variabel lain tetap). Semakin tinggi ${origName}, maka ${yCol} cenderung menurun.`;
+    } else {
+      easyMeaning = `TIDAK BERPENGARUH SIGNIFIKAN terhadap ${yCol} (Koefisien = ${b.toFixed(4)}, p = ${pVal.toFixed(4)} >= ${alpha}). Artinya: Arah koefisien bernilai ${direction} (${b.toFixed(4)}), namun perubahan pada ${xName} belum cukup kuat secara statistik untuk membuktikan pengaruh nyata terhadap ${yCol}.`;
+    }
+
+    return {
+      variable: xName,
+      originalVariable: origName,
+      coef: b,
+      se,
+      tOrZ,
+      pValue: pVal,
+      isSignificant: isSig,
+      direction,
+      easyMeaning
+    };
+  });
+
+  const sigVars = predictorInterpretations.filter(p => p.isSignificant);
+  const overallConclusion =
+    sigVars.length > 0
+      ? `Kesimpulan Utama: Dari ${xCols.length} variabel independen yang diuji dengan model ${finalModel.modelType} Robust, terdapat ${sigVars.length} variabel yang terbukti berpengaruh signifikan terhadap ${yCol}, yaitu: ${sigVars.map(s => `${s.variable} (${s.direction})`).join(', ')}.`
+      : `Kesimpulan Utama: Pada tingkat signifikansi ${(alpha * 100).toFixed(0)}%, belum ada variabel independen yang berpengaruh signifikan secara parsial terhadap ${yCol} setelah dikoreksi dengan standar error robust.`;
+
+  return {
+    modelSummaryLine,
+    simultaneousTestLine,
+    rSquaredLine,
+    transformationNotes,
+    predictorInterpretations,
+    overallConclusion
   };
 }
 

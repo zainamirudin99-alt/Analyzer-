@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { CheckCircle2, Circle, Clock } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 
 export interface StepItem {
   index: number;
@@ -14,15 +14,15 @@ export const PANEL_STEPS: StepItem[] = [
   { index: 1, title: 'Impor Data', shortDesc: 'Unggah berkas / link' },
   { index: 2, title: 'Pilih Sheet', shortDesc: 'Lembar kerja aktif' },
   { index: 3, title: 'Petakan Kolom', shortDesc: 'ID, Waktu, Y, X' },
-  { index: 4, title: 'Cek & Bersih Data', shortDesc: 'Duplikasi & Balance' },
-  { index: 5, title: 'Deskriptif xtsum', shortDesc: 'Overall, Between, Within' },
+  { index: 4, title: 'Cleaning & Data 0', shortDesc: 'Missing, Duplikat, Nilai 0' },
+  { index: 5, title: 'Transformasi LN & xtsum', shortDesc: 'Analisis LN & Deskriptif' },
   { index: 6, title: 'Korelasi Matriks', shortDesc: 'Pearson & Spearman' },
-  { index: 7, title: 'Deklarasi xtset', shortDesc: 'Kunci struktur panel' },
-  { index: 8, title: 'Estimasi Awal', shortDesc: 'CEM, FEM, REM' },
-  { index: 9, title: 'Uji Pemilihan', shortDesc: 'Chow, Hausman, LM' },
-  { index: 10, title: 'Model Terpilih', shortDesc: 'Estimasi model juara' },
-  { index: 11, title: 'Asumsi & Remedial', shortDesc: 'VIF, Greene, Wooldridge' },
-  { index: 12, title: 'Model Akhir', shortDesc: 'Cluster-Robust SE' }
+  { index: 7, title: 'Deklarasi xtset', shortDesc: 'xtset id year' },
+  { index: 8, title: 'Panggil CEM, FEM, REM', shortDesc: 'Estimasi 3 Model Panel' },
+  { index: 9, title: 'Uji Chow, Hausman, LM', shortDesc: 'Chow Dummy, Hausman, LM' },
+  { index: 10, title: 'Model Terpilih', shortDesc: 'Gunakan variabel terakhir' },
+  { index: 11, title: 'Asumsi, orthog & Normalitas', shortDesc: 'VIF, orthog, Histogram, sktest' },
+  { index: 12, title: 'Hasil Robust & Interpretasi', shortDesc: 'vce(robust) & Bahasa Mudah' }
 ];
 
 interface PanelStepperProps {
@@ -61,7 +61,7 @@ export const PanelStepper: React.FC<PanelStepperProps> = ({
           paddingLeft: '8px'
         }}
       >
-        Tahapan Ekonometrika (0 s/d 12)
+        Tahapan Ekonometrika Stata (0 s/d 12)
       </div>
 
       <div
