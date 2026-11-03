@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
               username: session.username,
               password_hash: user?.password_hash || '',
               settings_encrypted: user?.settings_encrypted || null
-            }, { onConflict: 'username' }).catch(() => {});
+            }, { onConflict: 'username' });
           }
         }
       }

@@ -439,7 +439,11 @@ export async function authenticateUser(username: string, rawPassword: string, re
       if (existingUser.settings_encrypted) {
         upsertRow.settings_encrypted = existingUser.settings_encrypted;
       }
-      await supabase.from('app_users').upsert(upsertRow, { onConflict: 'username' }).catch(() => {});
+      try {
+        await supabase.from('app_users').upsert(upsertRow, { onConflict: 'username' });
+      } catch (upsertErr) {
+        console.warn('[authenticateUser app_users notice]:', upsertErr);
+      }
     }
     return existingUser;
   }
@@ -466,7 +470,9 @@ export async function authenticateUser(username: string, rawPassword: string, re
         };
 
         // Simpan self-heal ke Supabase
-        await saveUserToAppSettings(healedUser).catch(() => {});
+        try {
+          await saveUserToAppSettings(healedUser);
+        } catch {}
         const healRow: Record<string, any> = {
           id: healedUser.id,
           username: healedUser.username,
@@ -475,10 +481,9 @@ export async function authenticateUser(username: string, rawPassword: string, re
         if (healedUser.settings_encrypted) {
           healRow.settings_encrypted = healedUser.settings_encrypted;
         }
-        await supabase
-          .from('app_users')
-          .upsert(healRow, { onConflict: 'username' })
-          .catch(() => {});
+        try {
+          await supabase.from('app_users').upsert(healRow, { onConflict: 'username' });
+        } catch {}
 
         const users = await readLocalStore();
         await writeLocalStore([...users.filter(u => u.username !== cleanUsername), healedUser]);
@@ -591,7 +596,7 @@ export async function updateUser(
               value: patch.settings_encrypted,
               updated_at: now
             }
-          ]).catch(() => {});
+          ]);
         }
       } catch (setEx) {
         console.warn('[updateUser app_settings exception]:', setEx);
