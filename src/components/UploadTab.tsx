@@ -12,9 +12,9 @@ import {
   setActivePresetId,
   getActivePreset,
   getStoredSkills,
-  getActiveSkillId,
-  setActiveSkillId,
-  getActiveSkill,
+  getActiveSkillIds,
+  setActiveSkillIds,
+  getCombinedActiveSkillContent,
   DEFAULT_PRESET_ID
 } from '@/lib/indicators-storage';
 import {
@@ -76,11 +76,11 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
   const [activeProvider, setActiveProvider] = useState<'gemini' | 'openai' | 'claude'>('gemini');
   const [activeModel, setActiveModel] = useState<string>('gemini-3.7-flash');
 
-  // Preset Indikator & Custom Skills State
+  // Preset Indikator & Custom Skills State (Multi-Select)
   const [presets, setPresets] = useState<IndicatorPreset[]>([]);
   const [activePresetId, setActivePresetIdState] = useState<string>(DEFAULT_PRESET_ID);
   const [skills, setSkills] = useState<CustomAISkill[]>([]);
-  const [activeSkillId, setActiveSkillIdState] = useState<string>('none');
+  const [activeSkillIds, setActiveSkillIdsState] = useState<string[]>([]);
 
   const syncAllState = () => {
     // 1. Sinkronisasi Model AI
@@ -103,11 +103,11 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
     setPresets(storedPresets);
     setActivePresetIdState(currentActivePreset);
 
-    // 3. Sinkronisasi Custom AI Skills
+    // 3. Sinkronisasi Custom AI Skills (Multi-Skill)
     const storedSkills = getStoredSkills();
-    const currentSkillId = getActiveSkillId();
+    const currentSkillIds = getActiveSkillIds();
     setSkills(storedSkills);
-    setActiveSkillIdState(currentSkillId);
+    setActiveSkillIdsState(currentSkillIds);
   };
 
   useEffect(() => {
@@ -174,9 +174,24 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
     setActivePresetIdState(newPresetId);
   };
 
-  const handleSkillChange = (newSkillId: string) => {
-    setActiveSkillId(newSkillId);
-    setActiveSkillIdState(newSkillId);
+  const handleToggleSkill = (skillId: string) => {
+    const exists = activeSkillIds.includes(skillId);
+    const nextIds = exists
+      ? activeSkillIds.filter(id => id !== skillId)
+      : [...activeSkillIds, skillId];
+    setActiveSkillIds(nextIds);
+    setActiveSkillIdsState(nextIds);
+  };
+
+  const handleSelectAllSkills = () => {
+    const allIds = skills.map(s => s.id);
+    setActiveSkillIds(allIds);
+    setActiveSkillIdsState(allIds);
+  };
+
+  const handleClearSkills = () => {
+    setActiveSkillIds([]);
+    setActiveSkillIdsState([]);
   };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -422,15 +437,15 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
       if (storedModel) formData.append('model', storedModel.trim());
     }
 
-    // Lampirkan Preset Indikator Aktif & Custom Skill (jika ada)
+    // Lampirkan Preset Indikator Aktif & Gabungan Multi-Skill (jika ada)
     const activePreset = getActivePreset();
     formData.append('presetId', activePreset.id);
     formData.append('presetName', activePreset.name);
     formData.append('indicatorsJson', JSON.stringify(activePreset.indicators));
 
-    const activeSkill = getActiveSkill();
-    if (activeSkill) {
-      formData.append('skillContent', activeSkill.content);
+    const combinedSkillContent = getCombinedActiveSkillContent();
+    if (combinedSkillContent) {
+      formData.append('skillContent', combinedSkillContent);
     }
 
     try {
@@ -485,6 +500,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
             status: 'completed',
             preset_id: data.preset_id || activePreset.id,
             preset_name: data.preset_name || activePreset.name,
+            dynamic_scores: data.scores,
             ...data.scores,
             total_score: data.total_score,
             disclosure_level: data.disclosure_level,
@@ -501,9 +517,13 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
         }
       }
 
+      const activeCount = activePreset.indicators.length || 18;
+      const maxPts = activeCount * 5;
       setAlertInfo({
         type: 'success',
-        message: `Analisis untuk ${code} (${fiscalYear}) selesai! Total skor: ${data.total_score}/90. Klik tombol hijau di kanan untuk menyalin 18 angka skor.`
+        message: isEn
+          ? `Analysis for ${code} (${fiscalYear}) completed! Total score: ${data.total_score}/${maxPts}. Click the green button on the right to copy the ${activeCount} indicator scores.`
+          : `Analisis untuk ${code} (${fiscalYear}) selesai! Total skor: ${data.total_score}/${maxPts}. Klik tombol hijau di kanan untuk menyalin ${activeCount} angka skor.`
       });
 
       onSuccessAnalysis();
@@ -782,25 +802,127 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
               </select>
             </div>
 
-            {/* 2. Pemilih Bantuan AI Skill */}
+            {/* 2. Pemilih Bantuan AI Skill (Multi-Select: Bisa Pilih Lebih dari Satu) */}
             <div>
-              <label className="form-label" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--bark)', marginBottom: '4px' }}>
-                🧠 {isEn ? 'AI Assistant Skill (Custom Skill)' : 'Skill Bantuan AI (Custom Skill)'}
-              </label>
-              <select
-                className="form-select"
-                value={activeSkillId}
-                onChange={e => handleSkillChange(e.target.value)}
-                disabled={isAnalyzing || isExtracting}
-                style={{ background: '#ffffff', fontSize: '12.5px', padding: '7px 10px' }}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px', gap: '6px' }}>
+                <label className="form-label" style={{ fontWeight: 700, fontSize: '12px', color: 'var(--bark)', marginBottom: 0 }}>
+                  🧠 {isEn ? 'AI Assistant Skills (Multi-Select)' : 'Skill Bantuan AI (Bisa Pilih > 1)'}
+                </label>
+                {skills.length > 0 && (
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    <span
+                      style={{
+                        fontSize: '10.5px',
+                        fontWeight: 700,
+                        padding: '1px 7px',
+                        borderRadius: '999px',
+                        background: activeSkillIds.length > 0 ? 'var(--fern)' : '#ffffff',
+                        color: activeSkillIds.length > 0 ? '#ffffff' : 'var(--stone)',
+                        border: '1px solid var(--border)'
+                      }}
+                    >
+                      {activeSkillIds.length > 0
+                        ? isEn
+                          ? `${activeSkillIds.length} Active`
+                          : `${activeSkillIds.length} Aktif`
+                        : isEn
+                        ? 'None'
+                        : '0 Aktif'}
+                    </span>
+                    {activeSkillIds.length < skills.length ? (
+                      <button
+                        type="button"
+                        onClick={handleSelectAllSkills}
+                        disabled={isAnalyzing || isExtracting}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          color: 'var(--fern)',
+                          cursor: 'pointer',
+                          padding: 0,
+                          textDecoration: 'underline'
+                        }}
+                      >
+                        {isEn ? 'Select All' : 'Pilih Semua'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleClearSkills}
+                        disabled={isAnalyzing || isExtracting}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          color: 'var(--stone)',
+                          cursor: 'pointer',
+                          padding: 0,
+                          textDecoration: 'underline'
+                        }}
+                      >
+                        {isEn ? 'Reset' : 'Reset'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid var(--border)',
+                  borderRadius: '8px',
+                  padding: '6px 8px',
+                  minHeight: '38px',
+                  maxHeight: '110px',
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: '6px',
+                  alignItems: 'center'
+                }}
               >
-                <option value="none">{isEn ? 'No Extra Skill (Default)' : 'Tanpa Skill Tambahan (Bawaan)'}</option>
-                {skills.map(s => (
-                  <option key={s.id} value={s.id}>
-                    ✨ {s.name}
-                  </option>
-                ))}
-              </select>
+                {skills.length === 0 ? (
+                  <span style={{ fontSize: '12px', color: 'var(--stone)', fontStyle: 'italic' }}>
+                    {isEn
+                      ? 'No custom skills yet (upload in Settings)'
+                      : 'Belum ada skill kustom (unggah di Pengaturan)'}
+                  </span>
+                ) : (
+                  skills.map(s => {
+                    const isChecked = activeSkillIds.includes(s.id);
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        disabled={isAnalyzing || isExtracting}
+                        onClick={() => handleToggleSkill(s.id)}
+                        title={s.description || s.name}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '4px 10px',
+                          borderRadius: '999px',
+                          fontSize: '11.5px',
+                          fontWeight: isChecked ? 700 : 600,
+                          background: isChecked ? 'var(--fern)' : 'var(--dew)',
+                          color: isChecked ? '#ffffff' : 'var(--text)',
+                          border: isChecked ? '1px solid var(--fern)' : '1px solid var(--border)',
+                          cursor: isAnalyzing || isExtracting ? 'not-allowed' : 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <span>{isChecked ? '✅' : '✨'}</span>
+                        <span>{s.name}</span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
             </div>
           </div>
 
@@ -975,119 +1097,167 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
       </div>
 
       {/* Kolom Kanan: Hasil Skor / Preview Card */}
-      {scoreResult ? (
-        <div className="card">
-          <div className="card-title" style={{ justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div className="ct-icon">🌿</div>
-              <span>Hasil Analisis CED: <strong style={{ color: 'var(--fern)' }}>{scoreResult.code} ({scoreResult.year})</strong></span>
-            </div>
-            <span className="font-mono" style={{ fontSize: '12px', background: 'var(--dew)', padding: '4px 10px', borderRadius: '6px', color: 'var(--moss)' }}>
-              Model: {scoreResult.modelUsed}
-            </span>
-          </div>
+      {scoreResult ? (() => {
+        const activeCodes = getActiveIndicatorCodes();
+        const count = activeCodes.length || 18;
+        const maxPossible = count * 5;
+        const firstCode = (activeCodes[0] || 'CC1').toUpperCase();
+        const lastCode = (activeCodes[count - 1] || 'ACC2').toUpperCase();
 
-          <div className="grid-3" style={{ marginBottom: '20px' }}>
-            <div className="stat-box s-green">
-              <div className="stat-val">{scoreResult.totalScore}</div>
-              <div className="stat-lbl">Total Skor / 90</div>
-            </div>
-            <div className="stat-box s-teal">
-              <div className="stat-val">{((scoreResult.totalScore / 90) * 100).toFixed(1)}%</div>
-              <div className="stat-lbl">Indeks Pengungkapan</div>
-            </div>
-            <div className="stat-box s-sage">
-              <div className="stat-val" style={{ fontSize: '17px', lineHeight: '1.3' }}>
-                {scoreResult.disclosureLevel.split(' ')[0]}
-              </div>
-              <div className="stat-lbl">Level Kategori</div>
-            </div>
-          </div>
-
-          {/* Quick Copy Box */}
-          <div style={{ background: '#f0f7ea', border: '1.5px solid var(--border)', borderRadius: '12px', padding: '14px', marginBottom: '18px' }}>
-            <div style={{ fontSize: '12.5px', fontWeight: 800, color: 'var(--moss)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>📋</span>
-              <span>Salin Cepat Nilai ke Spreadsheet (Excel / Google Sheets):</span>
-            </div>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {/* Tombol Utama: HANYA 18 Skor (Tanpa Nama & Tanpa Tahun) */}
-              <button
-                className="btn btn-primary"
-                onClick={copyScoresOnly}
-                style={{ justifyContent: 'center', fontSize: '13px', padding: '10px 16px' }}
-                title="Menyalin HANYA 18 angka nilai indikator (CC1 s/d ACC2), tanpa nama perusahaan atau tahun"
-              >
-                {copiedType === 'scores_only' ? <Check size={16} /> : <Copy size={16} />}
+        return (
+          <div className="card">
+            <div className="card-title" style={{ justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div className="ct-icon">🌿</div>
                 <span>
-                  {copiedType === 'scores_only'
-                    ? '18 Nilai Skor Tersalin! Siap Paste (Ctrl+V) ✅'
-                    : '📋 Salin 18 Nilai Skor Saja (CC1 s/d ACC2)'}
+                  {isEn ? 'Analysis Result:' : 'Hasil Analisis:'}{' '}
+                  <strong style={{ color: 'var(--fern)' }}>{scoreResult.code} ({scoreResult.year})</strong>
                 </span>
-              </button>
+              </div>
+              <span className="font-mono" style={{ fontSize: '12px', background: 'var(--dew)', padding: '4px 10px', borderRadius: '6px', color: 'var(--moss)' }}>
+                Model: {scoreResult.modelUsed}
+              </span>
+            </div>
 
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {/* Tombol 18 Skor + Total */}
-                <button
-                  className="btn btn-accent btn-sm"
-                  onClick={copyScoresAndTotal}
-                  style={{ flex: 1, minWidth: '150px' }}
-                  title="Menyalin 18 angka nilai indikator + total skor"
-                >
-                  {copiedType === 'scores_total' ? <Check size={14} /> : <Copy size={14} />}
-                  <span>{copiedType === 'scores_total' ? '18 Nilai + Total Tersalin! ✅' : 'Salin 18 Nilai + Total'}</span>
-                </button>
-
-                {/* Tombol Baris Penuh */}
-                <button
-                  className="btn btn-outline btn-sm"
-                  onClick={copyFullRow}
-                  style={{ flex: 1, minWidth: '150px', background: '#ffffff' }}
-                  title="Menyalin Kode, Tahun, 18 Nilai, dan Total"
-                >
-                  {copiedType === 'full_row' ? <Check size={14} /> : <Copy size={14} />}
-                  <span>{copiedType === 'full_row' ? 'Baris Lengkap Tersalin! ✅' : 'Salin Lengkap (+Kode & Tahun)'}</span>
-                </button>
+            <div className="grid-3" style={{ marginBottom: '20px' }}>
+              <div className="stat-box s-green">
+                <div className="stat-val">{scoreResult.totalScore}</div>
+                <div className="stat-lbl">{isEn ? `Total Score / ${maxPossible}` : `Total Skor / ${maxPossible}`}</div>
+              </div>
+              <div className="stat-box s-teal">
+                <div className="stat-val">{maxPossible > 0 ? ((scoreResult.totalScore / maxPossible) * 100).toFixed(1) : '0.0'}%</div>
+                <div className="stat-lbl">{isEn ? 'Disclosure Index' : 'Indeks Pengungkapan'}</div>
+              </div>
+              <div className="stat-box s-sage">
+                <div className="stat-val" style={{ fontSize: '17px', lineHeight: '1.3' }}>
+                  {scoreResult.disclosureLevel.split(' ')[0]}
+                </div>
+                <div className="stat-lbl">{isEn ? 'Category Level' : 'Level Kategori'}</div>
               </div>
             </div>
 
-            {copiedType && (
-              <div style={{ fontSize: '11.5px', color: 'var(--fern)', marginTop: '8px', fontWeight: 600 }}>
-                💡 Data tersalin dalam format TAB (*TSV*). Tekan <strong>Ctrl + V</strong> di sel Google Sheets / Excel, nilai akan otomatis mengisi 18 kolom secara horizontal!
+            {/* Quick Copy Box */}
+            <div style={{ background: '#f0f7ea', border: '1.5px solid var(--border)', borderRadius: '12px', padding: '14px', marginBottom: '18px' }}>
+              <div style={{ fontSize: '12.5px', fontWeight: 800, color: 'var(--moss)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>📋</span>
+                <span>
+                  {isEn
+                    ? 'Quick Copy Scores to Spreadsheet (Excel / Google Sheets):'
+                    : 'Salin Cepat Nilai ke Spreadsheet (Excel / Google Sheets):'}
+                </span>
               </div>
-            )}
-          </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {/* Tombol Utama: HANYA Skor Indikator Aktif */}
+                <button
+                  className="btn btn-primary"
+                  onClick={copyScoresOnly}
+                  style={{ justifyContent: 'center', fontSize: '13px', padding: '10px 16px' }}
+                  title={
+                    isEn
+                      ? `Copy ONLY the ${count} indicator scores (${firstCode} to ${lastCode})`
+                      : `Menyalin HANYA ${count} angka nilai indikator (${firstCode} s/d ${lastCode}), tanpa nama perusahaan atau tahun`
+                  }
+                >
+                  {copiedType === 'scores_only' ? <Check size={16} /> : <Copy size={16} />}
+                  <span>
+                    {copiedType === 'scores_only'
+                      ? isEn
+                        ? `${count} Scores Copied! Ready to Paste (Ctrl+V) ✅`
+                        : `${count} Nilai Skor Tersalin! Siap Paste (Ctrl+V) ✅`
+                      : isEn
+                      ? `📋 Copy ${count} Indicator Scores Only (${firstCode} to ${lastCode})`
+                      : `📋 Salin ${count} Nilai Skor Saja (${firstCode} s/d ${lastCode})`}
+                  </span>
+                </button>
 
-          <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--stone)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-            Rincian Indikator (Skala 0 – 5):
-          </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {/* Tombol Skor + Total */}
+                  <button
+                    className="btn btn-accent btn-sm"
+                    onClick={copyScoresAndTotal}
+                    style={{ flex: 1, minWidth: '150px' }}
+                    title={isEn ? `Copy ${count} indicator scores + total score` : `Menyalin ${count} angka nilai indikator + total skor`}
+                  >
+                    {copiedType === 'scores_total' ? <Check size={14} /> : <Copy size={14} />}
+                    <span>
+                      {copiedType === 'scores_total'
+                        ? isEn
+                          ? `${count} Scores + Total Copied! ✅`
+                          : `${count} Nilai + Total Tersalin! ✅`
+                        : isEn
+                        ? `Copy ${count} Scores + Total`
+                        : `Salin ${count} Nilai + Total`}
+                    </span>
+                  </button>
 
-          <div className="ind-grid">
-            {getActiveIndicatorCodes().map(k => {
-              const upper = k.toUpperCase();
-              const score = scoreResult.scores[k] ?? scoreResult.scores[upper] ?? 0;
-              return (
-                <div key={k} className="ind-item">
-                  <div className="ind-code">{upper}</div>
-                  <div className={`score-badge score-${score}`}>{score}</div>
+                  {/* Tombol Baris Penuh */}
+                  <button
+                    className="btn btn-outline btn-sm"
+                    onClick={copyFullRow}
+                    style={{ flex: 1, minWidth: '150px', background: '#ffffff' }}
+                    title={isEn ? `Copy Code, Year, ${count} Scores, and Total` : `Menyalin Kode, Tahun, ${count} Nilai, dan Total`}
+                  >
+                    {copiedType === 'full_row' ? <Check size={14} /> : <Copy size={14} />}
+                    <span>
+                      {copiedType === 'full_row'
+                        ? isEn
+                          ? 'Full Row Copied! ✅'
+                          : 'Baris Lengkap Tersalin! ✅'
+                        : isEn
+                        ? 'Copy Full Row (+Code & Year)'
+                        : 'Salin Lengkap (+Kode & Tahun)'}
+                    </span>
+                  </button>
                 </div>
-              );
-            })}
-          </div>
+              </div>
 
-          <div style={{ display: 'flex', gap: '10px', marginTop: '24px', flexWrap: 'wrap' }}>
-            <button className="btn btn-accent btn-sm" onClick={onNavigateToResults}>
-              <span>Lihat di Tabel Database</span>
-              <ArrowRight size={16} />
-            </button>
-            <button className="btn btn-outline btn-sm" onClick={handleReset}>
-              <RefreshCw size={14} />
-              <span>Analisis Laporan Lain</span>
-            </button>
+              {copiedType && (
+                <div style={{ fontSize: '11.5px', color: 'var(--fern)', marginTop: '8px', fontWeight: 600 }}>
+                  💡{' '}
+                  {isEn ? (
+                    <>
+                      Data copied in TAB (<em>TSV</em>) format. Press <strong>Ctrl + V</strong> in Google Sheets / Excel to fill {count} columns horizontally!
+                    </>
+                  ) : (
+                    <>
+                      Data tersalin dalam format TAB (<em>TSV</em>). Tekan <strong>Ctrl + V</strong> di sel Google Sheets / Excel, nilai akan otomatis mengisi {count} kolom secara horizontal!
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--stone)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+              {isEn ? `Indicator Breakdown (${count} Indicators · Scale 0 – 5):` : `Rincian Indikator (${count} Indikator · Skala 0 – 5):`}
+            </div>
+
+            <div className="ind-grid">
+              {activeCodes.map(k => {
+                const upper = k.toUpperCase();
+                const score = scoreResult.scores[k] ?? scoreResult.scores[upper] ?? 0;
+                return (
+                  <div key={k} className="ind-item">
+                    <div className="ind-code">{upper}</div>
+                    <div className={`score-badge score-${score}`}>{score}</div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '24px', flexWrap: 'wrap' }}>
+              <button className="btn btn-accent btn-sm" onClick={onNavigateToResults}>
+                <span>{isEn ? 'View in Results Table' : 'Lihat di Tabel Database'}</span>
+                <ArrowRight size={16} />
+              </button>
+              <button className="btn btn-outline btn-sm" onClick={handleReset}>
+                <RefreshCw size={14} />
+                <span>{isEn ? 'Analyze Another Report' : 'Analisis Laporan Lain'}</span>
+              </button>
+            </div>
           </div>
-        </div>
-      ) : (
+        );
+      })() : (
         <div
           className="card"
           style={{

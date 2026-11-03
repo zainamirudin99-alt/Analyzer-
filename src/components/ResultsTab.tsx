@@ -3,7 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, Download, Search, Trash2, Printer, Copy, Check, Table } from 'lucide-react';
 import { CEDResultRecord, INDICATOR_KEYS, IndicatorPreset } from '@/lib/types';
-import { getStoredPresets, saveStoredPresets, getActivePresetId, DEFAULT_PRESET_ID } from '@/lib/indicators-storage';
+import {
+  getStoredPresets,
+  saveStoredPresets,
+  getActivePresetId,
+  setActivePresetId,
+  DEFAULT_PRESET_ID,
+  createDefaultCEDPreset
+} from '@/lib/indicators-storage';
 import { useLanguage, getPresetName, getIndicatorTitle, ensurePresetsTranslated } from '@/lib/i18n';
 
 interface ResultsTabProps {
@@ -16,7 +23,8 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
 
   const [results, setResults] = useState<CEDResultRecord[]>([]);
   const [presets, setPresets] = useState<IndicatorPreset[]>([]);
-  const [filterPreset, setFilterPreset] = useState<string>('all');
+  const [selectedPresetId, setSelectedPresetId] = useState<string>(DEFAULT_PRESET_ID);
+  const [onlyMatchingPresetRows, setOnlyMatchingPresetRows] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState(false);
   const [filterCode, setFilterCode] = useState('');
   const [filterYear, setFilterYear] = useState('');
@@ -54,7 +62,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
       console.warn('Backend fetch notice:', err);
     }
 
-    // 3. Gabungkan data (prioritaskan Supabase jika ada ID, hilangkan duplikasi kode + tahun)
+    // 3. Gabungkan data: pertahankan skor indikator kustom & preset_id dari localData agar tidak hilang oleh tabel standar Supabase
     const combinedMap = new Map<string, CEDResultRecord>();
 
     localData.forEach(item => {
@@ -62,9 +70,21 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
       combinedMap.set(key, item);
     });
 
-    supabaseData.forEach(item => {
-      const key = `${item.company_code}_${item.fiscal_year}`;
-      combinedMap.set(key, item);
+    supabaseData.forEach(sbItem => {
+      const key = `${sbItem.company_code}_${sbItem.fiscal_year}`;
+      const existingLocal = combinedMap.get(key);
+      if (existingLocal) {
+        combinedMap.set(key, {
+          ...sbItem,
+          ...existingLocal,
+          id: sbItem.id || existingLocal.id,
+          preset_id: existingLocal.preset_id || sbItem.preset_id,
+          preset_name: existingLocal.preset_name || sbItem.preset_name,
+          dynamic_scores: existingLocal.dynamic_scores || sbItem.dynamic_scores
+        });
+      } else {
+        combinedMap.set(key, sbItem);
+      }
     });
 
     const mergedList = Array.from(combinedMap.values()).sort((a, b) => {
@@ -82,20 +102,22 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     setIsLoading(false);
   };
 
-  const loadPresets = () => {
+  const syncPresetsAndActive = () => {
     const p = getStoredPresets();
+    const actId = getActivePresetId();
     setPresets(p);
+    setSelectedPresetId(actId);
   };
 
   useEffect(() => {
     fetchResults();
-    loadPresets();
+    syncPresetsAndActive();
     if (typeof window !== 'undefined') {
-      window.addEventListener('analyzer_presets_changed', loadPresets);
-      window.addEventListener('analyzer_active_preset_changed', loadPresets);
+      window.addEventListener('analyzer_presets_changed', syncPresetsAndActive);
+      window.addEventListener('analyzer_active_preset_changed', syncPresetsAndActive);
       return () => {
-        window.removeEventListener('analyzer_presets_changed', loadPresets);
-        window.removeEventListener('analyzer_active_preset_changed', loadPresets);
+        window.removeEventListener('analyzer_presets_changed', syncPresetsAndActive);
+        window.removeEventListener('analyzer_active_preset_changed', syncPresetsAndActive);
       };
     }
   }, [refreshTrigger]);
@@ -109,6 +131,12 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
       }
     });
   }, [lang]);
+
+  // Saat pengguna memilih preset indikator di Tabel Hasil, sinkronkan ke seluruh sistem
+  const handleSelectPresetInTable = (presetId: string) => {
+    setSelectedPresetId(presetId);
+    setActivePresetId(presetId);
+  };
 
   const handleDelete = async (record: CEDResultRecord) => {
     const confirmMsg = isEn
@@ -144,46 +172,51 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     });
   };
 
-  const selectedPresetObj = presets.find(p => p.id === filterPreset);
-  const activePresetId = getActivePresetId();
-  const activePresetObj = presets.find(p => p.id === activePresetId);
-  const currentPresetForColumns = selectedPresetObj || activePresetObj;
+  const currentPresetForColumns =
+    presets.find(p => p.id === selectedPresetId) || presets[0] || createDefaultCEDPreset();
 
   const displayIndicatorItems: { code: string; title: string }[] =
     currentPresetForColumns && currentPresetForColumns.indicators.length > 0
       ? currentPresetForColumns.indicators.map(i => ({ code: i.code, title: getIndicatorTitle(i, lang) }))
       : INDICATOR_KEYS.map(k => ({ code: k.toUpperCase(), title: k.toUpperCase() }));
 
-  // 1. SALIN HANYA NILAI SKOR
+  const maxPossibleScore = displayIndicatorItems.length * 5;
+
+  const getScoreForIndicator = (row: CEDResultRecord, code: string): number => {
+    const lower = code.toLowerCase();
+    const upper = code.toUpperCase();
+    const raw =
+      (row as any)[lower] ??
+      (row as any)[upper] ??
+      (row.dynamic_scores ? row.dynamic_scores[lower] ?? row.dynamic_scores[upper] : undefined) ??
+      0;
+    return typeof raw === 'number' && !isNaN(raw) ? raw : 0;
+  };
+
+  const getRowTotalForActivePreset = (row: CEDResultRecord): number => {
+    const sum = displayIndicatorItems.reduce((acc, ind) => acc + getScoreForIndicator(row, ind.code), 0);
+    return sum > 0 ? sum : row.total_score ?? 0;
+  };
+
+  // 1. SALIN HANYA NILAI SKOR (Sesuai Indikator Terpilih)
   const handleCopyScoresOnly = (row: CEDResultRecord, idKey: string) => {
-    const scoresTsv = displayIndicatorItems
-      .map(ind => {
-        const lower = ind.code.toLowerCase();
-        const upper = ind.code.toUpperCase();
-        return (row as any)[lower] ?? (row as any)[upper] ?? 0;
-      })
-      .join('\t');
+    const scoresTsv = displayIndicatorItems.map(ind => getScoreForIndicator(row, ind.code)).join('\t');
 
     navigator.clipboard.writeText(scoresTsv);
     setCopiedId(`scores_${idKey}`);
     setMessage({
       type: 'success',
       text: isEn
-        ? `Scores for ${row.company_code} (${row.fiscal_year}) copied to clipboard! Ready to paste (Ctrl+V).`
-        : `Nilai skor untuk ${row.company_code} (${row.fiscal_year}) tersalin ke clipboard! Siap di-paste (Ctrl+V) ke spreadsheet.`
+        ? `${displayIndicatorItems.length} indicator scores for ${row.company_code} (${row.fiscal_year}) copied to clipboard! Ready to paste (Ctrl+V).`
+        : `${displayIndicatorItems.length} nilai skor untuk ${row.company_code} (${row.fiscal_year}) tersalin ke clipboard! Siap di-paste (Ctrl+V) ke spreadsheet.`
     });
     setTimeout(() => setCopiedId(null), 2500);
   };
 
   // 2. SALIN 1 BARIS LENGKAP (+Kode & Tahun)
   const handleCopyRow = (row: CEDResultRecord, idKey: string) => {
-    const scores = displayIndicatorItems.map(ind => {
-      const lower = ind.code.toLowerCase();
-      const upper = ind.code.toUpperCase();
-      return (row as any)[lower] ?? (row as any)[upper] ?? 0;
-    });
-
-    const rowTsv = [row.company_code, row.fiscal_year, ...scores, row.total_score ?? 0].join('\t');
+    const scores = displayIndicatorItems.map(ind => getScoreForIndicator(row, ind.code));
+    const rowTsv = [row.company_code, row.fiscal_year, ...scores, getRowTotalForActivePreset(row)].join('\t');
 
     navigator.clipboard.writeText(rowTsv);
     setCopiedId(`row_${idKey}`);
@@ -202,12 +235,8 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
 
     const headers = ['Code', 'Years', ...displayIndicatorItems.map(i => i.code), 'TOTAL'];
     const rows = filteredResults.map(r => {
-      const scores = displayIndicatorItems.map(ind => {
-        const lower = ind.code.toLowerCase();
-        const upper = ind.code.toUpperCase();
-        return (r as any)[lower] ?? (r as any)[upper] ?? 0;
-      });
-      return [r.company_code, r.fiscal_year, ...scores, r.total_score ?? 0].join('\t');
+      const scores = displayIndicatorItems.map(ind => getScoreForIndicator(r, ind.code));
+      return [r.company_code, r.fiscal_year, ...scores, getRowTotalForActivePreset(r)].join('\t');
     });
 
     const fullTsv = [headers.join('\t'), ...rows].join('\n');
@@ -216,8 +245,8 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     setMessage({
       type: 'success',
       text: isEn
-        ? `${filteredResults.length} rows copied! Ready to paste into Google Sheets / Excel.`
-        : `${filteredResults.length} baris data berhasil disalin! Siap di-paste ke Google Sheets / Excel.`
+        ? `${filteredResults.length} rows (${displayIndicatorItems.length} indicators) copied! Ready to paste into Google Sheets / Excel.`
+        : `${filteredResults.length} baris data (${displayIndicatorItems.length} indikator) berhasil disalin! Siap di-paste ke Google Sheets / Excel.`
     });
     setTimeout(() => setCopiedAll(false), 3000);
   };
@@ -232,6 +261,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
       'Company Code',
       'Fiscal Year',
       'File Name',
+      'Preset Name',
       ...displayIndicatorItems.map(i => i.code),
       'Total Score',
       'Disclosure Level',
@@ -240,17 +270,14 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     ];
 
     const rows = filteredResults.map(r => {
-      const scores = displayIndicatorItems.map(ind => {
-        const lower = ind.code.toLowerCase();
-        const upper = ind.code.toUpperCase();
-        return (r as any)[lower] ?? (r as any)[upper] ?? 0;
-      });
+      const scores = displayIndicatorItems.map(ind => getScoreForIndicator(r, ind.code));
       return [
         `"${r.company_code}"`,
         `"${r.fiscal_year}"`,
         `"${(r.file_name || '').replace(/"/g, '""')}"`,
+        `"${(r.preset_name || getPresetName(currentPresetForColumns, lang)).replace(/"/g, '""')}"`,
         ...scores,
-        r.total_score ?? 0,
+        getRowTotalForActivePreset(r),
         `"${r.disclosure_level || ''}"`,
         `"${r.model_used || ''}"`,
         `"${r.created_at || ''}"`
@@ -261,7 +288,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `CED_Scoring_Results_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `Scoring_Results_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -270,18 +297,21 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
   const filteredResults = results.filter(item => {
     const matchCode = !filterCode || item.company_code.toLowerCase().includes(filterCode.toLowerCase());
     const matchYear = !filterYear || item.fiscal_year === filterYear;
-    const matchPreset =
-      filterPreset === 'all' || (item.preset_id ? item.preset_id === filterPreset : filterPreset === DEFAULT_PRESET_ID);
+    const matchPreset = !onlyMatchingPresetRows
+      ? true
+      : item.preset_id
+      ? item.preset_id === selectedPresetId
+      : selectedPresetId === DEFAULT_PRESET_ID;
     return matchCode && matchYear && matchPreset;
   });
 
   const totalCount = filteredResults.length;
-  const totalScoresArray = filteredResults.map(r => r.total_score || 0);
+  const totalScoresArray = filteredResults.map(r => getRowTotalForActivePreset(r));
   const avgScore = totalCount > 0 ? (totalScoresArray.reduce((a, b) => a + b, 0) / totalCount).toFixed(1) : '0.0';
   const maxScore = totalCount > 0 ? Math.max(...totalScoresArray) : 0;
   const minScore = totalCount > 0 ? Math.min(...totalScoresArray) : 0;
-  const topCompany = filteredResults.find(r => (r.total_score || 0) === maxScore);
-  const lowestCompany = filteredResults.find(r => (r.total_score || 0) === minScore);
+  const topCompany = filteredResults.find(r => getRowTotalForActivePreset(r) === maxScore);
+  const lowestCompany = filteredResults.find(r => getRowTotalForActivePreset(r) === minScore);
 
   return (
     <div>
@@ -294,7 +324,9 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
           </div>
           <div className="stat-box s-teal">
             <div className="stat-val">{avgScore}</div>
-            <div className="stat-lbl">{isEn ? 'Industry Average Score' : 'Rata-Rata Skor Industri'}</div>
+            <div className="stat-lbl">
+              {isEn ? `Average Score (Max ${maxPossibleScore})` : `Rata-Rata Skor (Maks ${maxPossibleScore})`}
+            </div>
           </div>
           <div className="stat-box s-sage">
             <div className="stat-val">{maxScore}</div>
@@ -318,8 +350,8 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
             <div className="ct-icon">📋</div>
             <span>
               {isEn
-                ? `CED Scoring Results Database (${filteredResults.length} Entries)`
-                : `Database Hasil CED Scoring (${filteredResults.length} Entri)`}
+                ? `Analysis Results Table (${filteredResults.length} Entries)`
+                : `Tabel Hasil Analisis (${filteredResults.length} Entri)`}
             </span>
           </div>
 
@@ -352,24 +384,6 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
               <option value="FY 2020">FY 2020</option>
             </select>
 
-            <select
-              className="form-select font-mono"
-              style={{ width: '170px' }}
-              value={filterPreset}
-              onChange={e => setFilterPreset(e.target.value)}
-              title={isEn ? 'Filter results by indicator preset' : 'Filter hasil berdasarkan pilihan indikator yang digunakan'}
-            >
-              <option value="all">{isEn ? 'All Indicators' : 'Semua Indikator'}</option>
-              {presets.map(p => {
-                const pName = getPresetName(p, lang);
-                return (
-                  <option key={p.id} value={p.id}>
-                    {pName.length > 22 ? `${pName.slice(0, 22)}...` : pName}
-                  </option>
-                );
-              })}
-            </select>
-
             <button className="btn btn-outline btn-sm" onClick={fetchResults} disabled={isLoading}>
               <RefreshCw size={13} className={isLoading ? 'spinner' : ''} />
               <span>Refresh</span>
@@ -396,6 +410,84 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
           </div>
         </div>
 
+        {/* BAR SINKRONISASI PILIHAN INDIKATOR PADA TABEL HASIL */}
+        <div
+          style={{
+            background: 'var(--dew, #eef7eb)',
+            border: '1px solid var(--border)',
+            borderRadius: '10px',
+            padding: '10px 14px',
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '12.5px', fontWeight: 800, color: 'var(--moss)' }}>
+              🌱 {isEn ? 'Active Indicator Columns:' : 'Pilihan Indikator Tabel:'}
+            </span>
+            <select
+              className="form-select font-mono"
+              style={{
+                width: 'auto',
+                minWidth: '240px',
+                background: '#ffffff',
+                fontSize: '12.5px',
+                padding: '6px 10px',
+                fontWeight: 700
+              }}
+              value={selectedPresetId}
+              onChange={e => handleSelectPresetInTable(e.target.value)}
+            >
+              {presets.map(p => (
+                <option key={p.id} value={p.id}>
+                  {getPresetName(p, lang)} ({p.indicators.length} {isEn ? 'Indicators' : 'Indikator'})
+                </option>
+              ))}
+            </select>
+            <span
+              className="badge"
+              style={{
+                background: '#ffffff',
+                color: 'var(--fern)',
+                border: '1px solid var(--border)',
+                fontSize: '11.5px',
+                padding: '4px 10px',
+                fontWeight: 700
+              }}
+            >
+              {displayIndicatorItems.length} {isEn ? 'Columns' : 'Kolom Indikator'} · {isEn ? 'Max Score:' : 'Skor Maks:'} {maxPossibleScore}
+            </span>
+          </div>
+
+          <label
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: 'var(--text)',
+              cursor: 'pointer'
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={onlyMatchingPresetRows}
+              onChange={e => setOnlyMatchingPresetRows(e.target.checked)}
+              style={{ accentColor: 'var(--fern)', cursor: 'pointer' }}
+            />
+            <span>
+              {isEn
+                ? 'Show only reports analyzed with this preset'
+                : 'Tampilkan hanya laporan dari preset ini'}
+            </span>
+          </label>
+        </div>
+
         {message && (
           <div className={`alert alert-${message.type}`}>
             <span>{message.type === 'success' ? '🌿' : '❌'}</span>
@@ -403,7 +495,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
           </div>
         )}
 
-        {/* Tabel Data Responsif */}
+        {/* Tabel Data Responsif dengan Kolom Sesuai Indikator yang Dipilih */}
         <div className="result-table-wrap">
           <table className="result-table">
             <thead>
@@ -411,11 +503,13 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
                 <th style={{ textAlign: 'left', minWidth: '90px' }}>Code</th>
                 <th style={{ minWidth: '90px' }}>Years</th>
                 {displayIndicatorItems.map(ind => (
-                  <th key={ind.code} title={ind.title}>
+                  <th key={ind.code} title={`${ind.code}: ${ind.title}`}>
                     {ind.code}
                   </th>
                 ))}
-                <th style={{ minWidth: '70px' }}>TOTAL</th>
+                <th style={{ minWidth: '80px' }} title={`Max: ${maxPossibleScore}`}>
+                  TOTAL / {maxPossibleScore}
+                </th>
                 <th style={{ minWidth: '100px' }}>Level</th>
                 <th style={{ minWidth: '190px' }}>{isEn ? 'Copy & Actions' : 'Salin & Aksi'}</th>
               </tr>
@@ -435,11 +529,11 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
                   <td colSpan={displayIndicatorItems.length + 5} style={{ padding: '48px 20px', color: 'var(--stone)', fontStyle: 'italic' }}>
                     {isEn ? (
                       <>
-                        🌿 No analysis records yet. Please upload an annual/sustainability report in the <strong>"Upload & Analysis"</strong> tab.
+                        🌿 No analysis records found for this filter. Upload a report in the <strong>"Upload & Analysis"</strong> tab.
                       </>
                     ) : (
                       <>
-                        🌿 Belum ada data analisis. Silakan upload laporan tahunan pada tab <strong>"Upload & Analisis"</strong>.
+                        🌿 Belum ada data analisis untuk filter ini. Silakan upload laporan tahunan pada tab <strong>"Upload & Analisis"</strong>.
                       </>
                     )}
                   </td>
@@ -449,6 +543,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
                   const rowKey = `${row.company_code}_${row.fiscal_year}_${idx}`;
                   const isCopiedRow = copiedId === `row_${rowKey}`;
                   const isCopiedScores = copiedId === `scores_${rowKey}`;
+                  const rowTotal = getRowTotalForActivePreset(row);
 
                   return (
                     <tr key={row.id || rowKey}>
@@ -456,17 +551,15 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
                       <td className="td-year">{row.fiscal_year}</td>
 
                       {displayIndicatorItems.map(ind => {
-                        const lower = ind.code.toLowerCase();
-                        const upper = ind.code.toUpperCase();
-                        const score = (row as any)[lower] ?? (row as any)[upper] ?? (row.dynamic_scores ? row.dynamic_scores[lower] : 0) ?? 0;
+                        const score = getScoreForIndicator(row, ind.code);
                         return (
-                          <td key={ind.code}>
+                          <td key={ind.code} title={`${ind.code} — ${ind.title}: ${score}/5`}>
                             <span className={`score-badge score-${score}`}>{score}</span>
                           </td>
                         );
                       })}
 
-                      <td className="td-total">{row.total_score ?? 0}</td>
+                      <td className="td-total">{rowTotal}</td>
                       <td style={{ fontSize: '12px', fontWeight: 700, color: 'var(--moss)', whiteSpace: 'nowrap' }}>
                         {row.disclosure_level?.split(' ')[0] || (isEn ? 'Low' : 'Rendah')}
                       </td>
@@ -475,7 +568,11 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
                           <button
                             className="btn btn-primary btn-sm"
                             style={{ padding: '4px 8px', fontSize: '11.5px', fontWeight: 700 }}
-                            title={isEn ? 'Copy indicator scores to paste into spreadsheet' : 'Salin Nilai Skor untuk paste ke spreadsheet'}
+                            title={
+                              isEn
+                                ? `Copy ${displayIndicatorItems.length} indicator scores to paste into spreadsheet`
+                                : `Salin ${displayIndicatorItems.length} Nilai Skor untuk paste ke spreadsheet`
+                            }
                             onClick={() => handleCopyScoresOnly(row, rowKey)}
                           >
                             {isCopiedScores ? <Check size={12} /> : <Table size={12} />}

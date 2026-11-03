@@ -136,3 +136,6 @@ Dokumen ini memuat daftar tugas operasional dari Tahap 1 hingga Tahap 3 beserta 
 - [x] **T4.7**: Perbaikan CSS `.modal-backdrop` & `.modal-card` agar pop-up tampil di tengah layar + alur berkelanjutan (*chained modal*) dari buat preset langsung ke form tambah indikator.
 - [x] **T4.8**: Dukungan upload file `.skill` (teks Markdown/YAML maupun arsip paket `.skill` ZIP) di menu Pengaturan.
 - [x] **T4.9**: Pilihan Bahasa Tampilan (Bahasa Indonesia & Bahasa Inggris) di menu Pengaturan beserta translasi otomatis dua arah (ID ↔ EN) untuk seluruh indikator (baku & kustom).
+
+- [x] **T4.10**: Pemilihan Multi-Skill AI (lebih dari satu skill sekaligus) di menu Upload & Analisis beserta penggabungan prompt multi-skill.
+- [x] **T4.11**: Sinkronisasi dua arah preset indikator aktif, kolom dinamis, skor maksimal ($N \times 5$), dan proteksi skor indikator kustom pada Tabel Hasil Analisis & kartu hasil analisis.

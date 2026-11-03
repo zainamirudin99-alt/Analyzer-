@@ -141,14 +141,61 @@ export function getActiveSkillId(): string {
 export function setActiveSkillId(id: string): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem('analyzer_active_skill_id', id);
+  if (id === 'none' || !id) {
+    localStorage.setItem('analyzer_active_skill_ids', JSON.stringify([]));
+  } else {
+    localStorage.setItem('analyzer_active_skill_ids', JSON.stringify([id]));
+  }
   window.dispatchEvent(new Event('analyzer_active_skill_changed'));
 }
 
+export function getActiveSkillIds(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem('analyzer_active_skill_ids');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const validIds = new Set(getStoredSkills().map(s => s.id));
+        return parsed.filter(id => typeof id === 'string' && validIds.has(id));
+      }
+    }
+    const legacy = localStorage.getItem('analyzer_active_skill_id');
+    if (legacy && legacy !== 'none') {
+      const validIds = new Set(getStoredSkills().map(s => s.id));
+      return validIds.has(legacy) ? [legacy] : [];
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+export function setActiveSkillIds(ids: string[]): void {
+  if (typeof window === 'undefined') return;
+  const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+  localStorage.setItem('analyzer_active_skill_ids', JSON.stringify(uniqueIds));
+  localStorage.setItem('analyzer_active_skill_id', uniqueIds[0] || 'none');
+  window.dispatchEvent(new Event('analyzer_active_skill_changed'));
+}
+
+export function getActiveSkills(): CustomAISkill[] {
+  const activeIds = new Set(getActiveSkillIds());
+  if (activeIds.size === 0) return [];
+  return getStoredSkills().filter(s => activeIds.has(s.id));
+}
+
+export function getCombinedActiveSkillContent(): string {
+  const activeList = getActiveSkills();
+  if (activeList.length === 0) return '';
+  return activeList
+    .map((s, idx) => `### [SKILL ${idx + 1}: ${s.name}]\n${s.content}`)
+    .join('\n\n---\n\n');
+}
+
 export function getActiveSkill(): CustomAISkill | null {
-  const id = getActiveSkillId();
-  if (!id || id === 'none') return null;
-  const skills = getStoredSkills();
-  return skills.find(s => s.id === id) || null;
+  const activeList = getActiveSkills();
+  return activeList[0] || null;
 }
 
 // Ekstraksi YAML Frontmatter dari konten SKILL.md / .skill

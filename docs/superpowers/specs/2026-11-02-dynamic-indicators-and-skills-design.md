@@ -143,3 +143,23 @@ export interface CustomAISkill {
    - Untuk 18 indikator standar CED dan rubrik skor (0–5): disediakan kamus dwibahasa baku (ID & EN) di `src/lib/i18n.ts`.
    - Untuk preset dan indikator kustom: `IndicatorItem` dan `IndicatorPreset` menyimpan atribut dwibahasa (`title_id`, `title_en`, `fullDesc_id`, `fullDesc_en`, `group_id`, `group_en`, `name_id`, `name_en`, `desc_id`, `desc_en`).
    - Saat indikator diinput dalam Bahasa Indonesia dan pengguna beralih ke Bahasa Inggris (atau sebaliknya), sistem otomatis menerjemahkan teks indikator secara asinkron melalui endpoint `/api/translate` dan menyimpannya ke cache `localStorage`.
+
+
+---
+
+## 7. Spesifikasi Fase 3: Pemilihan Multi-Skill AI & Sinkronisasi Penuh Tabel Hasil Analisis
+
+**Tanggal**: 3 November 2026  
+**Status**: Disetujui (Approved)
+
+### A. Pemilihan Multi-Skill AI Lebih dari Satu (`indicators-storage.ts`, `UploadTab.tsx`)
+1. Menambahkan helper `getActiveSkillIds(): string[]`, `setActiveSkillIds(ids: string[])`, dan `getActiveSkills(): CustomAISkill[]` pada `src/lib/indicators-storage.ts` (tetap menjaga kompatibilitas mundur dengan `getActiveSkillId`).
+2. Mengubah UI pemilih **Skill Bantuan AI (Custom Skill)** pada `UploadTab.tsx` menjadi komponen **Multi-Skill Selector** berbasis chip/checkbox interaktif:
+   - Pengguna dapat mencentang/memilih 1, beberapa, atau seluruh skill sekaligus (**Pilih Semua** / **Reset Pilihan**).
+   - Saat analisis dijalankan, instruksi dari seluruh skill yang aktif digabungkan secara terstruktur (`skillContent`) dan diinjeksikan ke prompt AI.
+
+### B. Sinkronisasi Penuh Tabel Hasil Analisis & Kartu Skor dengan Indikator Terpilih (`ResultsTab.tsx`, `UploadTab.tsx`)
+1. `ResultsTab.tsx` secara otomatis mensinkronkan filter preset indikator dengan preset yang sedang aktif (`getActivePresetId()`), dan perubahan pilihan preset pada `ResultsTab.tsx` juga menyinkronkan preset aktif (`setActivePresetId`) ketika memilih preset spesifik.
+2. Menampilkan banner informasi preset aktif beserta daftar kode indikator dan skor maksimal ($\text{Jumlah Indikator} \times 5$) di `ResultsTab.tsx`.
+3. Mempertahankan `preset_id`, `preset_name`, dan skor indikator kustom dari penyimpanan lokal saat menggabungkan data dengan Supabase agar kolom indikator kustom tidak hilang.
+4. Kartu hasil analisis di `UploadTab.tsx` menampilkan skor maksimal dinamis ($N \times 5$), persentase pengungkapan dinamis, dan tombol salin sesuai jumlah indikator dari preset aktif.
