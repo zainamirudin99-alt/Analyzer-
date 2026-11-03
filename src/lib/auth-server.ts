@@ -468,36 +468,105 @@ export async function updateUser(
   usernameHint?: string
 ): Promise<void> {
   const cleanHint = usernameHint ? normalizeUsername(usernameHint) : undefined;
+  const now = new Date().toISOString();
   const supabase = isSupabaseConfigured ? getSupabaseServerClient() : null;
+
   if (supabase) {
     try {
-      const { error } = await supabase
+      // 1. Periksa apakah baris user sudah ada di app_users
+      let matchedUserId: string | null = null;
+      const { data: byId } = await supabase
         .from('app_users')
-        .update({ ...patch, updated_at: new Date().toISOString() })
-        .eq('id', id);
+        .select('id, username')
+        .eq('id', id)
+        .maybeSingle();
 
-      if (!error) {
-        if (cleanHint) {
-          const existingInSettings = await readUserFromAppSettingsByUsername(cleanHint);
-          if (existingInSettings) {
-            await saveUserToAppSettings({ ...existingInSettings, ...patch });
-          }
-        }
-        return;
+      if (byId) {
+        matchedUserId = byId.id;
+      } else if (cleanHint) {
+        const { data: byName } = await supabase
+          .from('app_users')
+          .select('id, username')
+          .eq('username', cleanHint)
+          .maybeSingle();
+        if (byName) matchedUserId = byName.id;
       }
-    } catch {}
 
-    const current = await findUserById(id, cleanHint);
-    if (current) {
-      const saved = await saveUserToAppSettings({ ...current, ...patch });
-      if (saved) return;
+      if (matchedUserId) {
+        // Baris sudah ada -> update langsung
+        await supabase
+          .from('app_users')
+          .update({ ...patch, updated_at: now })
+          .eq('id', matchedUserId);
+      } else if (cleanHint) {
+        // Baris BELUM ADA di app_users -> INSERT SEKARANG agar muncul di Table Editor Supabase!
+        const newRecord: AppUserRecord = {
+          id,
+          username: cleanHint,
+          password_hash: '', // placeholder, akan terisi saat login berikutnya
+          settings_encrypted: patch.settings_encrypted || null,
+          created_at: now,
+          last_login_at: patch.last_login_at || now
+        };
+        const { error: insErr } = await supabase.from('app_users').insert(newRecord);
+        if (insErr) {
+          console.warn('[updateUser insert into app_users notice]:', insErr.message);
+        }
+      }
+    } catch (tblEx) {
+      console.warn('[updateUser app_users exception]:', tblEx);
+    }
+
+    // 2. Simpan cadangan ke tabel app_settings
+    if (cleanHint) {
+      try {
+        const existingInSettings = await readUserFromAppSettingsByUsername(cleanHint);
+        const userToSave: AppUserRecord = existingInSettings
+          ? { ...existingInSettings, ...patch }
+          : {
+              id,
+              username: cleanHint,
+              password_hash: '',
+              settings_encrypted: patch.settings_encrypted || null,
+              created_at: now,
+              last_login_at: patch.last_login_at || now
+            };
+        await saveUserToAppSettings(userToSave);
+
+        // Simpan juga string encrypted langsung ke app_settings
+        if (patch.settings_encrypted) {
+          await supabase.from('app_settings').upsert([
+            {
+              key: `user_settings:${cleanHint}`,
+              value: patch.settings_encrypted,
+              updated_at: now
+            }
+          ]).catch(() => {});
+        }
+      } catch (setEx) {
+        console.warn('[updateUser app_settings exception]:', setEx);
+      }
     }
   }
 
+  // 3. Simpan ke local store
   const users = await readLocalStore();
-  await writeLocalStore(
-    users.map(u => (u.id === id || (cleanHint && u.username === cleanHint) ? { ...u, ...patch } : u))
-  );
+  const existingLocal = users.find(u => u.id === id || (cleanHint && u.username === cleanHint));
+  if (existingLocal) {
+    await writeLocalStore(
+      users.map(u => (u.id === id || (cleanHint && u.username === cleanHint) ? { ...u, ...patch } : u))
+    );
+  } else if (cleanHint) {
+    const newLocal: AppUserRecord = {
+      id,
+      username: cleanHint,
+      password_hash: '',
+      settings_encrypted: patch.settings_encrypted || null,
+      created_at: now,
+      last_login_at: patch.last_login_at || now
+    };
+    await writeLocalStore([...users, newLocal]);
+  }
 }
 
 // ---------- Sesi & respons ----------

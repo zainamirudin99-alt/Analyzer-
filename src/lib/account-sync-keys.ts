@@ -17,6 +17,7 @@ export const ACCOUNT_SYNC_KEYS = [
   'analyzer_custom_skills',
   'analyzer_active_skill_id',
   'analyzer_active_skill_ids',
-  'analyzer_language'
+  'analyzer_language',
+  'analyzer_records'
 ] as const;
 

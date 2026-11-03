@@ -19,15 +19,34 @@ export async function GET(req: NextRequest) {
   try {
     const session = await getSessionFromRequest(req);
     if (!session) throw new AuthError('Sesi berakhir. Silakan login kembali.', 401);
-    const user = await findUserById(session.uid, session.username);
-    if (!user) {
-      return NextResponse.json({ success: true, settings: {} });
+    let user = await findUserById(session.uid, session.username);
+    let rawEncrypted = user?.settings_encrypted;
+
+    // Fallback: periksa juga dari tabel app_settings jika user di app_users baru dibuat
+    if (!rawEncrypted) {
+      try {
+        const { getSupabaseServerClient, isSupabaseConfigured } = await import('@/lib/supabase');
+        if (isSupabaseConfigured) {
+          const supabase = getSupabaseServerClient();
+          if (supabase) {
+            const { data: stData } = await supabase
+              .from('app_settings')
+              .select('value')
+              .eq('key', `user_settings:${session.username}`)
+              .maybeSingle();
+            if (stData?.value) rawEncrypted = stData.value;
+          }
+        }
+      } catch {}
     }
+
     let settings: Record<string, string> = {};
-    try {
-      settings = decryptSettings(user.settings_encrypted);
-    } catch (decryptErr) {
-      console.warn('[Account Settings] Gagal dekripsi pengaturan akun:', decryptErr);
+    if (rawEncrypted) {
+      try {
+        settings = decryptSettings(rawEncrypted);
+      } catch (decryptErr) {
+        console.warn('[Account Settings] Gagal dekripsi pengaturan akun:', decryptErr);
+      }
     }
     return NextResponse.json({ success: true, settings });
   } catch (err) {

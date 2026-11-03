@@ -13,6 +13,7 @@ import {
   CLAUDE_EFFORT_CONFIGS,
   ClaudeEffortLevel
 } from '@/lib/claude';
+import { pushAccountSettings, hydrateFromAccount, readLocalSnapshot } from '@/lib/account-sync';
 
 const SQL_SETUP_SCRIPT = `-- Jalankan ini di Supabase SQL Editor:
 CREATE TABLE IF NOT EXISTS public.ced_results (
@@ -605,6 +606,45 @@ export const SettingsTab: React.FC = () => {
       });
     } finally {
       setIsTestingKey(false);
+    }
+  };
+
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const [cloudSyncMessage, setCloudSyncMessage] = useState<string | null>(null);
+
+  const handlePushToCloud = async () => {
+    setIsCloudSyncing(true);
+    setCloudSyncMessage(null);
+    try {
+      handleSaveLocalSettings();
+      const local = readLocalSnapshot();
+      const status = await pushAccountSettings(local);
+      if (status === 'ok') {
+        setCloudSyncMessage(isEn ? 'Settings synced to Supabase (app_users) successfully!' : 'Pengaturan & API Key berhasil dikirim dan disimpan ke tabel app_users di Supabase!');
+      } else {
+        setCloudSyncMessage(isEn ? 'Session expired, please login again.' : 'Sesi login telah berakhir. Silakan login kembali.');
+      }
+    } catch (err: any) {
+      setCloudSyncMessage(err?.message || (isEn ? 'Sync failed' : 'Gagal sinkronisasi ke Supabase'));
+    } finally {
+      setIsCloudSyncing(false);
+      setTimeout(() => setCloudSyncMessage(null), 6000);
+    }
+  };
+
+  const handlePullFromCloud = async () => {
+    setIsCloudSyncing(true);
+    setCloudSyncMessage(null);
+    try {
+      await hydrateFromAccount();
+      loadLocalProviderSettings();
+      loadSkillsData();
+      setCloudSyncMessage(isEn ? 'Settings pulled from Supabase successfully!' : 'Pengaturan & API Key berhasil ditarik dari akun Supabase Anda ke browser ini!');
+    } catch (err: any) {
+      setCloudSyncMessage(err?.message || (isEn ? 'Pull failed' : 'Gagal menarik pengaturan dari Supabase'));
+    } finally {
+      setIsCloudSyncing(false);
+      setTimeout(() => setCloudSyncMessage(null), 6000);
     }
   };
 
@@ -1269,16 +1309,42 @@ export const SettingsTab: React.FC = () => {
             </div>
           )}
 
-          {/* Tombol Simpan & Uji Koneksi */}
-          <div style={{ display: 'flex', gap: '10px', marginTop: '16px', flexWrap: 'wrap' }}>
+          {/* Tombol Simpan & Uji Koneksi & Cloud Sync */}
+          <div style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
             <button className="btn btn-primary" onClick={handleSaveLocalSettings}>
               💾 Simpan di Browser
+            </button>
+            <button
+              className="btn btn-outline"
+              onClick={handlePushToCloud}
+              disabled={isCloudSyncing}
+              title="Kirim dan simpan seluruh API Key & Pengaturan lokal ke akun Supabase"
+              style={{ borderColor: 'var(--fern)', color: 'var(--fern)', fontWeight: 700 }}
+            >
+              {isCloudSyncing ? <span className="spinner" /> : <Upload size={14} />}
+              <span>{isEn ? 'Sync to Supabase' : 'Kirim ke Cloud Supabase'}</span>
+            </button>
+            <button
+              className="btn btn-outline"
+              onClick={handlePullFromCloud}
+              disabled={isCloudSyncing}
+              title="Tarik API Key & Pengaturan dari akun Supabase Anda ke browser ini"
+            >
+              {isCloudSyncing ? <span className="spinner" /> : <RefreshCw size={14} />}
+              <span>{isEn ? 'Pull from Supabase' : 'Tarik dari Cloud Supabase'}</span>
             </button>
             <button className="btn btn-outline" onClick={handleTestConnection} disabled={isTestingKey}>
               {isTestingKey ? <span className="spinner" /> : <RefreshCw size={14} />}
               <span>Uji Koneksi ({activeModelDisplay})</span>
             </button>
           </div>
+
+          {cloudSyncMessage && (
+            <div className="alert alert-info" style={{ marginTop: '10px', fontSize: '12.5px' }}>
+              <span>☁️</span>
+              <span>{cloudSyncMessage}</span>
+            </div>
+          )}
         </div>
       </div>
 

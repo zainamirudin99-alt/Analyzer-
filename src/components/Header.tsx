@@ -1,10 +1,10 @@
 'use client';
 /* eslint-disable @next/next/no-img-element */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Menu, LogOut, User } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n';
-import { AccountUser } from '@/lib/account-sync';
+import { AccountUser, readLocalSnapshot, pushAccountSettings } from '@/lib/account-sync';
 
 interface HeaderProps {
   supabaseStatus: {
@@ -31,6 +31,15 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const { lang } = useLanguage();
   const isEn = lang === 'en';
+
+  useEffect(() => {
+    if (currentUser && typeof window !== 'undefined') {
+      const local = readLocalSnapshot();
+      if (Object.keys(local).length > 0) {
+        pushAccountSettings(local).catch(() => {});
+      }
+    }
+  }, [currentUser]);
 
   return (
     <header className="app-header">
