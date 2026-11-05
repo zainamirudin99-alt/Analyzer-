@@ -4,7 +4,7 @@
    Godzilla (Atomic Blue) × EVA-01 (Purple & Neon) × Ultraman Blazar (Red & Blue) × Prehistoric Forest
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 
 *, *::before, *::after {
   box-sizing: border-box;
@@ -1630,4 +1630,278 @@ table.result-table {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ============================================================
+   AUTH / LOGIN HERO: COCKPIT OVER THE RIFT SPLIT LAYOUT
+   ============================================================ */
+
+.auth-viewport {
+  position: relative;
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-x: hidden;
+  background-color: var(--bg);
+}
+
+.auth-bg-layer {
+  position: fixed;
+  inset: 0;
+  background-image: url('/cockpit-rift.jpg');
+  background-size: cover;
+  background-position: center 38%;
+  background-repeat: no-repeat;
+  opacity: 0.60;
+  z-index: 0;
+  pointer-events: none;
+  filter: contrast(1.08) saturate(1.15);
+}
+
+.auth-backdrop-overlay {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at 65% 50%, rgba(5, 8, 17, 0.40) 0%, rgba(5, 8, 17, 0.78) 60%, rgba(5, 8, 17, 0.94) 100%);
+  z-index: 1;
+  pointer-events: none;
+}
+
+[data-theme="light"] .auth-backdrop-overlay {
+  background: radial-gradient(circle at 65% 50%, rgba(248, 250, 252, 0.52) 0%, rgba(248, 250, 252, 0.85) 60%, rgba(248, 250, 252, 0.97) 100%);
+}
+
+.auth-topbar {
+  position: fixed;
+  top: 18px;
+  left: 20px;
+  right: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.auth-topbar > * {
+  pointer-events: auto;
+}
+
+.auth-hud-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  background: rgba(5, 8, 17, 0.78);
+  border: 1px solid rgba(0, 229, 255, 0.4);
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.22);
+  color: #00e5ff;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+[data-theme="light"] .auth-hud-pill {
+  background: rgba(255, 255, 255, 0.88);
+  border-color: rgba(37, 99, 235, 0.4);
+  box-shadow: 0 0 16px rgba(37, 99, 235, 0.16);
+  color: #2563eb;
+}
+
+.auth-container {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 84px 24px 44px;
+  display: grid;
+  grid-template-columns: minmax(340px, 440px) 1fr;
+  gap: 48px;
+  align-items: center;
+}
+
+@media (max-width: 980px) {
+  .auth-container {
+    grid-template-columns: 1fr;
+    gap: 36px;
+    padding-top: 80px;
+  }
+}
+
+/* Card Kiri: Tempat / Tab Login */
+.auth-card-left {
+  background: var(--surface-overlay);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1.5px solid var(--border);
+  border-radius: 24px;
+  box-shadow: var(--shadow-lg), 0 0 40px rgba(0, 229, 255, 0.14);
+  position: relative;
+  overflow: hidden;
+  transition: var(--transition);
+}
+
+.auth-card-left::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--header-accent-line);
+}
+
+/* Kolom Kanan: Hero Judul & Penjelasan */
+.auth-hero-right {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.auth-brand-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  background: rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Anime Mecha Typography for ANALYZE(?) */
+.auth-title-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  line-height: 1.05;
+}
+
+.auth-logo-title-main {
+  font-family: 'Orbitron', 'Plus Jakarta Sans', sans-serif;
+  font-size: clamp(38px, 5.2vw, 68px);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, #FFFFFF 0%, #E0F2FE 35%, #38BDF8 65%, #0284C7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 4px 18px rgba(0, 229, 255, 0.45)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
+  display: inline-block;
+}
+
+[data-theme="light"] .auth-logo-title-main {
+  background: linear-gradient(180deg, #1E293B 0%, #2563EB 50%, #1D4ED8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 4px 14px rgba(37, 99, 235, 0.3));
+}
+
+.auth-logo-title-mark {
+  font-family: 'Orbitron', 'Plus Jakarta Sans', sans-serif;
+  font-size: clamp(38px, 5.2vw, 68px);
+  font-weight: 900;
+  font-style: italic;
+  background: linear-gradient(180deg, #FEF08A 0%, #FBBF24 50%, #D97706 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 4px 16px rgba(251, 191, 36, 0.6)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
+  display: inline-block;
+  margin-left: 2px;
+}
+
+.auth-hero-desc {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-width: 640px;
+}
+
+/* Feature Grid 2x2 */
+.auth-features-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin-top: 4px;
+}
+
+@media (max-width: 640px) {
+  .auth-features-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.auth-feature-card {
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: var(--surface-overlay);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  transition: var(--transition);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.auth-feature-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--primary);
+  box-shadow: var(--shadow-md), var(--glow-primary);
+}
+
+.auth-feature-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.auth-feature-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 16px;
+}
+
+.auth-feature-body {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/* HUD Telemetry Strip */
+.auth-telemetry-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
 }
