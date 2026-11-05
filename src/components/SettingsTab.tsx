@@ -161,12 +161,12 @@ const getTabButtonStyle = (isActive: boolean): React.CSSProperties => ({
   padding: '8px 12px',
   border: 'none',
   borderRadius: '8px',
-  background: isActive ? '#ffffff' : 'transparent',
-  color: isActive ? 'var(--fern)' : 'var(--stone)',
+  background: isActive ? 'var(--surface)' : 'transparent',
+  color: isActive ? 'var(--primary)' : 'var(--text-muted)',
   fontWeight: isActive ? 700 : 500,
   fontSize: '13px',
   cursor: 'pointer',
-  boxShadow: isActive ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+  boxShadow: isActive ? 'var(--shadow)' : 'none',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -835,7 +835,7 @@ export const SettingsTab: React.FC = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
           <div>
             <div className="card-title" style={{ marginBottom: '4px' }}>
-              <div className="ct-icon"><Globe size={18} color="#2e6922" /></div>
+              <div className="ct-icon"><Globe size={18} color="var(--primary)" /></div>
               <span>{isEn ? 'Display Language & Auto-Indicator Translation' : 'Pilihan Bahasa Tampilan & Translasi Indikator'}</span>
             </div>
             <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: 0 }}>
@@ -849,7 +849,7 @@ export const SettingsTab: React.FC = () => {
             style={{
               display: 'inline-flex',
               gap: '6px',
-              background: 'var(--dew, #eef7eb)',
+              background: 'var(--surface-muted)',
               padding: '5px',
               borderRadius: '10px',
               border: '1px solid var(--border)'
@@ -888,10 +888,10 @@ export const SettingsTab: React.FC = () => {
         <div className="card">
           <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div className="ct-icon"><Key size={18} color="#2e6922" /></div>
+              <div className="ct-icon"><Key size={18} color="var(--primary)" /></div>
               <span>{isEn ? 'AI Engine Configuration (Multi-Model)' : 'Konfigurasi Mesin AI (Multi-Model)'}</span>
             </div>
-            <span style={{ fontSize: '12px', background: 'var(--dew)', color: 'var(--moss)', padding: '2px 8px', borderRadius: '12px', fontWeight: 600 }}>
+            <span style={{ fontSize: '12px', background: 'var(--surface-muted)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '12px', fontWeight: 700, border: '1px solid var(--border)' }}>
               {activeProvider === 'claude' ? '🎭 Anthropic Claude' : activeProvider === 'openai' ? '⚡ OpenAI / ChatGPT' : '🌿 Google Gemini'}
             </span>
           </div>
@@ -901,7 +901,7 @@ export const SettingsTab: React.FC = () => {
             display: 'flex',
             gap: '6px',
             marginBottom: '16px',
-            background: 'var(--dew, #eef7eb)',
+            background: 'var(--surface-muted)',
             padding: '4px',
             borderRadius: '10px',
             border: '1px solid var(--border)'
@@ -1093,13 +1093,13 @@ export const SettingsTab: React.FC = () => {
 
               {/* Box Tambah & Kelola Model Kustom */}
               <div style={{
-                background: 'var(--dew, #f4faf2)',
-                border: '1px dashed var(--leaf, #489333)',
+                background: 'var(--surface-sunken)',
+                border: '1px dashed var(--primary)',
                 borderRadius: '8px',
                 padding: '12px',
                 marginBottom: '16px'
               }}>
-                <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--fern, #2e6922)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Sparkles size={14} />
                   <span>Tambah Model AI Baru (Contoh: GPT Luna, GPT Pro, dll)</span>
                 </div>
@@ -1116,7 +1116,7 @@ export const SettingsTab: React.FC = () => {
                         handleAddCustomModel();
                       }
                     }}
-                    style={{ fontSize: '13px', background: '#ffffff' }}
+                    style={{ fontSize: '13px' }}
                   />
                   <button
                     type="button"
@@ -1317,9 +1317,9 @@ export const SettingsTab: React.FC = () => {
                         style={{
                           padding: '8px 4px',
                           borderRadius: '8px',
-                          border: isSelected ? '1.5px solid var(--fern)' : '1px solid var(--border)',
-                          background: isSelected ? 'var(--dew, #eef7eb)' : '#ffffff',
-                          color: isSelected ? 'var(--fern)' : 'var(--bark)',
+                          border: isSelected ? '1.5px solid var(--primary)' : '1px solid var(--border)',
+                          background: isSelected ? 'var(--primary-glow)' : 'var(--surface)',
+                          color: isSelected ? 'var(--primary)' : 'var(--text)',
                           fontWeight: isSelected ? 700 : 500,
                           fontSize: '12px',
                           cursor: 'pointer',
@@ -1333,27 +1333,27 @@ export const SettingsTab: React.FC = () => {
                         <span style={{ textTransform: 'capitalize', fontWeight: 700 }}>
                           {lvl === 'medium' ? 'Medium ⭐' : lvl}
                         </span>
-                        <span style={{ fontSize: '10.5px', color: isSelected ? 'var(--fern)' : 'var(--stone)' }}>
+                        <span style={{ fontSize: '10.5px', color: isSelected ? 'var(--primary)' : 'var(--text-muted)' }}>
                           {(cfg.budgetTokens / 1024).toFixed(0)}k tkns
                         </span>
                       </button>
                     );
                   })}
                 </div>
-                <div style={{ fontSize: '11.5px', color: 'var(--stone)', background: '#fafbfc', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', background: 'var(--surface-sunken)', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)' }}>
                   💡 <strong>{CLAUDE_EFFORT_CONFIGS[claudeEffort]?.label}</strong>: {CLAUDE_EFFORT_CONFIGS[claudeEffort]?.description}
                 </div>
               </div>
 
               {/* Box Tambah & Kelola Model Kustom Claude */}
               <div style={{
-                background: 'var(--dew, #f4faf2)',
-                border: '1px dashed var(--leaf, #489333)',
+                background: 'var(--surface-sunken)',
+                border: '1px dashed var(--primary)',
                 borderRadius: '8px',
                 padding: '12px',
                 marginBottom: '16px'
               }}>
-                <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--fern, #2e6922)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Sparkles size={14} />
                   <span>Tambah Model Claude Kustom (Contoh: claude-custom-proxy, dll)</span>
                 </div>
@@ -1370,7 +1370,7 @@ export const SettingsTab: React.FC = () => {
                         handleAddClaudeCustomModel();
                       }
                     }}
-                    style={{ fontSize: '13px', background: '#ffffff' }}
+                    style={{ fontSize: '13px' }}
                   />
                   <button
                     type="button"
@@ -1508,7 +1508,7 @@ export const SettingsTab: React.FC = () => {
       <div>
         <div className="card">
           <div className="card-title">
-            <div className="ct-icon"><Database size={18} color="#2e6922" /></div>
+            <div className="ct-icon"><Database size={18} color="var(--primary)" /></div>
             <span>Status Database Supabase (PostgreSQL)</span>
           </div>
 
@@ -1532,7 +1532,7 @@ export const SettingsTab: React.FC = () => {
                   type="button"
                   className="btn btn-outline btn-sm"
                   onClick={() => setShowSupabaseCredentials(!showSupabaseCredentials)}
-                  style={{ padding: '2px 8px', fontSize: '11px', background: '#ffffff' }}
+                  style={{ padding: '2px 8px', fontSize: '11px', background: 'var(--surface)' }}
                 >
                   {showSupabaseCredentials ? (isEn ? 'Tutup' : 'Tutup') : (isEn ? 'Atur URL & Key' : 'Atur URL & Key')}
                 </button>
@@ -1648,7 +1648,7 @@ export const SettingsTab: React.FC = () => {
               Looping kegiatan otomatis menjaga Supabase Free Tier tetap aktif 24/7 tanpa mencemari data analisis atau memodifikasi tabel regresi.
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: '11.5px', background: '#ffffff', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border-color, #e2e8f0)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: '11.5px', background: 'var(--surface-sunken)', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)' }}>
               <div>
                 <span style={{ color: 'var(--text-muted)' }}>Ping Terakhir:</span>
                 <div style={{ fontWeight: 500, marginTop: '2px' }}>
@@ -1659,14 +1659,14 @@ export const SettingsTab: React.FC = () => {
               </div>
               <div>
                 <span style={{ color: 'var(--text-muted)' }}>Total Siklus Ping:</span>
-                <div style={{ fontWeight: 500, marginTop: '2px', color: '#166534' }}>
+                <div style={{ fontWeight: 500, marginTop: '2px', color: 'var(--success)' }}>
                   {sysStatus?.supabase?.heartbeat?.ping_count ? `${sysStatus.supabase.heartbeat.ping_count} kali` : '1 kali'}
                 </div>
               </div>
             </div>
 
             {pingMessage && (
-              <div style={{ fontSize: '11.5px', color: '#166534', marginTop: '6px' }}>
+              <div style={{ fontSize: '11.5px', color: 'var(--success)', marginTop: '6px' }}>
                 🟢 {pingMessage}
               </div>
             )}
@@ -1678,7 +1678,7 @@ export const SettingsTab: React.FC = () => {
               <button
                 className="btn btn-outline btn-sm"
                 onClick={handleCopySql}
-                style={{ padding: '4px 10px', fontSize: '11.5px', background: '#ffffff' }}
+                style={{ padding: '4px 10px', fontSize: '11.5px', background: 'var(--surface)' }}
               >
                 <Copy size={12} />
                 <span>{copiedSql ? 'Tersalin! ✅' : 'Salin SQL'}</span>

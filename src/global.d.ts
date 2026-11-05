@@ -37,6 +37,8 @@ declare module 'react' {
   export function useRef<T>(initialValue?: T): { current: T };
   export function useMemo<T>(factory: () => T, deps: any[] | undefined): T;
   export function useCallback<T extends Function>(callback: T, deps: any[]): T;
+  export function createContext<T>(defaultValue: T): any;
+  export function useContext<T>(context: any): T;
 
   const React: {
     FC: FC<any>;
@@ -45,6 +47,8 @@ declare module 'react' {
     useRef: typeof useRef;
     useMemo: typeof useMemo;
     useCallback: typeof useCallback;
+    createContext: typeof createContext;
+    useContext: typeof useContext;
     createElement: any;
     [key: string]: any;
   };
@@ -74,6 +78,8 @@ declare namespace React {
   function useRef<T>(initialValue?: T): { current: T };
   function useMemo<T>(factory: () => T, deps: any[] | undefined): T;
   function useCallback<T extends Function>(callback: T, deps: any[]): T;
+  function createContext<T>(defaultValue: T): any;
+  function useContext<T>(context: any): T;
 }
 
 declare namespace JSX {
@@ -183,6 +189,8 @@ declare module 'lucide-react' {
   export const LogOut: any;
   export const UserPlus: any;
   export const EyeOff: any;
+  export const Sun: any;
+  export const Moon: any;
 
   const icons: any;
   export default icons;

@@ -8,10 +8,10 @@ export const PanelTabShell: React.FC = () => {
       maxWidth: '900px',
       margin: '40px auto',
       padding: '48px 32px',
-      background: 'var(--card, #ffffff)',
-      borderRadius: 'var(--radius, 16px)',
-      boxShadow: 'var(--shadow, 0 4px 20px rgba(30, 61, 20, 0.08))',
-      border: '1px solid var(--border, #d2e2ca)',
+      background: 'var(--card-bg)',
+      borderRadius: 'var(--radius)',
+      boxShadow: 'var(--shadow)',
+      border: '1px solid var(--border)',
       textAlign: 'center'
     }}>
       <div style={{
@@ -21,8 +21,8 @@ export const PanelTabShell: React.FC = () => {
         width: '72px',
         height: '72px',
         borderRadius: '20px',
-        background: 'var(--dew, #eef7eb)',
-        color: 'var(--fern, #2e6922)',
+        background: 'var(--primary-glow)',
+        color: 'var(--primary)',
         fontSize: '32px',
         marginBottom: '20px'
       }}>
@@ -34,8 +34,8 @@ export const PanelTabShell: React.FC = () => {
           display: 'inline-block',
           padding: '4px 12px',
           borderRadius: '999px',
-          background: 'var(--mist, #c2e2b3)',
-          color: 'var(--moss, #1e3d14)',
+          background: 'var(--surface-sunken)',
+          color: 'var(--primary)',
           fontSize: '12px',
           fontWeight: 700,
           letterSpacing: '0.5px',
@@ -48,7 +48,7 @@ export const PanelTabShell: React.FC = () => {
       <h2 style={{
         fontSize: '24px',
         fontWeight: 800,
-        color: 'var(--bark, #2b221a)',
+        color: 'var(--text)',
         marginBottom: '12px'
       }}>
         Regresi Data Panel Stata
@@ -56,7 +56,7 @@ export const PanelTabShell: React.FC = () => {
 
       <p style={{
         fontSize: '15px',
-        color: 'var(--text-muted, #687962)',
+        color: 'var(--text-muted)',
         maxWidth: '560px',
         margin: '0 auto 28px',
         lineHeight: 1.6
@@ -70,32 +70,32 @@ export const PanelTabShell: React.FC = () => {
         gap: '16px',
         textAlign: 'left',
         marginTop: '24px',
-        borderTop: '1px solid var(--border-light, #e4efe0)',
+        borderTop: '1px solid var(--border)',
         paddingTop: '24px'
       }}>
-        <div style={{ padding: '12px', background: 'var(--cream, #f8faf6)', borderRadius: '10px' }}>
-          <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--fern, #2e6922)', marginBottom: '4px' }}>
+        <div style={{ padding: '12px', background: 'var(--surface-sunken)', borderRadius: '10px' }}>
+          <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--primary)', marginBottom: '4px' }}>
             P1 — Impor & Pemetaan
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--stone, #687962)' }}>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
             Dukungan .xlsx, .csv, dan link Google Sheets dengan proteksi SSRF.
           </div>
         </div>
 
-        <div style={{ padding: '12px', background: 'var(--cream, #f8faf6)', borderRadius: '10px' }}>
-          <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--fern, #2e6922)', marginBottom: '4px' }}>
+        <div style={{ padding: '12px', background: 'var(--surface-sunken)', borderRadius: '10px' }}>
+          <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--primary)', marginBottom: '4px' }}>
             P2 — Cek & Sanitasi
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--stone, #687962)' }}>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
             Deteksi duplikat kunci (id, year), missing values, dan keseimbangan panel.
           </div>
         </div>
 
-        <div style={{ padding: '12px', background: 'var(--cream, #f8faf6)', borderRadius: '10px' }}>
-          <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--fern, #2e6922)', marginBottom: '4px' }}>
+        <div style={{ padding: '12px', background: 'var(--surface-sunken)', borderRadius: '10px' }}>
+          <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--primary)', marginBottom: '4px' }}>
             P3 s/d P6 — Mesin & Stata Block
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--stone, #687962)' }}>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
             Estimasi OLS/GLS, diagnostik model, tampilan 4 blok Stata, dan ekspor.
           </div>
         </div>

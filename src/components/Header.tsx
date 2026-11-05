@@ -5,6 +5,7 @@ import React from 'react';
 import { Menu, LogOut, User } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n';
 import { AccountUser } from '@/lib/account-sync';
+import { ThemeToggle } from './ThemeToggle';
 
 interface HeaderProps {
   supabaseStatus: {
@@ -65,6 +66,8 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+        <ThemeToggle />
+
         <div
           className="db-pill"
           style={{ cursor: 'pointer' }}

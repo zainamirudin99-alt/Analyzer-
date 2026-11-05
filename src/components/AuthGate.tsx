@@ -14,6 +14,7 @@ import {
   setStoredAuthSession
 } from '@/lib/account-sync';
 import { useLanguage } from '@/lib/i18n';
+import { ThemeToggle } from './ThemeToggle';
 
 interface AuthGateProps {
   children: (ctx: { user: AccountUser; onLogout: () => Promise<void> }) => React.ReactNode;
@@ -159,24 +160,20 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          background: 'linear-gradient(145deg, #0d1f0a 0%, #1e3d14 55%, #2e6922 100%)',
-          color: '#ffffff',
+          background: 'var(--bg)',
+          color: 'var(--text)',
           padding: '24px'
         }}
       >
-        <img
-          src="/logo.png?v=2"
-          alt="ANALYZER(?) Logo"
-          style={{
-            width: '110px',
-            height: '110px',
-            objectFit: 'contain',
-            marginBottom: '16px',
-            filter: 'drop-shadow(0 8px 24px rgba(0,0,0,0.45))'
-          }}
-        />
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: 700 }}>
-          <RefreshCw size={18} className="animate-spin" />
+        <div className="mascot-idle-wrap">
+          <img
+            src="/logo.png?v=2"
+            alt="ANALYZER(?) Logo"
+            className="mascot-idle-img"
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: 700, color: 'var(--primary)' }}>
+          <RefreshCw size={18} className="spinner" />
           <span>{isEn ? 'Loading ANALYZER(?) Session...' : 'Memuat Sesi ANALYZER(?)...'}</span>
         </div>
       </div>
@@ -191,43 +188,61 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: 'linear-gradient(145deg, #0d1f0a 0%, #1e3d14 50%, #142c10 100%)',
-          padding: '24px'
+          background: 'var(--bg)',
+          padding: '24px',
+          position: 'relative'
         }}
       >
+        {/* Floating Theme Switcher */}
+        <div style={{ position: 'absolute', top: '24px', right: '24px', zIndex: 10 }}>
+          <ThemeToggle showLabel={true} />
+        </div>
+
         <div
           style={{
             width: '100%',
-            maxWidth: '440px',
-            background: '#ffffff',
+            maxWidth: '460px',
+            background: 'var(--surface)',
             borderRadius: '20px',
-            border: '1px solid var(--border, #d2e2ca)',
-            boxShadow: '0 24px 60px rgba(0, 0, 0, 0.38)',
-            overflow: 'hidden'
+            border: '1.5px solid var(--border)',
+            boxShadow: 'var(--shadow-lg)',
+            overflow: 'hidden',
+            position: 'relative'
           }}
         >
-          {/* Banner Header dengan Logo Baru */}
+          {/* Banner Header dengan Logo */}
           <div
             style={{
-              background: 'linear-gradient(135deg, #11240b 0%, #1e3d14 60%, #2e6922 100%)',
-              color: '#ffffff',
+              background: 'linear-gradient(135deg, var(--surface-muted) 0%, var(--surface-sunken) 100%)',
+              borderBottom: '1px solid var(--border)',
               padding: '28px 24px 22px',
-              textAlign: 'center'
+              textAlign: 'center',
+              position: 'relative'
             }}
           >
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: '3px',
+                background: 'var(--header-accent-line)'
+              }}
+            />
             <div
               style={{
                 width: '96px',
                 height: '96px',
                 margin: '0 auto 12px',
                 borderRadius: '20px',
-                background: 'rgba(0, 0, 0, 0.35)',
-                border: '2px solid rgba(255, 255, 255, 0.2)',
+                background: 'var(--surface)',
+                border: '2px solid var(--border)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 padding: '6px',
-                boxShadow: '0 10px 25px rgba(0,0,0,0.35)'
+                boxShadow: 'var(--glow-primary)'
               }}
             >
               <img
@@ -236,10 +251,20 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
                 style={{ width: '100%', height: '100%', objectFit: 'contain' }}
               />
             </div>
-            <h1 style={{ fontSize: '24px', fontWeight: 900, letterSpacing: '0.03em', margin: '0 0 4px 0' }}>
+            <h1
+              style={{
+                fontSize: '24px',
+                fontWeight: 900,
+                letterSpacing: '0.02em',
+                margin: '0 0 4px 0',
+                background: 'linear-gradient(135deg, var(--text) 0%, var(--primary) 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent'
+              }}
+            >
               ANALYZER(?)
             </h1>
-            <p style={{ fontSize: '12.5px', opacity: 0.9, margin: 0, lineHeight: 1.45 }}>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0, lineHeight: 1.45 }}>
               {isEn
                 ? 'AI Document Indicator Analyzer, SPSS Linear Regression & Stata Panel Regression'
                 : 'Analisis Indikator Dokumen AI, Regresi Linier SPSS & Regresi Data Panel Stata'}
@@ -252,7 +277,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
               style={{
                 display: 'flex',
                 gap: '6px',
-                background: 'var(--dew, #eef7eb)',
+                background: 'var(--surface-sunken)',
                 padding: '4px',
                 borderRadius: '12px',
                 marginBottom: '18px'
@@ -274,12 +299,13 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
                   minHeight: '42px',
                   borderRadius: '9px',
                   border: 'none',
-                  background: mode === 'login' ? '#ffffff' : 'transparent',
-                  color: mode === 'login' ? 'var(--moss, #1e3d14)' : 'var(--stone, #687962)',
+                  background: mode === 'login' ? 'var(--surface)' : 'transparent',
+                  color: mode === 'login' ? 'var(--primary)' : 'var(--text-muted)',
                   fontWeight: mode === 'login' ? 800 : 600,
                   fontSize: '13.5px',
                   cursor: 'pointer',
-                  boxShadow: mode === 'login' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
+                  boxShadow: mode === 'login' ? 'var(--shadow)' : 'none',
+                  transition: 'all 0.15s ease'
                 }}
               >
                 <LogIn size={16} />
@@ -302,12 +328,13 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
                   minHeight: '42px',
                   borderRadius: '9px',
                   border: 'none',
-                  background: mode === 'register' ? '#ffffff' : 'transparent',
-                  color: mode === 'register' ? 'var(--moss, #1e3d14)' : 'var(--stone, #687962)',
+                  background: mode === 'register' ? 'var(--surface)' : 'transparent',
+                  color: mode === 'register' ? 'var(--primary)' : 'var(--text-muted)',
                   fontWeight: mode === 'register' ? 800 : 600,
                   fontSize: '13.5px',
                   cursor: 'pointer',
-                  boxShadow: mode === 'register' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
+                  boxShadow: mode === 'register' ? 'var(--shadow)' : 'none',
+                  transition: 'all 0.15s ease'
                 }}
               >
                 <UserPlus size={16} />
@@ -318,8 +345,8 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
             {/* Info Sinkronisasi Lintas Perangkat */}
             <div
               style={{
-                background: '#f0fdf4',
-                border: '1px solid #bbf7d0',
+                background: 'var(--info-bg)',
+                border: '1px solid var(--info-border)',
                 borderRadius: '10px',
                 padding: '10px 12px',
                 marginBottom: '16px',
@@ -327,7 +354,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
                 alignItems: 'flex-start',
                 gap: '8px',
                 fontSize: '12px',
-                color: '#166534',
+                color: 'var(--info)',
                 lineHeight: 1.45
               }}
             >
@@ -347,9 +374,9 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
               <div
                 role="alert"
                 style={{
-                  background: '#fef2f2',
-                  border: '1px solid #fecaca',
-                  color: '#991b1b',
+                  background: 'var(--danger-bg)',
+                  border: '1px solid var(--danger-border)',
+                  color: 'var(--danger)',
                   borderRadius: '10px',
                   padding: '10px 12px',
                   marginBottom: '14px',
@@ -360,7 +387,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
               >
                 ⚠️ {errorMsg}
                 {errorMsg.includes('Supabase') && (
-                  <div style={{ marginTop: '8px', fontSize: '11.5px', color: '#7f1d1d' }}>
+                  <div style={{ marginTop: '8px', fontSize: '11.5px', opacity: 0.85 }}>
                     Tip: Jika database Supabase baru, pastikan tabel <code>app_users</code> sudah dibuat dengan mengeksekusi SQL Setup yang ada di tab <strong>Pengaturan</strong>.
                   </div>
                 )}
@@ -373,12 +400,12 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
                   htmlFor="auth-username-input"
                   style={{
                     display: 'block',
-                    fontSize: '12px',
+                    fontSize: '11.5px',
                     fontWeight: 800,
-                    color: 'var(--bark, #2b221a)',
+                    color: 'var(--text-muted)',
                     marginBottom: '6px',
                     textTransform: 'uppercase',
-                    letterSpacing: '0.03em'
+                    letterSpacing: '0.04em'
                   }}
                 >
                   {isEn ? 'Username (No Email Required)' : 'Username (Tidak Harus Email)'}
@@ -391,7 +418,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
                       left: '12px',
                       top: '50%',
                       transform: 'translateY(-50%)',
-                      color: 'var(--stone, #687962)'
+                      color: 'var(--text-muted)'
                     }}
                   />
                   <input
@@ -408,9 +435,9 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
                       minHeight: '44px',
                       fontSize: '16px',
                       borderRadius: '10px',
-                      border: '1px solid var(--border, #d2e2ca)',
-                      background: '#f8faf6',
-                      color: 'var(--bark, #2b221a)',
+                      border: '1.5px solid var(--border)',
+                      background: 'var(--surface-muted)',
+                      color: 'var(--text)',
                       outline: 'none'
                     }}
                   />
@@ -422,12 +449,12 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
                   htmlFor="auth-password-input"
                   style={{
                     display: 'block',
-                    fontSize: '12px',
+                    fontSize: '11.5px',
                     fontWeight: 800,
-                    color: 'var(--bark, #2b221a)',
+                    color: 'var(--text-muted)',
                     marginBottom: '6px',
                     textTransform: 'uppercase',
-                    letterSpacing: '0.03em'
+                    letterSpacing: '0.04em'
                   }}
                 >
                   Password
@@ -440,7 +467,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
                       left: '12px',
                       top: '50%',
                       transform: 'translateY(-50%)',
-                      color: 'var(--stone, #687962)'
+                      color: 'var(--text-muted)'
                     }}
                   />
                   <input
@@ -457,9 +484,9 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
                       minHeight: '44px',
                       fontSize: '16px',
                       borderRadius: '10px',
-                      border: '1px solid var(--border, #d2e2ca)',
-                      background: '#f8faf6',
-                      color: 'var(--bark, #2b221a)',
+                      border: '1.5px solid var(--border)',
+                      background: 'var(--surface-muted)',
+                      color: 'var(--text)',
                       outline: 'none'
                     }}
                   />
@@ -490,22 +517,16 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
               <button
                 type="submit"
                 disabled={isSubmitting}
+                className="btn btn-primary btn-full"
                 style={{
-                  width: '100%',
                   minHeight: '46px',
-                  padding: '12px 18px',
-                  borderRadius: '11px',
-                  border: 'none',
-                  background: 'linear-gradient(135deg, var(--moss, #1e3d14) 0%, var(--fern, #2e6922) 100%)',
-                  color: '#ffffff',
                   fontSize: '15px',
                   fontWeight: 800,
                   cursor: isSubmitting ? 'wait' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: '8px',
-                  boxShadow: '0 6px 18px rgba(46, 105, 34, 0.28)'
+                  gap: '8px'
                 }}
               >
                 <ShieldCheck size={18} />

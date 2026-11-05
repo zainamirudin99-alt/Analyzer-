@@ -4,6 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, ChevronDown, ChevronRight } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n';
+import { ThemeToggle } from './ThemeToggle';
 
 export interface NavigationDrawerProps {
   isOpen: boolean;
@@ -237,6 +238,10 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
             </div>
           </button>
         </nav>
+
+        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'center' }}>
+          <ThemeToggle showLabel={true} />
+        </div>
 
         <div className="drawer-footer">
           <div className="drawer-footer-text" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>

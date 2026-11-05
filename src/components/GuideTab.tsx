@@ -846,7 +846,7 @@ export const GuideTab: React.FC = () => {
                       style={{
                         fontSize: '11px',
                         fontWeight: 700,
-                        background: '#ffffff',
+                        background: 'var(--surface)',
                         border: '1px solid var(--border)',
                         borderRadius: '6px',
                         padding: '3px 8px',

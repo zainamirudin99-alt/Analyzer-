@@ -413,7 +413,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
         {/* BAR SINKRONISASI PILIHAN INDIKATOR PADA TABEL HASIL */}
         <div
           style={{
-            background: 'var(--dew, #eef7eb)',
+            background: 'var(--surface-sunken)',
             border: '1px solid var(--border)',
             borderRadius: '10px',
             padding: '10px 14px',
@@ -426,7 +426,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '12.5px', fontWeight: 800, color: 'var(--moss)' }}>
+            <span style={{ fontSize: '12.5px', fontWeight: 800, color: 'var(--text)' }}>
               🌱 {isEn ? 'Active Indicator Columns:' : 'Pilihan Indikator Tabel:'}
             </span>
             <select
@@ -587,7 +587,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
 
                           <button
                             className="btn btn-outline btn-sm"
-                            style={{ padding: '4px 8px', fontSize: '11px', background: '#ffffff' }}
+                            style={{ padding: '4px 8px', fontSize: '11px', background: 'var(--surface)' }}
                             title={isEn ? 'Copy Full Row (+Code & Year)' : 'Salin Baris Lengkap (+Code & Tahun)'}
                             onClick={() => handleCopyRow(row, rowKey)}
                           >

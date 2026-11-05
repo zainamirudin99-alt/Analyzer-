@@ -693,7 +693,7 @@ export const PanelTab: React.FC = () => {
             display: block !important;
             margin-bottom: 24px;
             padding-bottom: 16px;
-            border-bottom: 2px solid #2e6922;
+            border-bottom: 2px solid var(--primary);
           }
         }
         @media screen {
@@ -705,10 +705,10 @@ export const PanelTab: React.FC = () => {
 
       {/* Header Khusus Print Cetak PDF */}
       <div className="panel-print-header">
-        <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#1e3d14', margin: '0 0 4px 0' }}>
+        <h1 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text)', margin: '0 0 4px 0' }}>
           LAPORAN HASIL REGRESI DATA PANEL (STANDAR STATA)
         </h1>
-        <p style={{ fontSize: '13px', color: '#475569', margin: 0 }}>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0 }}>
           Berkas: {fileName} | Dimensi: {fitResult?.declaration.entityCount} Entitas, {fitResult?.declaration.tMax} Periode (N = {fitResult?.declaration.totalObs}) | Model: {fitResult?.selection.selectedModel} (vce(robust))
         </p>
       </div>
@@ -717,12 +717,12 @@ export const PanelTab: React.FC = () => {
       <div
         className="no-print"
         style={{
-          background: 'linear-gradient(135deg, var(--moss, #1e3d14) 0%, var(--fern, #2e6922) 100%)',
+          background: 'linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%)',
           color: '#ffffff',
           borderRadius: 'var(--radius, 16px)',
           padding: '24px 32px',
           marginBottom: '24px',
-          boxShadow: 'var(--shadow-md, 0 8px 30px rgba(30, 61, 20, 0.12))'
+          boxShadow: 'var(--shadow-md)'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
@@ -2377,32 +2377,32 @@ export const PanelTab: React.FC = () => {
 
               {/* Bagian B: Heteroskedastisitas (xttest3) & Autokorelasi (xtserial) */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
-                <div style={{ padding: '14px', background: '#ffffff', borderRadius: '10px', border: '1px solid var(--border, #d2e2ca)' }}>
-                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginBottom: '4px' }}>
+                <div style={{ padding: '14px', background: 'var(--surface-sunken)', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text)', marginBottom: '4px' }}>
                     2. Uji Heteroskedastisitas (Modified Wald — <code>xttest3</code>)
                   </div>
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>
                     chi2({fitResult.assumptions.greeneHetero?.df || 10}) = {fitResult.assumptions.greeneHetero?.chi2} (Prob &gt; chi2 = {(fitResult.assumptions.greeneHetero?.p ?? 1) < 0.0001 ? '0.0000' : (fitResult.assumptions.greeneHetero?.p ?? 1).toFixed(4)})
                   </div>
-                  <div style={{ marginTop: '6px', fontSize: '12px', color: fitResult.assumptions.greeneHetero?.hasHeteroskedasticity ? '#b91c1c' : '#166534', fontWeight: 700 }}>
+                  <div style={{ marginTop: '6px', fontSize: '12px', color: fitResult.assumptions.greeneHetero?.hasHeteroskedasticity ? 'var(--danger)' : 'var(--success)', fontWeight: 700 }}>
                     {fitResult.assumptions.greeneHetero?.hasHeteroskedasticity
                       ? 'Terdeteksi Heteroskedastisitas Kelompok -> Dinetralisir oleh vce(robust) di Step 12'
                       : 'Homoskedastis (Varians Galat Konstan)'}
                   </div>
                 </div>
 
-                <div style={{ padding: '14px', background: '#ffffff', borderRadius: '10px', border: '1px solid var(--border, #d2e2ca)' }}>
-                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginBottom: '4px' }}>
+                <div style={{ padding: '14px', background: 'var(--surface-sunken)', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text)', marginBottom: '4px' }}>
                     3. Uji Autokorelasi Serial Wooldridge (<code>xtserial</code>)
                   </div>
                   {fitResult.assumptions.wooldridgeSerial?.skippedReason ? (
-                    <div style={{ fontSize: '12px', color: '#92400e' }}>{fitResult.assumptions.wooldridgeSerial.skippedReason}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--warn)' }}>{fitResult.assumptions.wooldridgeSerial.skippedReason}</div>
                   ) : (
                     <>
-                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>
                         F({fitResult.assumptions.wooldridgeSerial?.df1}, {fitResult.assumptions.wooldridgeSerial?.df2}) = {fitResult.assumptions.wooldridgeSerial?.f} (Prob &gt; F = {(fitResult.assumptions.wooldridgeSerial?.p ?? 1) < 0.0001 ? '0.0000' : (fitResult.assumptions.wooldridgeSerial?.p ?? 1).toFixed(4)})
                       </div>
-                      <div style={{ marginTop: '6px', fontSize: '12px', color: fitResult.assumptions.wooldridgeSerial?.hasAutocorrelation ? '#b91c1c' : '#166534', fontWeight: 700 }}>
+                      <div style={{ marginTop: '6px', fontSize: '12px', color: fitResult.assumptions.wooldridgeSerial?.hasAutocorrelation ? 'var(--danger)' : 'var(--success)', fontWeight: 700 }}>
                         {fitResult.assumptions.wooldridgeSerial?.hasAutocorrelation
                           ? 'Terdeteksi Autokorelasi AR(1) -> Dinetralisir oleh vce(robust) di Step 12'
                           : 'Bebas Autokorelasi Serial Orde-1'}
@@ -2559,7 +2559,7 @@ export const PanelTab: React.FC = () => {
                             })}
                             <polyline
                               fill="none"
-                              stroke="#1e3d14"
+                              stroke="var(--primary)"
                               strokeWidth="2.5"
                               points={curvePoints}
                             />

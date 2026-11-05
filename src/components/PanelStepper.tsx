@@ -91,17 +91,17 @@ export const PanelStepper: React.FC<PanelStepperProps> = ({
                 borderRadius: '10px',
                 border: 'none',
                 background: isActive
-                  ? 'var(--fern, #2e6922)'
+                  ? 'var(--primary)'
                   : isCompleted
-                  ? 'var(--dew, #eef7eb)'
+                  ? 'var(--primary-glow)'
                   : 'transparent',
                 color: isActive
                   ? '#ffffff'
                   : isCompleted
-                  ? 'var(--moss, #1e3d14)'
+                  ? 'var(--primary)'
                   : isAccessible
-                  ? 'var(--bark, #2b221a)'
-                  : 'var(--stone, #687962)',
+                  ? 'var(--text)'
+                  : 'var(--text-muted)',
                 cursor: isAccessible ? 'pointer' : 'not-allowed',
                 opacity: isAccessible ? 1 : 0.45,
                 textAlign: 'left',
@@ -123,9 +123,9 @@ export const PanelStepper: React.FC<PanelStepperProps> = ({
                   background: isActive
                     ? 'rgba(255, 255, 255, 0.25)'
                     : isCompleted
-                    ? 'var(--sage, #7cb862)'
-                    : 'var(--border, #d2e2ca)',
-                  color: isActive ? '#ffffff' : isCompleted ? '#ffffff' : 'var(--stone, #687962)'
+                    ? 'var(--primary)'
+                    : 'var(--surface-sunken)',
+                  color: isActive ? '#ffffff' : isCompleted ? '#ffffff' : 'var(--text-muted)'
                 }}
               >
                 {isCompleted && !isActive ? (

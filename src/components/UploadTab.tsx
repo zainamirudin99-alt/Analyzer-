@@ -738,7 +738,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
               disabled={isAnalyzing || isExtracting}
             />
             <div className="dz-icon-wrap">
-              {selectedFile ? <FileText size={32} color="#2e6922" /> : <UploadCloud size={32} color="#687962" />}
+              {selectedFile ? <FileText size={32} color="var(--primary)" /> : <UploadCloud size={32} color="var(--text-muted)" />}
             </div>
             <div style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text)' }}>
               {selectedFile ? selectedFile.name : isEn ? 'Click or Drag PDF File Here' : 'Klik atau Tarik File PDF ke Sini'}
@@ -769,7 +769,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
               <button
                 className="btn btn-outline btn-sm"
                 onClick={() => setShowPreviewModal(true)}
-                style={{ background: '#ffffff', borderColor: 'var(--border)' }}
+                style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
               >
                 <Eye size={14} />
                 <span>👁️ Preview Konten TXT</span>
@@ -777,7 +777,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
               <button
                 className="btn btn-outline btn-sm"
                 onClick={handleDownloadTxt}
-                style={{ background: '#ffffff', borderColor: 'var(--border)' }}
+                style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
               >
                 <Download size={14} />
                 <span>Unduh File .TXT</span>
@@ -809,7 +809,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
 
         {/* KONTROL KONFIGURASI: PRESET INDIKATOR, MODEL AI, & CUSTOM SKILL */}
         <div style={{
-          background: 'var(--dew, #eef7eb)',
+          background: 'var(--surface-muted)',
           border: '1.5px solid var(--border)',
           borderRadius: '12px',
           padding: '14px',
@@ -817,11 +817,11 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
           marginBottom: '6px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800, fontSize: '13.5px', color: 'var(--moss)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800, fontSize: '13.5px', color: 'var(--text)' }}>
               <Sliders size={16} />
               <span>{isEn ? 'Indicator & AI Model Configuration' : 'Konfigurasi Indikator & Model Analisis'}</span>
             </div>
-            <span style={{ fontSize: '11px', color: 'var(--stone)' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
               {isEn ? 'Auto-Synchronized' : 'Tersinkronisasi Otomatis'}
             </span>
           </div>
@@ -837,7 +837,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
                 value={activePresetId}
                 onChange={e => handlePresetChange(e.target.value)}
                 disabled={isAnalyzing || isExtracting}
-                style={{ background: '#ffffff', fontSize: '12.5px', padding: '7px 10px' }}
+                style={{ background: 'var(--surface)', fontSize: '12.5px', padding: '7px 10px' }}
               >
                 {presets.map(p => (
                   <option key={p.id} value={p.id}>
@@ -917,7 +917,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
 
               <div
                 style={{
-                  background: '#ffffff',
+                  background: 'var(--surface-sunken)',
                   border: '1px solid var(--border)',
                   borderRadius: '8px',
                   padding: '6px 8px',
@@ -1033,7 +1033,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
 
               <select
                 className="form-select font-mono"
-                style={{ flex: 1, minWidth: '180px', background: '#ffffff', padding: '6px 10px', fontSize: '12px' }}
+                style={{ flex: 1, minWidth: '180px', background: 'var(--surface)', padding: '6px 10px', fontSize: '12px' }}
                 value={activeModel}
                 onChange={e => handleModelChange(e.target.value)}
                 disabled={isAnalyzing || isExtracting}
@@ -1286,7 +1286,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
                   <button
                     className="btn btn-outline btn-sm"
                     onClick={copyFullRow}
-                    style={{ flex: 1, minWidth: '150px', background: '#ffffff' }}
+                    style={{ flex: 1, minWidth: '150px', background: 'var(--surface)' }}
                     title={isEn ? `Copy Code, Year, ${count} Scores, and Total` : `Menyalin Kode, Tahun, ${count} Nilai, dan Total`}
                   >
                     {copiedType === 'full_row' ? <Check size={14} /> : <Copy size={14} />}
@@ -1352,8 +1352,9 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
         <div
           className="card"
           style={{
-            background: isAnalyzing ? 'linear-gradient(180deg, #f0fdf4 0%, #eef7eb 100%)' : isExtracting ? 'linear-gradient(180deg, #f8fafc 0%, #eef7eb 100%)' : 'var(--dew)',
-            border: isAnalyzing || isExtracting ? '2px solid var(--sage)' : '2px dashed var(--mist)',
+            background: isAnalyzing ? 'var(--surface-muted)' : isExtracting ? 'var(--surface-muted)' : 'var(--surface-sunken)',
+            border: isAnalyzing || isExtracting ? '2px solid var(--primary)' : '2px dashed var(--border)',
+            boxShadow: isAnalyzing ? 'var(--glow-primary)' : 'none',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -1434,14 +1435,14 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
           padding: '20px'
         }}>
           <div style={{
-            background: '#ffffff',
+            background: 'var(--card-bg)',
             borderRadius: '16px',
             maxWidth: '850px',
             width: '100%',
             maxHeight: '85vh',
             display: 'flex',
             flexDirection: 'column',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+            boxShadow: 'var(--shadow-lg)',
             border: '1px solid var(--border)'
           }}>
             {/* Modal Header */}
@@ -1471,7 +1472,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
             {/* Modal Body: Text Area */}
             <div style={{ padding: '20px', flex: 1, overflowY: 'auto' }}>
               {(extractedData?.totalCharacters || 0) < 50 && (
-                <div style={{ padding: '16px 18px', background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '10px', color: '#92400e', marginBottom: '14px', fontSize: '13px', lineHeight: '1.6' }}>
+                <div style={{ padding: '16px 18px', background: 'var(--warn-bg)', border: '1.5px solid var(--warn-border)', borderRadius: '10px', color: 'var(--warn)', marginBottom: '14px', fontSize: '13px', lineHeight: '1.6' }}>
                   <div style={{ fontWeight: 800, fontSize: '14px', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span>📷</span>
                     <span>Laporan Menggunakan Format Gambar / Vektor / InDesign</span>

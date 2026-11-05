@@ -68,12 +68,12 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
     <div
       className="stata-block-card"
       style={{
-        background: 'var(--card, #ffffff)',
-        border: '1px solid var(--border, #d2e2ca)',
-        borderRadius: 'var(--radius, 16px)',
+        background: 'var(--card-bg)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius)',
         padding: '24px',
         marginBottom: '24px',
-        boxShadow: 'var(--shadow, 0 4px 20px rgba(30, 61, 20, 0.08))'
+        boxShadow: 'var(--shadow)'
       }}
     >
       {/* Header Langkah */}
@@ -83,7 +83,7 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
           alignItems: 'center',
           justifyContent: 'space-between',
           marginBottom: '16px',
-          borderBottom: '1px solid var(--border-light, #e4efe0)',
+          borderBottom: '1px solid var(--border)',
           paddingBottom: '12px',
           flexWrap: 'wrap',
           gap: '10px'
@@ -92,7 +92,7 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <span
             style={{
-              background: 'var(--fern, #2e6922)',
+              background: 'var(--primary)',
               color: '#ffffff',
               padding: '4px 10px',
               borderRadius: '8px',
@@ -106,7 +106,7 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
             style={{
               fontSize: '17px',
               fontWeight: 700,
-              color: 'var(--bark, #2b221a)',
+              color: 'var(--text)',
               margin: 0
             }}
           >
@@ -122,9 +122,9 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
               display: 'inline-flex',
               alignItems: 'center',
               gap: '6px',
-              background: copied ? 'var(--dew, #eef7eb)' : 'transparent',
-              border: '1px solid var(--border, #d2e2ca)',
-              color: copied ? 'var(--fern, #2e6922)' : 'var(--stone, #687962)',
+              background: copied ? 'var(--primary-glow)' : 'transparent',
+              border: '1px solid var(--border)',
+              color: copied ? 'var(--primary)' : 'var(--text-muted)',
               borderRadius: '8px',
               padding: '8px 14px',
               minHeight: '40px',
@@ -145,9 +145,9 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
               display: 'inline-flex',
               alignItems: 'center',
               gap: '6px',
-              background: copiedOutput ? 'var(--dew, #eef7eb)' : 'transparent',
-              border: '1px solid var(--border, #d2e2ca)',
-              color: copiedOutput ? 'var(--fern, #2e6922)' : 'var(--stone, #687962)',
+              background: copiedOutput ? 'var(--primary-glow)' : 'transparent',
+              border: '1px solid var(--border)',
+              color: copiedOutput ? 'var(--primary)' : 'var(--text-muted)',
               borderRadius: '8px',
               padding: '8px 14px',
               minHeight: '40px',
@@ -243,7 +243,7 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
             <Terminal size={15} />
             <span>(3) Output Terminal Gaya Stata (Rapi &amp; Sejajar Presisi)</span>
           </div>
-          <span style={{ fontSize: '11.5px', color: 'var(--fern, #2e6922)', fontWeight: 700 }}>
+          <span style={{ fontSize: '11.5px', color: 'var(--primary)', fontWeight: 700 }}>
             Stata 18 Results Window
           </span>
         </div>
@@ -273,8 +273,8 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
       {/* 4. Penjelasan Bahasa Bayi */}
       <div
         style={{
-          background: 'linear-gradient(135deg, var(--dew, #eef7eb) 0%, #f4fbf1 100%)',
-          border: '1px solid var(--sage, #7cb862)',
+          background: 'var(--surface-sunken)',
+          border: '1px solid var(--border)',
           borderRadius: '12px',
           padding: '16px',
           display: 'flex',
@@ -283,7 +283,7 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
       >
         <div
           style={{
-            color: 'var(--fern, #2e6922)',
+            color: 'var(--primary)',
             marginTop: '2px',
             flexShrink: 0
           }}
@@ -295,7 +295,7 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
             style={{
               fontSize: '14px',
               fontWeight: 700,
-              color: 'var(--moss, #1e3d14)',
+              color: 'var(--text)',
               margin: '0 0 4px 0'
             }}
           >
@@ -304,7 +304,7 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
           <p
             style={{
               fontSize: '14px',
-              color: 'var(--bark, #2b221a)',
+              color: 'var(--text-secondary)',
               margin: 0,
               lineHeight: 1.6
             }}

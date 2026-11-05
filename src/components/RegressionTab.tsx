@@ -669,8 +669,8 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                           width: '18px',
                           height: '18px',
                           borderRadius: '50%',
-                          border: selectedSheet === sheet ? '5px solid var(--fern)' : '2px solid var(--border)',
-                          background: '#ffffff'
+                          border: selectedSheet === sheet ? '5px solid var(--primary)' : '2px solid var(--border)',
+                          background: 'var(--surface)'
                         }} />
                       </div>
                     );
@@ -981,8 +981,8 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                       </div>
 
                       {/* Kaidah Statistika Wajib Time Series */}
-                      <div style={{ padding: '14px 16px', borderRadius: '10px', background: '#ffffff', border: '1px solid var(--border)', fontSize: '12.5px', color: 'var(--text)', lineHeight: 1.55 }}>
-                        <div style={{ fontWeight: 800, color: 'var(--moss)', marginBottom: '6px' }}>
+                      <div style={{ padding: '14px 16px', borderRadius: '10px', background: 'var(--surface-sunken)', border: '1px solid var(--border)', fontSize: '12.5px', color: 'var(--text)', lineHeight: 1.55 }}>
+                        <div style={{ fontWeight: 800, color: 'var(--primary)', marginBottom: '6px' }}>
                           ✅ Kaidah Statistika Wajib Data Time Series (Otomatis Diterapkan Sistem):
                         </div>
                         <ol style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
