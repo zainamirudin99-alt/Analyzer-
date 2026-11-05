@@ -73,7 +73,11 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
         borderRadius: 'var(--radius)',
         padding: '24px',
         marginBottom: '24px',
-        boxShadow: 'var(--shadow)'
+        boxShadow: 'var(--shadow)',
+        minWidth: 0,
+        width: '100%',
+        maxWidth: '100%',
+        boxSizing: 'border-box'
       }}
     >
       {/* Header Langkah */}
@@ -189,8 +193,12 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
             fontSize: '13.5px',
             overflowX: 'auto',
             whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
             lineHeight: 1.5,
-            border: '1px solid #233321'
+            border: '1px solid #233321',
+            minWidth: 0,
+            maxWidth: '100%',
+            boxSizing: 'border-box'
           }}
         >
           {block.stataCommand}
@@ -226,7 +234,7 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
       </div>
 
       {/* 3. Output Monospace Gaya Stata */}
-      <div style={{ marginBottom: '16px' }}>
+      <div style={{ marginBottom: '16px', minWidth: 0, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
         <div
           style={{
             display: 'flex',
@@ -263,7 +271,10 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
             lineHeight: 1.5,
             border: '1px solid #263823',
             boxShadow: 'inset 0 2px 10px rgba(0, 0, 0, 0.45)',
-            margin: 0
+            margin: 0,
+            minWidth: 0,
+            maxWidth: '100%',
+            boxSizing: 'border-box'
           }}
         >
           {renderFormattedStataLines(block.stataOutput)}

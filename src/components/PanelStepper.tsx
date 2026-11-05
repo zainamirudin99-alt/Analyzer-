@@ -25,16 +25,18 @@ export const PANEL_STEPS: StepItem[] = [
   { index: 12, title: 'Hasil Robust & Interpretasi', shortDesc: 'vce(robust) & Bahasa Mudah' }
 ];
 
-interface PanelStepperProps {
+export interface PanelStepperProps {
   activeStep: number;
   maxReachedStep: number;
   onSelectStep: (step: number) => void;
+  onToggleCollapse?: () => void;
 }
 
 export const PanelStepper: React.FC<PanelStepperProps> = ({
   activeStep,
   maxReachedStep,
-  onSelectStep
+  onSelectStep,
+  onToggleCollapse
 }) => {
   return (
     <div
@@ -52,16 +54,48 @@ export const PanelStepper: React.FC<PanelStepperProps> = ({
     >
       <div
         style={{
-          fontSize: '12px',
-          fontWeight: 700,
-          color: 'var(--stone, #687962)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
           marginBottom: '8px',
-          paddingLeft: '8px'
+          paddingLeft: '6px',
+          paddingRight: '2px'
         }}
       >
-        Tahapan Ekonometrika Stata (0 s/d 12)
+        <div
+          style={{
+            fontSize: '11.5px',
+            fontWeight: 800,
+            color: 'var(--stone, #687962)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em'
+          }}
+        >
+          Tahapan Stata (0-12)
+        </div>
+        {onToggleCollapse && (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            title="Sembunyikan Stepper untuk tampilan layar penuh"
+            style={{
+              background: 'var(--surface-sunken)',
+              border: '1px solid var(--border)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              color: 'var(--primary)',
+              fontSize: '11px',
+              fontWeight: 700,
+              padding: '3px 8px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <span>◀ Tutup</span>
+          </button>
+        )}
       </div>
 
       <div

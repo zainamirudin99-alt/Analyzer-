@@ -212,7 +212,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
   position: relative;
   transition: background-color 0.25s ease, color 0.25s ease;
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 
 /* Ambient Laboratory & Atomic Atmosphere */
@@ -526,9 +526,18 @@ p {
    ============================================================ */
 
 .main-container {
-  max-width: 1360px;
+  max-width: 1440px;
+  width: 100%;
   margin: 0 auto;
-  padding: 30px 24px 64px;
+  padding: 24px 20px 64px;
+  box-sizing: border-box;
+}
+
+@media (min-width: 1600px) {
+  .main-container {
+    max-width: 1600px;
+    padding: 28px 32px 64px;
+  }
 }
 
 /* Cards */
@@ -2025,4 +2034,133 @@ table.result-table {
 .panel-transform-select:focus {
   border-color: var(--primary);
   box-shadow: var(--shadow-focus);
+}
+
+/* ============================================================
+   ALWAYS-VISIBLE HIGH-CONTRAST SCROLLBARS (WCAG AA & Aesthetic)
+   ============================================================ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--primary) var(--surface-sunken);
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--surface-sunken);
+  border-radius: 6px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border-radius: 6px;
+  border: 2px solid var(--surface-sunken);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-hover);
+}
+
+/* Stata Terminal Dedicated Monospace Scrollbars */
+.stata-terminal {
+  scrollbar-width: thin;
+  scrollbar-color: #2e6922 #050805;
+}
+
+.stata-terminal::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.stata-terminal::-webkit-scrollbar-track {
+  background: #050805;
+  border-radius: 6px;
+}
+
+.stata-terminal::-webkit-scrollbar-thumb {
+  background: #2e6922;
+  border-radius: 6px;
+  border: 2px solid #050805;
+}
+
+.stata-terminal::-webkit-scrollbar-thumb:hover {
+  background: #4ade80;
+}
+
+/* ============================================================
+   PANEL TAB RESPONSIVE GRID & FLUID COLLAPSIBLE LAYOUT
+   ============================================================ */
+.panel-main-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  transition: all 0.25s ease;
+}
+
+.panel-main-layout.is-collapsed {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 0 !important;
+}
+
+.panel-stepper-sidebar {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.panel-output-col {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 1024px) {
+  .panel-main-layout {
+    grid-template-columns: minmax(210px, 240px) minmax(0, 1fr);
+    gap: 16px;
+  }
+}
+
+@media (max-width: 820px) {
+  .panel-main-layout {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .panel-stepper-sidebar {
+    margin-bottom: 16px;
+  }
+}
+
+/* Normality Card Grid (Step 11 Fluid Layout) */
+.panel-normality-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.panel-normality-card {
+  min-width: 0;
+  box-sizing: border-box;
+  word-break: break-word;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.panel-normality-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+
+@media (max-width: 680px) {
+  .panel-normality-grid {
+    grid-template-columns: 1fr;
+  }
 }

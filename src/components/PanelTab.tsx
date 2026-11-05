@@ -36,7 +36,7 @@ import {
   formatStataRegTable,
   formatPanelClipboardSummary
 } from '@/lib/panel-interpretation';
-import { PanelStepper } from './PanelStepper';
+import { PanelStepper, PANEL_STEPS } from './PanelStepper';
 import { StataConsoleBlock } from './StataConsoleBlock';
 import {
   Play,
@@ -125,6 +125,7 @@ export const PanelTab: React.FC = () => {
   // Stepper & Execution State
   const [activeStep, setActiveStep] = useState<number>(0);
   const [maxReachedStep, setMaxReachedStep] = useState<number>(12);
+  const [isStepperCollapsed, setIsStepperCollapsed] = useState<boolean>(false);
   const [step8ActiveModel, setStep8ActiveModel] = useState<'fem' | 'rem' | 'cem'>('fem');
   const [fitResult, setFitResult] = useState<PanelFitResult | null>(null);
   const [consoleBlocks, setConsoleBlocks] = useState<StataConsoleBlockData[]>([]);
@@ -1926,27 +1927,132 @@ export const PanelTab: React.FC = () => {
         </div>
       )}
 
+      {/* Toolbar Layout & Stepper Toggle Button */}
+      <div
+        className="panel-layout-toolbar no-print"
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '14px',
+          flexWrap: 'wrap',
+          gap: '10px'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            type="button"
+            onClick={() => setIsStepperCollapsed(prev => !prev)}
+            title={isStepperCollapsed ? 'Tampilkan panel tahapan di sebelah kiri' : 'Sembunyikan panel tahapan agar output melebar penuh'}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '7px 14px',
+              borderRadius: '8px',
+              border: '1px solid var(--border)',
+              background: isStepperCollapsed ? 'var(--primary)' : 'var(--surface-sunken)',
+              color: isStepperCollapsed ? '#ffffff' : 'var(--text)',
+              fontSize: '12.5px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              boxShadow: 'var(--shadow-sm)'
+            }}
+          >
+            <span>{isStepperCollapsed ? '▶ Buka Stepper' : '◀ Sembunyikan Stepper'}</span>
+          </button>
+
+          {isStepperCollapsed && (
+            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--primary)' }}>
+              Mode Layar Penuh (Output Melebar Bebas)
+            </span>
+          )}
+        </div>
+
+        {/* Quick Stepper Step Navigator when collapsed */}
+        {isStepperCollapsed && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              disabled={activeStep <= 0}
+              onClick={() => setActiveStep(prev => Math.max(0, prev - 1))}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '5px 12px',
+                borderRadius: '6px',
+                border: '1px solid var(--border)',
+                background: 'var(--surface-sunken)',
+                color: 'var(--text)',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: activeStep <= 0 ? 'not-allowed' : 'pointer',
+                opacity: activeStep <= 0 ? 0.45 : 1
+              }}
+            >
+              <ArrowLeft size={13} />
+              <span>Sebelumnya</span>
+            </button>
+            <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text)', padding: '0 4px' }}>
+              Langkah {activeStep}: {PANEL_STEPS[activeStep]?.title}
+            </span>
+            <button
+              type="button"
+              disabled={activeStep >= maxReachedStep}
+              onClick={() => setActiveStep(prev => Math.min(maxReachedStep, prev + 1))}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '5px 12px',
+                borderRadius: '6px',
+                border: '1px solid var(--border)',
+                background: 'var(--surface-sunken)',
+                color: 'var(--text)',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: activeStep >= maxReachedStep ? 'not-allowed' : 'pointer',
+                opacity: activeStep >= maxReachedStep ? 0.45 : 1
+              }}
+            >
+              <span>Selanjutnya</span>
+              <ArrowRight size={13} />
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* 5. Tata Letak Utama 2 Kolom (Stepper Kiri + Konsol Kanan) */}
       <div
-        className="panel-main-layout"
+        className={`panel-main-layout ${isStepperCollapsed ? 'is-collapsed' : ''}`}
         style={{
           display: 'grid',
-          gridTemplateColumns: 'minmax(260px, 300px) 1fr',
-          gap: '24px',
-          alignItems: 'start'
+          gridTemplateColumns: isStepperCollapsed
+            ? 'minmax(0, 1fr)'
+            : 'minmax(240px, 280px) minmax(0, 1fr)',
+          gap: isStepperCollapsed ? '0px' : '20px',
+          alignItems: 'start',
+          width: '100%',
+          maxWidth: '100%',
+          boxSizing: 'border-box'
         }}
       >
         {/* Kolom Kiri: Stepper */}
-        <div className="panel-stepper-container no-print">
-          <PanelStepper
-            activeStep={activeStep}
-            maxReachedStep={maxReachedStep}
-            onSelectStep={step => setActiveStep(step)}
-          />
-        </div>
+        {!isStepperCollapsed && (
+          <div className="panel-stepper-sidebar no-print" style={{ minWidth: 0, width: '100%' }}>
+            <PanelStepper
+              activeStep={activeStep}
+              maxReachedStep={maxReachedStep}
+              onSelectStep={step => setActiveStep(step)}
+              onToggleCollapse={() => setIsStepperCollapsed(true)}
+            />
+          </div>
+        )}
 
         {/* Kolom Kanan: Output Blok Stata Aktif */}
-        <div>
+        <div className="panel-output-col" style={{ minWidth: 0, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
           {/* Step 8 Model Switcher Buttons: CEM | FEM | REM */}
           {activeStep === 8 && fitResult && (
             <div
@@ -2517,19 +2623,24 @@ export const PanelTab: React.FC = () => {
                   {/* Visual SVG Histogram + Kurva Normal (histogram e, normal) */}
                   {activeNormalityStats.histogramBins && activeNormalityStats.histogramBins.length > 0 && (
                     <div
+                      className="panel-normality-histogram-card"
                       style={{
-                        background: '#f8fafc',
-                        border: '1px solid #e2e8f0',
+                        background: 'var(--surface-sunken)',
+                        border: '1px solid var(--border)',
                         borderRadius: '10px',
                         padding: '16px',
-                        marginBottom: '16px'
+                        marginBottom: '16px',
+                        minWidth: 0,
+                        width: '100%',
+                        maxWidth: '100%',
+                        boxSizing: 'border-box'
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
-                        <span style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>
                           Visualisasi Histogram Residual &amp; Kurva Normal (<code>histogram {activeResidMode === 'e' ? 'e' : 'resid'}, normal</code>)
                         </span>
-                        <span style={{ fontSize: '12px', color: '#475569' }}>
+                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                           Mean = {activeNormalityStats.meanResidual} | SD = {activeNormalityStats.sdResidual} | Skewness = {activeNormalityStats.skewness} | Kurtosis = {activeNormalityStats.kurtosis}
                         </span>
                       </div>
@@ -2614,16 +2725,16 @@ export const PanelTab: React.FC = () => {
                   )}
 
                   {/* 3 Kartu Uji Normalitas Stata: sktest, swilk, dan ksmirnov */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                  <div className="panel-normality-grid">
                     {activeNormalityStats.sktest && (
-                      <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                        <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b', marginBottom: '4px' }}>
+                      <div className="panel-normality-card" style={{ padding: '12px 14px', background: 'var(--surface-sunken)', borderRadius: '8px', border: '1px solid var(--border)', minWidth: 0, boxSizing: 'border-box' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text)', marginBottom: '4px' }}>
                           1. Skewness/Kurtosis Test (<code>sktest</code>)
                         </div>
-                        <div style={{ fontSize: '12px', color: '#334155' }}>
-                          Pr(Skewness) = {activeNormalityStats.sktest.prSkewness.toFixed(4)} | Pr(Kurtosis) = {activeNormalityStats.sktest.prKurtosis.toFixed(4)}
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', wordBreak: 'break-word' }}>
+                          Pr(Skew) = {activeNormalityStats.sktest.prSkewness.toFixed(4)} | Pr(Kurt) = {activeNormalityStats.sktest.prKurtosis.toFixed(4)}
                         </div>
-                        <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b', marginTop: '4px' }}>
+                        <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text)', marginTop: '4px', wordBreak: 'break-word' }}>
                           adj chi2(2) = {activeNormalityStats.sktest.adjChi2.toFixed(2)} (Prob &gt; chi2 = {activeNormalityStats.sktest.probChi2.toFixed(4)})
                         </div>
                         <div style={{ marginTop: '6px' }}>
@@ -2644,14 +2755,14 @@ export const PanelTab: React.FC = () => {
                     )}
 
                     {activeNormalityStats.swilk && (
-                      <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                        <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b', marginBottom: '4px' }}>
+                      <div className="panel-normality-card" style={{ padding: '12px 14px', background: 'var(--surface-sunken)', borderRadius: '8px', border: '1px solid var(--border)', minWidth: 0, boxSizing: 'border-box' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text)', marginBottom: '4px' }}>
                           2. Shapiro-Wilk W Test (<code>swilk</code>)
                         </div>
-                        <div style={{ fontSize: '12px', color: '#334155' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', wordBreak: 'break-word' }}>
                           W = {activeNormalityStats.swilk.w.toFixed(5)} | V = {activeNormalityStats.swilk.v.toFixed(3)} | z = {activeNormalityStats.swilk.z.toFixed(3)}
                         </div>
-                        <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b', marginTop: '4px' }}>
+                        <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text)', marginTop: '4px', wordBreak: 'break-word' }}>
                           Prob &gt; z = {activeNormalityStats.swilk.probZ.toFixed(5)}
                         </div>
                         <div style={{ marginTop: '6px' }}>
@@ -2672,15 +2783,15 @@ export const PanelTab: React.FC = () => {
                     )}
 
                     {activeNormalityStats.ksmirnov && (
-                      <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                        <div style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b', marginBottom: '4px' }}>
+                      <div className="panel-normality-card" style={{ padding: '12px 14px', background: 'var(--surface-sunken)', borderRadius: '8px', border: '1px solid var(--border)', minWidth: 0, boxSizing: 'border-box' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text)', marginBottom: '4px' }}>
                           3. Kolmogorov-Smirnov (<code>ksmirnov</code>)
                         </div>
-                        <div style={{ fontSize: '12px', color: '#334155' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', wordBreak: 'break-word' }}>
                           Statistik D Maksimum = {activeNormalityStats.ksmirnov.dStat.toFixed(4)}
                         </div>
-                        <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b', marginTop: '4px' }}>
-                          Combined K-S p-value = {activeNormalityStats.ksmirnov.correctedP.toFixed(4)}
+                        <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text)', marginTop: '4px', wordBreak: 'break-word' }}>
+                          Combined K-S p = {activeNormalityStats.ksmirnov.correctedP.toFixed(4)}
                         </div>
                         <div style={{ marginTop: '6px' }}>
                           <span
