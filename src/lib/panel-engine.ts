@@ -10,6 +10,8 @@ import {
   PanelCoefficientRow,
   PanelModelType,
   ZeroValuePolicy,
+  TransformMethod,
+  TransformOptionItem,
   VariableLNAnalysis,
   PanelLNTransformReport,
   PanelOrthogReport,
@@ -594,7 +596,7 @@ export function analyzeAndTransformPanelLN(
   rows: Record<string, any>[],
   yCol: string,
   xCols: string[],
-  selectedVarsToTransform?: string[]
+  selectedTransforms?: string[] | Record<string, TransformMethod>
 ): PanelLNTransformReport {
   const allVars: Array<{ name: string; role: 'Y' | 'X' }> = [
     { name: yCol, role: 'Y' },
@@ -604,8 +606,30 @@ export function analyzeAndTransformPanelLN(
   const analyses: VariableLNAnalysis[] = [];
   const recommendedVars: string[] = [];
 
+  // Parse user choices into unified mapping: varName -> TransformMethod
+  const transformMap: Record<string, TransformMethod> = {};
+  if (Array.isArray(selectedTransforms)) {
+    for (const v of allVars) {
+      if (selectedTransforms.includes(v.name)) {
+        transformMap[v.name] = 'ln';
+      } else {
+        transformMap[v.name] = 'asli';
+      }
+    }
+  } else if (selectedTransforms && typeof selectedTransforms === 'object') {
+    for (const v of allVars) {
+      transformMap[v.name] = selectedTransforms[v.name] || 'asli';
+    }
+  }
+
+  // Pre-calculate inter-variable correlation to detect severe collinearity for orthog option
+  const rawVecs: Record<string, number[]> = {};
   for (const item of allVars) {
-    const vals = rows.map(r => Number(r[item.name])).filter(v => !isNaN(v));
+    rawVecs[item.name] = rows.map(r => Number(r[item.name])).filter(v => !isNaN(v));
+  }
+
+  for (const item of allVars) {
+    const vals = rawVecs[item.name] || [];
     const n = vals.length;
     if (n === 0) continue;
 
@@ -631,24 +655,158 @@ export function analyzeAndTransformPanelLN(
     const hasZero = vals.some(v => v === 0);
     const hasNegative = min < 0;
 
-    // Kriteria statistik rekomendasi transformasi LN:
-    // 1. |Skewness| > 1.0 (condong tajam ke kanan/kiri)
-    // 2. Kurtosis > 4.5 (leptokurtik / ekor berat)
-    // 3. Rasio Max/Min > 25 atau skala ratusan/ribuan dengan CV tinggi
+    // Check max correlation with other predictors (for orthog)
+    let maxCorr = 0;
+    if (item.role === 'X') {
+      for (const other of xCols) {
+        if (other !== item.name && rawVecs[other]?.length === n) {
+          const r = Math.abs(pearsonCorrelation(vals, rawVecs[other]));
+          if (r > maxCorr) maxCorr = r;
+        }
+      }
+    }
+
+    // Determine available transformation options & validity for this variable
+    const availableOptions: TransformOptionItem[] = [
+      {
+        method: 'asli',
+        label: 'Asli (Tanpa Transformasi)',
+        badge: 'Asli',
+        formula: 'x',
+        desc: 'Mempertahankan skala asli variabel tanpa transformasi.',
+        isValid: true
+      },
+      {
+        method: 'ln',
+        label: 'ln(x) — Logaritma Natural',
+        badge: 'ln(x)',
+        formula: 'ln(x)',
+        desc: min > 0
+          ? 'Logaritma natural standar untuk menormalkan skewness dan linierisasi hubungan.'
+          : 'Memerlukan pergeseran konstanta shift karena terdapat nilai <= 0.',
+        isValid: true
+      },
+      {
+        method: 'ln_1p',
+        label: 'ln(1 + x) — Log Plus One',
+        badge: 'ln(1+x)',
+        formula: 'ln(1 + x)',
+        desc: 'Ideal untuk data non-negatif dengan nilai 0; mempertahankan titik 0 karena ln(1)=0.',
+        isValid: !hasNegative,
+        invalidReason: hasNegative ? 'Nilai minimum negatif (< 0)' : undefined
+      },
+      {
+        method: 'sqrt',
+        label: '√x — Akar Kuadrat',
+        badge: '√x',
+        formula: 'sqrt(x)',
+        desc: 'Efektif untuk skewness positif sedang, data cacah, atau menstabilkan ragam Poisson.',
+        isValid: !hasNegative,
+        invalidReason: hasNegative ? 'Nilai minimum negatif (< 0)' : undefined
+      },
+      {
+        method: 'orthog',
+        label: 'orthog(x) — Ortogonalisasi Gram-Schmidt',
+        badge: 'orthog',
+        formula: 'orthog(x)',
+        desc: 'Mengeliminasi multikolinearitas antar prediktor independen dengan membuat korelasi r = 0.',
+        isValid: item.role === 'X',
+        invalidReason: item.role === 'Y' ? 'Hanya berlaku untuk variabel independen (X)' : undefined
+      },
+      {
+        method: 'std',
+        label: 'z-score — Standarisasi (x - μ)/σ',
+        badge: 'z-score',
+        formula: '(x - μ) / σ',
+        desc: 'Memusatkan ke rata-rata 0 dan varians 1, cocok untuk data berskala sangat berbeda atau memiliki nilai negatif.',
+        isValid: sd > 1e-9,
+        invalidReason: sd <= 1e-9 ? 'Variabel bernilai konstan (sd = 0)' : undefined
+      },
+      {
+        method: 'inv',
+        label: '1 / x — Invers / Kebalikan',
+        badge: '1/x',
+        formula: '1 / (x + c)',
+        desc: 'Mengompresi ekor kanan yang sangat ekstrem atau hubungan laju/waktu.',
+        isValid: true
+      }
+    ];
+
+    // Determine Best Recommendation by the System
+    let recommendedMethod: TransformMethod = 'asli';
+    let recommendedReason = '';
+
     const highSkew = Math.abs(skewness) > 1.0;
     const highKurt = kurtosis > 4.5;
     const wideScale = (min > 0 && max / min > 25) || (max > 500 && sd / Math.max(1e-9, Math.abs(mean)) > 0.75);
-    const needsLN = !hasNegative && (highSkew || highKurt || wideScale);
 
-    const reasons: string[] = [];
-    if (highSkew) reasons.push(`Skewness tinggi (${skewness.toFixed(2)})`);
-    if (highKurt) reasons.push(`Kurtosis meruncing (${kurtosis.toFixed(2)})`);
-    if (wideScale) reasons.push(`Rentang skala lebar (${min.toFixed(2)} s/d ${max.toFixed(2)})`);
+    if (item.role === 'X' && maxCorr >= 0.85) {
+      recommendedMethod = 'orthog';
+      recommendedReason = 'Korelasi sangat tinggi dengan prediktor lain (|r| = ' + maxCorr.toFixed(2) + '). Transformasi orthog direkomendasikan untuk menetralkan multikolinearitas (VIF).';
+    } else if (hasZero && !hasNegative && (highSkew || wideScale)) {
+      recommendedMethod = 'ln_1p';
+      recommendedReason = 'Skewness tinggi (' + skewness.toFixed(2) + ') dan terdapat nilai 0. Transformasi ln(1 + x) paling optimal karena menjaga domain 0 (ln(1)=0) dan mereduksi asimetri.';
+    } else if (!hasNegative && min > 0 && (highSkew || highKurt || wideScale)) {
+      recommendedMethod = 'ln';
+      recommendedReason = 'Skewness tinggi (' + skewness.toFixed(2) + '), kurtosis meruncing (' + kurtosis.toFixed(2) + '), dan skala lebar (' + min.toFixed(2) + ' s/d ' + max.toFixed(2) + '). Transformasi ln(x) menstabilkan varians dan mendekati normal.';
+    } else if (!hasNegative && skewness > 0.65 && skewness <= 1.4 && !wideScale) {
+      recommendedMethod = 'sqrt';
+      recommendedReason = 'Kemencengan positif sedang (' + skewness.toFixed(2) + '). Transformasi akar kuadrat (√x) direkomendasikan untuk meratakan sebaran tanpa distorsi logaritmik berlebih.';
+    } else if (hasNegative && highSkew) {
+      recommendedMethod = 'std';
+      recommendedReason = 'Terdapat nilai negatif (min = ' + min.toFixed(2) + ') dan sebaran tidak simetris. Standarisasi z-score direkomendasikan agar data berpusat pada mean 0 tanpa pelanggaran logaritma.';
+    } else {
+      recommendedMethod = 'asli';
+      recommendedReason = 'Distribusi data relatif stabil dan mendekati normal (Skewness = ' + skewness.toFixed(2) + ', Kurtosis = ' + kurtosis.toFixed(2) + '). Variabel asli direkomendasikan agar koefisien mudah diinterpretasikan.';
+    }
 
-    const shiftUsed = min <= 0 ? Math.abs(min) + 1 : 0;
-    const lnVarName = item.name.startsWith('ln_') ? item.name : `ln_${item.name}`;
+    // Flag recommended option
+    for (const opt of availableOptions) {
+      if (opt.method === recommendedMethod) opt.isRecommended = true;
+    }
 
-    if (needsLN) {
+    // Determine currently selected method
+    let selectedMethod = transformMap[item.name] || 'asli';
+    if (selectedTransforms === undefined) {
+      selectedMethod = 'asli';
+    } else if (Array.isArray(selectedTransforms) && selectedTransforms.includes(item.name)) {
+      selectedMethod = hasZero ? 'ln_1p' : (recommendedMethod !== 'asli' ? recommendedMethod : 'ln');
+    }
+
+    // Active Var Name & Stata commands based on selectedMethod
+    let activeVarName = item.name;
+    let shiftUsed = 0;
+    let stataCmd = '';
+
+    if (selectedMethod === 'ln') {
+      shiftUsed = min <= 0 ? Math.abs(min) + 1 : 0;
+      activeVarName = item.name.startsWith('ln_') ? item.name : 'ln_' + item.name;
+      stataCmd = shiftUsed === 0
+        ? 'gen ' + activeVarName + ' = ln(' + item.name + ')'
+        : 'gen ' + activeVarName + ' = ln(' + item.name + ' + ' + shiftUsed + ')';
+    } else if (selectedMethod === 'ln_1p') {
+      shiftUsed = min < 0 ? Math.abs(min) + 1 : 1;
+      activeVarName = 'ln1p_' + item.name;
+      stataCmd = 'gen ' + activeVarName + ' = ln(' + item.name + ' + ' + shiftUsed + ')';
+    } else if (selectedMethod === 'sqrt') {
+      shiftUsed = min < 0 ? Math.abs(min) : 0;
+      activeVarName = 'sqrt_' + item.name;
+      stataCmd = shiftUsed === 0
+        ? 'gen ' + activeVarName + ' = sqrt(' + item.name + ')'
+        : 'gen ' + activeVarName + ' = sqrt(' + item.name + ' + ' + shiftUsed + ')';
+    } else if (selectedMethod === 'orthog') {
+      activeVarName = 'orth_' + item.name;
+      stataCmd = 'orthog ' + item.name + ', gen(' + activeVarName + ')';
+    } else if (selectedMethod === 'inv') {
+      shiftUsed = min <= 0 ? Math.abs(min) + 1 : 0;
+      activeVarName = 'inv_' + item.name;
+      stataCmd = 'gen ' + activeVarName + ' = 1 / (' + item.name + (shiftUsed > 0 ? ' + ' + shiftUsed : '') + ')';
+    } else if (selectedMethod === 'std') {
+      activeVarName = 'std_' + item.name;
+      stataCmd = 'egen ' + activeVarName + ' = std(' + item.name + ')';
+    }
+
+    if (recommendedMethod !== 'asli') {
       recommendedVars.push(item.name);
     }
 
@@ -664,58 +822,98 @@ export function analyzeAndTransformPanelLN(
       kurtosis: Number(kurtosis.toFixed(3)),
       hasZero,
       hasNegative,
-      needsLN,
-      reason: needsLN
-        ? `Direkomendasikan LN karena: ${reasons.join(', ')}.${hasZero ? ' (Menggunakan ln(x + 1) karena terdapat nilai 0).' : ''}`
-        : hasNegative
-        ? `Mengandung nilai negatif (min = ${min.toFixed(2)}), tidak direkomendasikan LN langsung.`
-        : `Distribusi relatif normal/stabil (Skewness = ${skewness.toFixed(2)}, Kurtosis = ${kurtosis.toFixed(2)}).`,
-      lnVarName,
-      shiftUsed
+      needsLN: recommendedMethod !== 'asli',
+      reason: recommendedReason,
+      lnVarName: activeVarName,
+      shiftUsed,
+      recommendedMethod,
+      selectedMethod,
+      activeVarName,
+      recommendedReason,
+      stataCommand: stataCmd,
+      availableOptions
     });
   }
 
-  // Variabel yang benar-benar diterapkan LN:
-  // Jika selectedVarsToTransform diberikan oleh pengguna, gunakan daftar itu; jika undefined, tidak memaksa kecuali dipilih
-  const appliedVars = selectedVarsToTransform !== undefined ? selectedVarsToTransform : [];
-  const stataCommands: string[] = [];
+  // Build appliedVars (variables where selectedMethod !== 'asli')
+  const appliedVars = analyses.filter(a => a.selectedMethod !== 'asli').map(a => a.variable);
+  const activeTransformMap = {};
+  for (const a of analyses) {
+    activeTransformMap[a.variable] = a.selectedMethod || 'asli';
+  }
 
-  const transformedRows = rows.map(r => {
-    const newRow: Record<string, any> = { ...r };
+  // Pre-calculate Gram-Schmidt orthogonalization for any variables with 'orthog'
+  const orthogCols = analyses.filter(a => a.selectedMethod === 'orthog').map(a => a.variable);
+  let orthogData = {};
+  if (orthogCols.length > 0) {
+    const N = rows.length;
+    const baseCols = analyses.filter(a => a.role === 'X' && a.selectedMethod !== 'orthog').map(a => a.variable);
+    const ordered = [...baseCols, ...orthogCols];
+    const basis = [new Array(N).fill(1 / Math.sqrt(N))];
+
+    for (const col of ordered) {
+      let u = [...(rawVecs[col] || [])];
+      for (const b of basis) {
+        let dot = 0;
+        for (let i = 0; i < N; i++) dot += u[i] * b[i];
+        for (let i = 0; i < N; i++) u[i] -= dot * b[i];
+      }
+      let norm = 0;
+      for (let i = 0; i < N; i++) norm += u[i] * u[i];
+      norm = Math.sqrt(norm);
+      if (norm > 1e-12) {
+        basis.push(u.map(v => v / norm));
+      }
+      if (orthogCols.includes(col)) {
+        orthogData['orth_' + col] = u;
+      }
+    }
+  }
+
+  // Generate transformed data rows
+  const transformedRows = rows.map((r, rowIndex) => {
+    const newRow = { ...r };
     for (const a of analyses) {
-      if (appliedVars.includes(a.variable)) {
-        const rawVal = Number(r[a.variable]);
+      if (a.selectedMethod === 'asli') continue;
+      const rawVal = Number(r[a.variable]);
+      const activeName = a.activeVarName || a.lnVarName;
+
+      if (a.selectedMethod === 'ln') {
         const shifted = rawVal + a.shiftUsed;
-        newRow[a.lnVarName] = shifted > 0 ? Math.log(shifted) : 0;
+        newRow[activeName] = shifted > 0 ? Math.log(shifted) : 0;
+      } else if (a.selectedMethod === 'ln_1p') {
+        const shifted = rawVal + a.shiftUsed;
+        newRow[activeName] = Math.log(Math.max(1e-12, shifted));
+      } else if (a.selectedMethod === 'sqrt') {
+        const shifted = rawVal + a.shiftUsed;
+        newRow[activeName] = Math.sqrt(Math.max(0, shifted));
+      } else if (a.selectedMethod === 'orthog') {
+        newRow[activeName] = orthogData[activeName]?.[rowIndex] ?? rawVal;
+      } else if (a.selectedMethod === 'inv') {
+        const shifted = rawVal + a.shiftUsed;
+        newRow[activeName] = shifted !== 0 ? 1 / shifted : 0;
+      } else if (a.selectedMethod === 'std') {
+        newRow[activeName] = a.sd > 1e-12 ? (rawVal - a.mean) / a.sd : 0;
       }
     }
     return newRow;
   });
 
+  const stataCommands = [];
   for (const a of analyses) {
-    if (appliedVars.includes(a.variable)) {
-      if (a.shiftUsed === 0) {
-        stataCommands.push(`gen ${a.lnVarName} = ln(${a.variable})`);
-      } else {
-        stataCommands.push(`gen ${a.lnVarName} = ln(${a.variable} + ${a.shiftUsed})`);
-      }
+    if (a.selectedMethod !== 'asli' && a.stataCommand) {
+      stataCommands.push(a.stataCommand);
     }
   }
 
-  const activeYCol = appliedVars.includes(yCol)
-    ? (analyses.find(a => a.variable === yCol)?.lnVarName || `ln_${yCol}`)
-    : yCol;
-
-  const activeXCols = xCols.map(x =>
-    appliedVars.includes(x)
-      ? (analyses.find(a => a.variable === x)?.lnVarName || `ln_${x}`)
-      : x
-  );
+  const activeYCol = analyses.find(a => a.variable === yCol)?.activeVarName || yCol;
+  const activeXCols = xCols.map(x => analyses.find(a => a.variable === x)?.activeVarName || x);
 
   return {
     analyses,
     recommendedVars,
     appliedVars,
+    transformMap: activeTransformMap,
     activeYCol,
     activeXCols,
     transformedRows,

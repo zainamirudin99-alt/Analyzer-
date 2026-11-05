@@ -5,7 +5,8 @@ import {
   PanelFitInput,
   PanelFitResult,
   StataConsoleBlockData,
-  ZeroValuePolicy
+  ZeroValuePolicy,
+  TransformMethod
 } from '@/lib/panel-types';
 import {
   validatePanelStructure,
@@ -109,6 +110,7 @@ export const PanelTab: React.FC = () => {
   // Step 3: LN Transformation State
   const [selectedLnCols, setSelectedLnCols] = useState<string[]>([]);
   const [lnMode, setLnMode] = useState<'none' | 'auto' | 'custom'>('none');
+  const [customTransformMap, setCustomTransformMap] = useState<Record<string, TransformMethod>>({});
 
   // Step 7: Orthog Multicollinearity State
   const [manualOrthogCols, setManualOrthogCols] = useState<string[] | undefined>(undefined);
@@ -185,20 +187,25 @@ export const PanelTab: React.FC = () => {
     });
   }, [dataRows, idCol, timeCol, yCol, xCols, zeroPolicy]);
 
-  // LN Analysis & Transformation Report (Step 3)
+  // Multi-Option Transformation Report (Step 3: Asli, LN, LN 1+X, Sqrt, Orthog, Inv, Std)
   const lnReport = useMemo(() => {
     if (!cleaningReport.cleanedRows || cleaningReport.cleanedRows.length === 0 || !yCol || xCols.length === 0) {
-      return analyzeAndTransformPanelLN([], yCol || 'y', xCols, []);
+      return analyzeAndTransformPanelLN([], yCol || 'y', xCols, {});
     }
-    const autoCheck = analyzeAndTransformPanelLN(cleaningReport.cleanedRows, yCol, xCols);
     if (lnMode === 'none') {
-      return analyzeAndTransformPanelLN(cleaningReport.cleanedRows, yCol, xCols, []);
+      const rawMap: Record<string, TransformMethod> = {};
+      return analyzeAndTransformPanelLN(cleaningReport.cleanedRows, yCol, xCols, rawMap);
     }
     if (lnMode === 'auto') {
-      return analyzeAndTransformPanelLN(cleaningReport.cleanedRows, yCol, xCols, autoCheck.recommendedVars);
+      const autoScan = analyzeAndTransformPanelLN(cleaningReport.cleanedRows, yCol, xCols);
+      const autoMap: Record<string, TransformMethod> = {};
+      for (const a of autoScan.analyses) {
+        autoMap[a.variable] = a.recommendedMethod || 'asli';
+      }
+      return analyzeAndTransformPanelLN(cleaningReport.cleanedRows, yCol, xCols, autoMap);
     }
-    return analyzeAndTransformPanelLN(cleaningReport.cleanedRows, yCol, xCols, selectedLnCols);
-  }, [cleaningReport.cleanedRows, yCol, xCols, lnMode, selectedLnCols]);
+    return analyzeAndTransformPanelLN(cleaningReport.cleanedRows, yCol, xCols, customTransformMap);
+  }, [cleaningReport.cleanedRows, yCol, xCols, lnMode, customTransformMap]);
 
   // Combined Stata Do Log (Cleaning + LN + Orthog)
   const combinedStataDoLog = useMemo(() => {
@@ -267,16 +274,18 @@ export const PanelTab: React.FC = () => {
         zeroPolicy: customZeroPolicy
       });
 
-      // 2. LN Analysis & Transformation
-      const autoLnScan = analyzeAndTransformPanelLN(clean.cleanedRows, currentY, currentX);
-      const effectiveLnCols =
-        customLnMode === 'none'
-          ? []
-          : customLnMode === 'auto'
-          ? autoLnScan.recommendedVars
-          : customLnCols;
+      // 2. Multi-Option Transformation Analysis (LN, LN 1+X, Sqrt, Orthog, Inv, Std)
+      const autoScan = analyzeAndTransformPanelLN(clean.cleanedRows, currentY, currentX);
+      let effectiveTransforms: Record<string, TransformMethod> = {};
+      if (customLnMode === 'none') {
+        for (const a of autoScan.analyses) effectiveTransforms[a.variable] = 'asli';
+      } else if (customLnMode === 'auto') {
+        for (const a of autoScan.analyses) effectiveTransforms[a.variable] = a.recommendedMethod || 'asli';
+      } else {
+        effectiveTransforms = { ...autoScan.transformMap, ...customTransformMap };
+      }
 
-      const lnRes = analyzeAndTransformPanelLN(clean.cleanedRows, currentY, currentX, effectiveLnCols);
+      const lnRes = analyzeAndTransformPanelLN(clean.cleanedRows, currentY, currentX, effectiveTransforms);
       const activeY = lnRes.activeYCol;
       const initialActiveX = lnRes.activeXCols;
       const workingRows = lnRes.transformedRows;
@@ -570,19 +579,39 @@ export const PanelTab: React.FC = () => {
     }
   };
 
-  // Toggle LN variable selection
+  // Set specific transformation method per variable
+  const handleSelectTransformMethod = (col: string, method: TransformMethod) => {
+    const currentMap = { ...(lnReport.transformMap || {}), ...customTransformMap };
+    currentMap[col] = method;
+    setCustomTransformMap(currentMap);
+    setLnMode('custom');
+  };
+
+  // Apply smart system recommendations to all variables
+  const handleApplySmartRecommendation = () => {
+    const autoMap: Record<string, TransformMethod> = {};
+    for (const a of lnReport.analyses) {
+      autoMap[a.variable] = a.recommendedMethod || 'asli';
+    }
+    setCustomTransformMap(autoMap);
+    setLnMode('auto');
+  };
+
+  // Reset all variables to raw
+  const handleResetToRaw = () => {
+    const rawMap: Record<string, TransformMethod> = {};
+    for (const a of lnReport.analyses) {
+      rawMap[a.variable] = 'asli';
+    }
+    setCustomTransformMap(rawMap);
+    setLnMode('none');
+  };
+
+  // Legacy fallback toggle
   const handleToggleLnVar = (col: string) => {
-    const baseList =
-      lnMode === 'auto'
-        ? lnReport.recommendedVars
-        : lnMode === 'none'
-        ? []
-        : selectedLnCols;
-    const nextList = baseList.includes(col)
-      ? baseList.filter(c => c !== col)
-      : [...baseList, col];
-    setSelectedLnCols(nextList);
-    setLnMode(nextList.length === 0 ? 'none' : 'custom');
+    const currentMethod = customTransformMap[col] || lnReport.transformMap?.[col] || 'asli';
+    const nextMethod: TransformMethod = currentMethod === 'asli' ? (lnReport.analyses.find(a => a.variable === col)?.recommendedMethod || 'ln') : 'asli';
+    handleSelectTransformMethod(col, nextMethod);
   };
 
   // Toggle Orthog variable selection
@@ -714,37 +743,29 @@ export const PanelTab: React.FC = () => {
       </div>
 
       {/* 1. Header Banner */}
-      <div
-        className="no-print"
-        style={{
-          background: 'linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%)',
-          color: '#ffffff',
-          borderRadius: 'var(--radius, 16px)',
-          padding: '24px 32px',
-          marginBottom: '24px',
-          boxShadow: 'var(--shadow-md)'
-        }}
-      >
+      <div className="panel-header-banner no-print">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
           <div>
             <span
               style={{
-                background: 'rgba(255, 255, 255, 0.2)',
+                background: 'rgba(0, 229, 255, 0.15)',
+                border: '1px solid rgba(0, 229, 255, 0.4)',
+                color: '#67e8f9',
                 padding: '4px 10px',
                 borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: 700,
-                letterSpacing: '0.05em',
+                fontSize: '11.5px',
+                fontWeight: 800,
+                letterSpacing: '0.06em',
                 textTransform: 'uppercase'
               }}
             >
               Stata-Grade Econometric Engine
             </span>
-            <h2 style={{ fontSize: '24px', fontWeight: 800, marginTop: '8px', marginBottom: '6px' }}>
+            <h2 style={{ fontSize: '24px', fontWeight: 900, marginTop: '8px', marginBottom: '8px' }}>
               Regresi Data Panel (CEM, FEM, REM) — Standar Stata
             </h2>
-            <p style={{ opacity: 0.9, fontSize: '14px', maxWidth: '760px', margin: 0 }}>
-              Alur sistematis &amp; otomatis sesuai kaidah ekonometrika: Input Data &rarr; Cleaning Data &amp; Pilihan Nilai 0 &rarr; Analisis Transformasi LN &rarr; Deklarasi <code>xtset</code> &rarr; Estimasi CEM, FEM, REM &rarr; Uji Chow Dummy, Hausman, LM &rarr; Uji Asumsi Klasik, Transformasi <code>orthog</code>, Normalitas (<code>predict e, e</code> vs <code>resid</code> + Histogram + <code>sktest</code>/<code>swilk</code>/<code>ksmirnov</code>) &rarr; Hasil Akhir <code>vce(robust)</code> &amp; Interpretasi Bahasa Mudah.
+            <p style={{ margin: 0, maxWidth: '780px' }}>
+              Alur sistematis &amp; otomatis sesuai kaidah ekonometrika: Input Data &rarr; Cleaning Data &amp; Pilihan Nilai 0 &rarr; Analisis Multi-Transformasi (LN, LN 1+X, Sqrt, Orthog, Z-Score) &rarr; Deklarasi <code>xtset</code> &rarr; Estimasi CEM, FEM, REM &rarr; Uji Chow Dummy, Hausman, LM &rarr; Uji Asumsi Klasik, Transformasi <code>orthog</code>, Normalitas (<code>predict e, e</code> vs <code>resid</code> + Histogram + <code>sktest</code>/<code>swilk</code>/<code>ksmirnov</code>) &rarr; Hasil Akhir <code>vce(robust)</code> &amp; Interpretasi Bahasa Mudah.
             </p>
           </div>
 
@@ -754,16 +775,16 @@ export const PanelTab: React.FC = () => {
               display: 'inline-flex',
               alignItems: 'center',
               gap: '8px',
-              background: 'var(--dew, #eef7eb)',
-              color: 'var(--moss, #1e3d14)',
-              border: 'none',
+              background: 'var(--surface)',
+              color: 'var(--primary)',
+              border: '1.5px solid var(--border)',
               borderRadius: '10px',
               padding: '12px 18px',
               minHeight: '44px',
-              fontWeight: 700,
-              fontSize: '14px',
+              fontWeight: 800,
+              fontSize: '13.5px',
               cursor: 'pointer',
-              boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
+              boxShadow: 'var(--shadow)'
             }}
           >
             <Database size={16} />
@@ -871,16 +892,7 @@ export const PanelTab: React.FC = () => {
         {sourceType === 'upload' && (
           <div
             onClick={() => fileInputRef.current?.click()}
-            style={{
-              border: '2px dashed var(--border, #d2e2ca)',
-              borderRadius: '12px',
-              padding: '28px 20px',
-              textAlign: 'center',
-              cursor: 'pointer',
-              background: 'var(--sage, #f7faf5)',
-              transition: 'all 0.2s ease',
-              marginBottom: '16px'
-            }}
+            className="panel-dropzone"
           >
             <input
               ref={fileInputRef}
@@ -889,11 +901,11 @@ export const PanelTab: React.FC = () => {
               onChange={handleFileUpload}
               style={{ display: 'none' }}
             />
-            <FileSpreadsheet size={34} color="var(--fern, #2e6922)" style={{ margin: '0 auto 10px auto' }} />
-            <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--bark, #2b221a)' }}>
+            <FileSpreadsheet size={38} color="var(--primary)" style={{ margin: '0 auto 10px auto' }} />
+            <div style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text)' }}>
               {isLoadingFile ? 'Mengunggah & Memvalidasi Berkas...' : 'Klik untuk Memilih File (.xlsx, .xls, .csv)'}
             </div>
-            <div style={{ fontSize: '12px', color: 'var(--stone, #687962)', marginTop: '4px' }}>
+            <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
               Maksimum 10 MB per berkas. Struktur data panel: kolom ID, Tahun/Waktu, Y, dan X.
             </div>
           </div>
@@ -1487,10 +1499,7 @@ export const PanelTab: React.FC = () => {
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button
               type="button"
-              onClick={() => {
-                setSelectedLnCols(lnReport.recommendedVars);
-                setLnMode('auto');
-              }}
+              onClick={handleApplySmartRecommendation}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -1498,24 +1507,21 @@ export const PanelTab: React.FC = () => {
                 padding: '8px 14px',
                 minHeight: '40px',
                 borderRadius: '8px',
-                border: lnMode === 'auto' ? '2px solid var(--fern, #2e6922)' : '1px solid var(--border, #d2e2ca)',
-                background: lnMode === 'auto' ? 'var(--fern, #2e6922)' : 'var(--dew, #eef7eb)',
-                color: lnMode === 'auto' ? '#ffffff' : 'var(--moss, #1e3d14)',
+                border: lnMode === 'auto' ? '2px solid var(--primary)' : '1px solid var(--border)',
+                background: lnMode === 'auto' ? 'var(--primary)' : 'var(--surface-sunken)',
+                color: lnMode === 'auto' ? '#ffffff' : 'var(--text)',
                 fontWeight: 700,
                 fontSize: '13px',
                 cursor: 'pointer'
               }}
             >
               <Sparkles size={15} />
-              <span>Terapkan Rekomendasi LN Otomatis</span>
+              <span>⚡ Terapkan Rekomendasi Terbaik Sistem (Auto)</span>
             </button>
 
             <button
               type="button"
-              onClick={() => {
-                setSelectedLnCols([]);
-                setLnMode('none');
-              }}
+              onClick={handleResetToRaw}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -1523,15 +1529,15 @@ export const PanelTab: React.FC = () => {
                 padding: '8px 14px',
                 minHeight: '40px',
                 borderRadius: '8px',
-                border: '1px solid var(--border, #d2e2ca)',
-                background: lnMode === 'none' ? '#f1f5f9' : '#ffffff',
-                color: 'var(--bark, #2b221a)',
+                border: lnMode === 'none' ? '2px solid var(--primary)' : '1px solid var(--border)',
+                background: lnMode === 'none' ? 'var(--primary-glow)' : 'var(--surface)',
+                color: 'var(--text)',
                 fontWeight: 600,
                 fontSize: '13px',
                 cursor: 'pointer'
               }}
             >
-              <span>Gunakan Variabel Asli (Tanpa LN)</span>
+              <span>🔄 Gunakan Variabel Asli (Tanpa Transformasi)</span>
             </button>
 
             <button
@@ -1544,91 +1550,129 @@ export const PanelTab: React.FC = () => {
                 padding: '8px 14px',
                 minHeight: '40px',
                 borderRadius: '8px',
-                border: '1px solid var(--border, #d2e2ca)',
-                background: isCopiedLog ? 'var(--dew, #eef7eb)' : '#ffffff',
-                color: isCopiedLog ? 'var(--moss, #1e3d14)' : 'var(--bark, #2b221a)',
+                border: '1px solid var(--border)',
+                background: isCopiedLog ? 'var(--primary-glow)' : 'var(--surface)',
+                color: isCopiedLog ? 'var(--primary)' : 'var(--text)',
                 fontWeight: 700,
                 fontSize: '13px',
                 cursor: 'pointer'
               }}
             >
-              {isCopiedLog ? <Check size={15} color="var(--fern, #2e6922)" /> : <Copy size={15} />}
-              <span>{isCopiedLog ? 'Tersalin!' : 'Salin Script .do'}</span>
+              {isCopiedLog ? <Check size={15} color="var(--primary)" /> : <Copy size={15} />}
+              <span>{isCopiedLog ? 'Tersalin!' : 'Salin Script Stata (.do)'}</span>
             </button>
           </div>
         </div>
 
-        {/* Tabel Analisis LN Per Variabel */}
-        <div
-          style={{
-            overflowX: 'auto',
-            border: '1px solid var(--border, #d2e2ca)',
-            borderRadius: '10px',
-            marginBottom: '16px'
-          }}
-        >
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+        {/* Tabel Analisis Multi-Transformasi Per Variabel */}
+        <div className="panel-table-wrap">
+          <table className="panel-table">
             <thead>
-              <tr style={{ background: 'var(--dew, #eef7eb)', borderBottom: '1px solid var(--border, #d2e2ca)' }}>
-                <th style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--moss, #1e3d14)' }}>Transformasi LN</th>
-                <th style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--moss, #1e3d14)' }}>Variabel</th>
-                <th style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--moss, #1e3d14)' }}>Min / Max</th>
-                <th style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--moss, #1e3d14)' }}>Skewness</th>
-                <th style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--moss, #1e3d14)' }}>Kurtosis</th>
-                <th style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--moss, #1e3d14)' }}>Analisis Sistem &amp; Nama Variabel Aktif</th>
+              <tr>
+                <th style={{ width: '230px' }}>Pilihan Transformasi</th>
+                <th>Variabel</th>
+                <th>Min / Max</th>
+                <th>Skewness</th>
+                <th>Kurtosis</th>
+                <th>Analisis &amp; Rekomendasi Terbaik Sistem</th>
               </tr>
             </thead>
             <tbody>
               {lnReport.analyses.map(item => {
-                const isTransformed = lnReport.appliedVars.includes(item.variable);
+                const isTransformed = item.selectedMethod && item.selectedMethod !== 'asli';
                 return (
                   <tr
                     key={item.variable}
                     style={{
-                      borderBottom: '1px solid #f0f4ee',
-                      background: isTransformed ? '#f0fdf4' : '#ffffff'
+                      background: isTransformed ? 'var(--primary-glow)' : 'var(--surface)'
                     }}
                   >
-                    <td style={{ padding: '10px 12px' }}>
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: !item.hasNegative ? 'pointer' : 'not-allowed' }}>
-                        <input
-                          type="checkbox"
-                          checked={isTransformed}
-                          disabled={item.hasNegative}
-                          onChange={() => handleToggleLnVar(item.variable)}
-                        />
-                        <span style={{ fontWeight: 700, color: isTransformed ? '#166534' : '#475569', fontSize: '12px' }}>
-                          {isTransformed ? `Aktif (${item.lnVarName})` : 'Asli'}
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <select
+                          className="panel-transform-select"
+                          value={item.selectedMethod || 'asli'}
+                          onChange={e => handleSelectTransformMethod(item.variable, e.target.value as TransformMethod)}
+                          style={{ width: '100%' }}
+                        >
+                          {item.availableOptions?.map(opt => (
+                            <option key={opt.method} value={opt.method} disabled={!opt.isValid}>
+                              {opt.isRecommended ? '⭐ ' : ''}{opt.label}{!opt.isValid ? ` (${opt.invalidReason})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <span style={{ fontSize: '11.5px', color: isTransformed ? 'var(--primary)' : 'var(--text-muted)', fontFamily: 'monospace', fontWeight: 700 }}>
+                          Aktif: {item.activeVarName || item.lnVarName}
                         </span>
-                      </label>
+                      </div>
                     </td>
-                    <td style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--bark, #2b221a)' }}>
-                      {item.variable} ({item.role})
+                    <td style={{ fontWeight: 800 }}>
+                      <span style={{ color: 'var(--text)' }}>{item.variable}</span>{' '}
+                      <span style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 700 }}>({item.role})</span>
                     </td>
-                    <td style={{ padding: '10px 12px', color: '#475569' }}>
+                    <td style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
                       {item.min} s/d {item.max}
                     </td>
-                    <td style={{ padding: '10px 12px', fontWeight: Math.abs(item.skewness) > 1 ? 700 : 500, color: Math.abs(item.skewness) > 1 ? '#b45309' : '#334155' }}>
-                      {item.skewness}
+                    <td>
+                      <span style={{
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        fontSize: '11.5px',
+                        fontFamily: 'monospace',
+                        fontWeight: Math.abs(item.skewness) > 1 ? 800 : 500,
+                        background: Math.abs(item.skewness) > 1 ? 'var(--warn-bg)' : 'transparent',
+                        color: Math.abs(item.skewness) > 1 ? 'var(--warn)' : 'var(--text)'
+                      }}>
+                        {item.skewness}
+                      </span>
                     </td>
-                    <td style={{ padding: '10px 12px', fontWeight: item.kurtosis > 4.5 ? 700 : 500, color: item.kurtosis > 4.5 ? '#b45309' : '#334155' }}>
-                      {item.kurtosis}
+                    <td>
+                      <span style={{
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        fontSize: '11.5px',
+                        fontFamily: 'monospace',
+                        fontWeight: item.kurtosis > 4.5 ? 800 : 500,
+                        background: item.kurtosis > 4.5 ? 'var(--warn-bg)' : 'transparent',
+                        color: item.kurtosis > 4.5 ? 'var(--warn)' : 'var(--text)'
+                      }}>
+                        {item.kurtosis}
+                      </span>
                     </td>
-                    <td style={{ padding: '10px 12px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                        <span
-                          style={{
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            padding: '2px 8px',
-                            borderRadius: '999px',
-                            background: item.needsLN ? '#fef3c7' : '#dcfce7',
-                            color: item.needsLN ? '#92400e' : '#166534'
-                          }}
-                        >
-                          {item.needsLN ? 'Rekomendasi Sistem: Transformasi LN' : 'Distribusi Wajar'}
-                        </span>
-                        <span style={{ fontSize: '12px', color: '#475569' }}>{item.reason}</span>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              padding: '2px 8px',
+                              borderRadius: '999px',
+                              background: item.recommendedMethod !== 'asli' ? 'var(--warn-bg)' : 'var(--success-bg)',
+                              border: item.recommendedMethod !== 'asli' ? '1px solid var(--warn-border)' : '1px solid var(--success-border)',
+                              color: item.recommendedMethod !== 'asli' ? 'var(--warn)' : 'var(--success)'
+                            }}
+                          >
+                            ⭐ Rekomendasi: {item.availableOptions?.find(o => o.method === item.recommendedMethod)?.badge || 'Asli'}
+                          </span>
+                          {item.selectedMethod === item.recommendedMethod ? (
+                            <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 700 }}>
+                              ✓ Rekomendasi Aktif
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 600 }}>
+                              (Pilihan Kustom)
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                          {item.recommendedReason || item.reason}
+                        </div>
+                        {item.stataCommand && item.selectedMethod !== 'asli' && (
+                          <div style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--text-muted)' }}>
+                            Stata: <code style={{ color: 'var(--primary)' }}>{item.stataCommand}</code>
+                          </div>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1641,13 +1685,13 @@ export const PanelTab: React.FC = () => {
         {/* Ringkasan Variabel Aktif Menuju xtset */}
         <div
           style={{
-            padding: '12px 16px',
-            borderRadius: '10px',
-            background: '#f8fafc',
-            border: '1px solid #cbd5e1',
+            padding: '14px 18px',
+            borderRadius: '12px',
+            background: 'var(--surface-sunken)',
+            border: '1px solid var(--border)',
             marginBottom: '16px',
             fontSize: '13px',
-            color: '#1e293b',
+            color: 'var(--text)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',

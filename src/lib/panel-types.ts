@@ -95,6 +95,19 @@ export interface StataConsoleBlockData {
 
 export type ZeroValuePolicy = 'true_zero' | 'no_disclosure_drop' | 'no_disclosure_impute_mean' | 'no_disclosure_impute_median';
 
+export type TransformMethod = 'asli' | 'ln' | 'ln_1p' | 'sqrt' | 'orthog' | 'inv' | 'std';
+
+export interface TransformOptionItem {
+  method: TransformMethod;
+  label: string;
+  badge: string;
+  formula: string;
+  desc: string;
+  isRecommended?: boolean;
+  isValid: boolean;
+  invalidReason?: string;
+}
+
 export interface VariableLNAnalysis {
   variable: string;
   role: 'Y' | 'X';
@@ -111,12 +124,19 @@ export interface VariableLNAnalysis {
   reason: string;
   lnVarName: string;
   shiftUsed: number;
+  recommendedMethod?: TransformMethod;
+  selectedMethod?: TransformMethod;
+  activeVarName?: string;
+  recommendedReason?: string;
+  stataCommand?: string;
+  availableOptions?: TransformOptionItem[];
 }
 
 export interface PanelLNTransformReport {
   analyses: VariableLNAnalysis[];
   recommendedVars: string[];
   appliedVars: string[];
+  transformMap?: Record<string, TransformMethod>;
   activeYCol: string;
   activeXCols: string[];
   transformedRows: Record<string, any>[];
