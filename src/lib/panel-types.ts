@@ -313,6 +313,19 @@ export interface EasyPanelInterpretation {
   overallConclusion: string;
 }
 
+export interface CorrelationCell {
+  coef: number;
+  pValue: number;
+  isSignificant: boolean;
+}
+
+export interface PanelCorrelationMatrixResult {
+  variables: string[];
+  n: number;
+  pearson: Record<string, Record<string, CorrelationCell>>;
+  spearman: Record<string, Record<string, CorrelationCell>>;
+}
+
 export interface PanelFitResult {
   success: boolean;
   declaration: PanelDeclarationResult;
@@ -326,6 +339,7 @@ export interface PanelFitResult {
   postOrthogSelectedModel?: PanelModelResult;
   finalModel: PanelModelResult;
   assumptions: PanelAssumptionsResult;
+  correlationMatrix?: PanelCorrelationMatrixResult;
   lnReport?: PanelLNTransformReport;
   activeYCol?: string;
   initialActiveXCols?: string[];

@@ -29,7 +29,8 @@ import {
   computePanelResiduals,
   testPanelNormality,
   computeClusterRobustSE,
-  generateEasyPanelInterpretation
+  generateEasyPanelInterpretation,
+  computePanelCorrelationMatrix
 } from '@/lib/panel-engine';
 import {
   generateAllPanelConsoleBlocks,
@@ -127,6 +128,7 @@ export const PanelTab: React.FC = () => {
   const [maxReachedStep, setMaxReachedStep] = useState<number>(12);
   const [isStepperCollapsed, setIsStepperCollapsed] = useState<boolean>(false);
   const [step8ActiveModel, setStep8ActiveModel] = useState<'fem' | 'rem' | 'cem'>('fem');
+  const [step6CorrMode, setStep6CorrMode] = useState<'pearson' | 'spearman'>('pearson');
   const [fitResult, setFitResult] = useState<PanelFitResult | null>(null);
   const [consoleBlocks, setConsoleBlocks] = useState<StataConsoleBlockData[]>([]);
   const [isCalculating, setIsCalculating] = useState<boolean>(false);
@@ -384,6 +386,11 @@ export const PanelTab: React.FC = () => {
         orthogRes.orthogMapping
       );
 
+      const corrMatrix = computePanelCorrelationMatrix(finalInput.rows, [
+        activeY,
+        ...finalActiveX
+      ]);
+
       const result: PanelFitResult = {
         success: true,
         declaration: decl,
@@ -402,6 +409,7 @@ export const PanelTab: React.FC = () => {
           normality,
           clusterBiasWarning: robustFinal.clusterBiasWarning
         },
+        correlationMatrix: corrMatrix,
         lnReport: lnRes,
         activeYCol: activeY,
         initialActiveXCols: initialActiveX,
@@ -2053,6 +2061,151 @@ export const PanelTab: React.FC = () => {
 
         {/* Kolom Kanan: Output Blok Stata Aktif */}
         <div className="panel-output-col" style={{ minWidth: 0, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+          {/* Step 6: Matriks Korelasi Pearson (pwcorr) & Spearman Rank */}
+          {activeStep === 6 && fitResult?.correlationMatrix && (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px',
+                marginBottom: '16px',
+                padding: '18px 20px',
+                background: '#ffffff',
+                borderRadius: '12px',
+                border: '1px solid #cbd5e1',
+                boxShadow: '0 2px 10px rgba(0, 0, 0, 0.04)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>
+                    Matriks Korelasi Antar-Variabel (Standar Stata)
+                  </h3>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '12.5px', color: '#475569' }}>
+                    Pilih antara <strong>Pearson (Linier Parametrik)</strong> atau <strong>Spearman (Peringkat Non-Parametrik)</strong>. Spearman sangat dianjurkan jika data memiliki skewness tinggi atau nilai ekstrem (outlier).
+                  </p>
+                </div>
+
+                {/* Mode Selector Toggle */}
+                <div style={{ display: 'inline-flex', background: '#f1f5f9', padding: '3px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <button
+                    type="button"
+                    onClick={() => setStep6CorrMode('pearson')}
+                    style={{
+                      padding: '5px 12px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      borderRadius: '6px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: step6CorrMode === 'pearson' ? '#0284c7' : 'transparent',
+                      color: step6CorrMode === 'pearson' ? '#ffffff' : '#475569',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    Pearson (pwcorr)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStep6CorrMode('spearman')}
+                    style={{
+                      padding: '5px 12px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      borderRadius: '6px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: step6CorrMode === 'spearman' ? '#8b5cf6' : 'transparent',
+                      color: step6CorrMode === 'spearman' ? '#ffffff' : '#475569',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    Spearman (rank)
+                  </button>
+                </div>
+              </div>
+
+              {/* Table */}
+              <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#334155' }}>
+                      <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700 }}>Variabel</th>
+                      {fitResult.correlationMatrix.variables.map(v => (
+                        <th key={v} style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700 }}>
+                          <code>{v}</code>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fitResult.correlationMatrix.variables.map((v1, rIdx) => {
+                      const matrixData = step6CorrMode === 'pearson'
+                        ? fitResult.correlationMatrix!.pearson
+                        : fitResult.correlationMatrix!.spearman;
+
+                      return (
+                        <tr key={v1} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '8px 12px', fontWeight: 700, color: '#0f172a' }}>
+                            <code>{v1}</code>
+                          </td>
+                          {fitResult.correlationMatrix.variables.map((v2, cIdx) => {
+                            if (cIdx > rIdx) {
+                              return <td key={v2} style={{ padding: '8px 10px', textAlign: 'center', color: '#cbd5e1' }}>—</td>;
+                            }
+                            const cell = matrixData[v1]?.[v2];
+                            const coef = cell?.coef ?? (rIdx === cIdx ? 1 : 0);
+                            const pVal = cell?.pValue ?? 0;
+                            const isSig = cell?.isSignificant && rIdx !== cIdx;
+
+                            // Heatmap color
+                            let bg = '#ffffff';
+                            if (rIdx !== cIdx) {
+                              const absC = Math.abs(coef);
+                              if (coef > 0) {
+                                bg = `rgba(2, 132, 199, ${Math.min(0.35, absC * 0.35)})`;
+                              } else {
+                                bg = `rgba(239, 68, 68, ${Math.min(0.35, absC * 0.35)})`;
+                              }
+                            }
+
+                            return (
+                              <td
+                                key={v2}
+                                style={{
+                                  padding: '8px 10px',
+                                  textAlign: 'right',
+                                  background: bg,
+                                  fontWeight: rIdx === cIdx ? 800 : isSig ? 700 : 500,
+                                  color: rIdx === cIdx ? '#64748b' : '#0f172a'
+                                }}
+                              >
+                                <div>
+                                  {coef.toFixed(4)}
+                                  {isSig && <span style={{ color: '#dc2626', fontWeight: 800 }}>*</span>}
+                                </div>
+                                {rIdx !== cIdx && (
+                                  <div style={{ fontSize: '10px', color: '#64748b' }}>
+                                    p={pVal < 0.0001 ? '<0.0001' : pVal.toFixed(4)}
+                                  </div>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Footnote */}
+              <div style={{ fontSize: '11.5px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: '#dc2626', fontWeight: 800 }}>*</span> Menandakan korelasi signifikan pada tingkat signifikansi &alpha; = 5% (p &lt; 0.05).
+              </div>
+            </div>
+          )}
+
           {/* Step 8 Model Switcher Buttons: CEM | FEM | REM */}
           {activeStep === 8 && fitResult && (
             <div

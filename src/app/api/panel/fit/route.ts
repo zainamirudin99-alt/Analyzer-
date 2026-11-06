@@ -18,7 +18,8 @@ import {
   computePanelResiduals,
   testPanelNormality,
   computeClusterRobustSE,
-  generateEasyPanelInterpretation
+  generateEasyPanelInterpretation,
+  computePanelCorrelationMatrix
 } from '../../../../lib/panel-engine';
 import { generateAllPanelConsoleBlocks } from '../../../../lib/panel-interpretation';
 import { PanelFitInput, PanelFitResult, ZeroValuePolicy } from '../../../../lib/panel-types';
@@ -190,6 +191,11 @@ export async function POST(req: NextRequest) {
       orthogReport.orthogMapping
     );
 
+    const correlationMatrix = computePanelCorrelationMatrix(finalInput.rows, [
+      activeYCol,
+      ...finalActiveXCols
+    ]);
+
     const fitResult: PanelFitResult = {
       success: true,
       declaration: decl,
@@ -208,6 +214,7 @@ export async function POST(req: NextRequest) {
         normality,
         clusterBiasWarning: finalModel.clusterBiasWarning
       },
+      correlationMatrix,
       lnReport,
       activeYCol,
       initialActiveXCols,

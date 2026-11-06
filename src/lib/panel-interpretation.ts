@@ -10,6 +10,7 @@ import {
   StataConsoleBlockData,
   PanelModelResult
 } from './panel-types';
+import { computePanelCorrelationMatrix } from './panel-engine';
 
 /**
  * Format angka desimal presisi gaya Stata
@@ -234,7 +235,7 @@ export function generateAllPanelConsoleBlocks(
   input: PanelFitInput,
   res: PanelFitResult
 ): StataConsoleBlockData[] {
-  const { idCol, timeCol, yCol, xCols } = input;
+  const { rows, idCol, timeCol, yCol, xCols } = input;
   const N = input.rows.length;
   const n = res.declaration.entityCount;
   const tMin = res.declaration.tMin;
@@ -358,19 +359,73 @@ Panel balance         : ${isBalanced ? 'Strongly balanced (all entities have T =
   });
 
   // ==========================================================
-  // Langkah 6: Korelasi Matriks & Spearman
+  // Langkah 6: Korelasi Matriks (pwcorr & spearman)
   // ==========================================================
-  const corrVarWidth = Math.max(12, ...allVars.map(v => v.length));
+  const corrRes = res.correlationMatrix || computePanelCorrelationMatrix(rows, allVars);
+  const colW = 10;
+  const leftW = Math.max(12, ...allVars.map(v => v.length));
+
+  // 1. Format pwcorr Stata (lower triangular + baris p-value sig)
+  const pwcorrLines: string[] = [];
+  pwcorrLines.push(`             |  ${allVars.map(v => padL(v.slice(0, colW - 2), colW)).join(' ')}`);
+  pwcorrLines.push(`${'-'.repeat(leftW + 1)}+${'-'.repeat(allVars.length * (colW + 1))}`);
+
+  for (let i = 0; i < allVars.length; i++) {
+    const v1 = allVars[i];
+    let rowCoef = `${padL(v1, leftW)} |`;
+    let rowSig = `${' '.repeat(leftW)} |`;
+
+    for (let j = 0; j <= i; j++) {
+      const v2 = allVars[j];
+      const cell = corrRes.pearson[v1]?.[v2] || { coef: i === j ? 1 : 0, pValue: 1, isSignificant: false };
+      const star = cell.isSignificant && i !== j ? '*' : ' ';
+      const cStr = `${cell.coef.toFixed(4)}${star}`;
+      rowCoef += `  ${padL(cStr, colW - 2)}`;
+
+      if (i === j) {
+        rowSig += `  ${' '.repeat(colW - 2)}`;
+      } else {
+        const pStr = cell.pValue < 0.0001 ? '0.0000' : cell.pValue.toFixed(4);
+        rowSig += `  ${padL(pStr, colW - 2)}`;
+      }
+    }
+    pwcorrLines.push(rowCoef);
+    if (i > 0) {
+      pwcorrLines.push(rowSig);
+      if (i < allVars.length - 1) pwcorrLines.push(`${' '.repeat(leftW)} |`);
+    }
+  }
+
+  // 2. Format spearman Stata (lower triangular rank correlation)
+  const spearmanLines: string[] = [];
+  spearmanLines.push(`Number of obs = ${corrRes.n}`);
+  spearmanLines.push(`Spearman's rho (Matrix of rank correlation coefficients)`);
+  spearmanLines.push(``);
+  spearmanLines.push(`             |  ${allVars.map(v => padL(v.slice(0, colW - 2), colW)).join(' ')}`);
+  spearmanLines.push(`${'-'.repeat(leftW + 1)}+${'-'.repeat(allVars.length * (colW + 1))}`);
+
+  for (let i = 0; i < allVars.length; i++) {
+    const v1 = allVars[i];
+    let rowCoef = `${padL(v1, leftW)} |`;
+    for (let j = 0; j <= i; j++) {
+      const v2 = allVars[j];
+      const cell = corrRes.spearman[v1]?.[v2] || { coef: i === j ? 1 : 0, pValue: 1, isSignificant: false };
+      const star = cell.isSignificant && i !== j ? '*' : ' ';
+      const cStr = `${cell.coef.toFixed(4)}${star}`;
+      rowCoef += `  ${padL(cStr, colW - 2)}`;
+    }
+    spearmanLines.push(rowCoef);
+  }
+
+  const combinedCorrOutput = `. pwcorr ${allVars.join(' ')}, star(0.05) sig\n\n${pwcorrLines.join('\n')}\n\n. spearman ${allVars.join(' ')}, star(0.05)\n\n${spearmanLines.join('\n')}`;
+
   blocks.push({
     stepIndex: 6,
     stepTitle: 'Korelasi Matriks & Spearman',
-    stataCommand: `pwcorr ${allVars.join(' ')}, star(0.05) sig`,
-    stataFunction: 'Mengukur kekuatan hubungan linier antar variabel dan menguji signifikansi korelasi berpasangan.',
-    stataOutput: `Correlation Matrix:
-${padR('', corrVarWidth)} |   ${allVars.map(v => padR(v.slice(0, 8), 8)).join(' ')}
-${'-'.repeat(corrVarWidth + 1)}+${'-'.repeat(allVars.length * 9 + 2)}
-${allVars.map(v => `${padL(v, corrVarWidth)} |   ${allVars.map(() => '1.0000  ').join(' ')}`).join('\n')}`,
-    babyLanguage: `Kita melihat apakah dua variabel berjalan beriringan: jika satu variabel naik, apakah variabel pasangannya juga cenderung ikut naik?`
+    stataCommand: `pwcorr ${allVars.join(' ')}, star(0.05) sig\nspearman ${allVars.join(' ')}, star(0.05)`,
+    stataFunction: 'Mengukur kekuatan hubungan linier parametrik (Pearson) dan hubungan monotonik non-parametrik tahan outlier (Spearman) antar seluruh variabel.',
+    stataOutput: combinedCorrOutput,
+    babyLanguage: `Tabel pertama (pwcorr) menguji korelasi linier biasa beserta signifikansinya (bintang * jika p < 0.05). Tabel kedua (spearman) menguji korelasi peringkat yang lebih tahan banting terhadap data menceng atau nilai ekstrem (outlier).`
   });
 
   // ==========================================================

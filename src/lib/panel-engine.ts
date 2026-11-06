@@ -17,7 +17,9 @@ import {
   PanelOrthogReport,
   DetailedPanelNormalityResult,
   NormalityHistogramBin,
-  EasyPanelInterpretation
+  EasyPanelInterpretation,
+  CorrelationCell,
+  PanelCorrelationMatrixResult
 } from './panel-types';
 
 import {
@@ -941,6 +943,102 @@ function pearsonCorrelation(x: number[], y: number[]): number {
   }
   const den = Math.sqrt(denX * denY);
   return den === 0 ? 0 : num / den;
+}
+
+/**
+ * Menghitung matriks korelasi Pearson dan Spearman rank beserta signifikansinya (p-value)
+ * Sesuai perintah resmi Stata: `pwcorr [vars], star(0.05) sig` dan `spearman [vars], star(0.05)`
+ */
+export function computePanelCorrelationMatrix(
+  rows: Record<string, any>[],
+  variables: string[]
+): PanelCorrelationMatrixResult {
+  const n = rows.length;
+  const data: Record<string, number[]> = {};
+  for (const v of variables) {
+    data[v] = rows.map(r => {
+      const val = Number(r[v]);
+      return isNaN(val) ? 0 : val;
+    });
+  }
+
+  // 1. Pearson Correlation Matrix
+  const pearson: Record<string, Record<string, CorrelationCell>> = {};
+  for (const v1 of variables) {
+    pearson[v1] = {};
+    for (const v2 of variables) {
+      if (v1 === v2) {
+        pearson[v1][v2] = { coef: 1.0, pValue: 0.0, isSignificant: true };
+        continue;
+      }
+      const x = data[v1];
+      const y = data[v2];
+      const r = pearsonCorrelation(x, y);
+      const df = Math.max(1, n - 2);
+      const rSq = Math.min(0.999999, r * r);
+      const tStat = r * Math.sqrt(df / (1 - rSq));
+      const pVal = tPValue(tStat, df);
+
+      pearson[v1][v2] = {
+        coef: Number(r.toFixed(4)),
+        pValue: Number(pVal.toFixed(4)),
+        isSignificant: pVal < 0.05
+      };
+    }
+  }
+
+  // 2. Spearman Rank Correlation Matrix
+  const ranks: Record<string, number[]> = {};
+  for (const v of variables) {
+    const raw = data[v].map((val, idx) => ({ val, idx }));
+    raw.sort((a, b) => a.val - b.val);
+
+    const rArr = new Array(n).fill(0);
+    let i = 0;
+    while (i < n) {
+      let j = i;
+      while (j < n - 1 && Math.abs(raw[j + 1].val - raw[j].val) < 1e-12) {
+        j++;
+      }
+      const avgRank = (i + 1 + j + 1) / 2;
+      for (let k = i; k <= j; k++) {
+        rArr[raw[k].idx] = avgRank;
+      }
+      i = j + 1;
+    }
+    ranks[v] = rArr;
+  }
+
+  const spearman: Record<string, Record<string, CorrelationCell>> = {};
+  for (const v1 of variables) {
+    spearman[v1] = {};
+    for (const v2 of variables) {
+      if (v1 === v2) {
+        spearman[v1][v2] = { coef: 1.0, pValue: 0.0, isSignificant: true };
+        continue;
+      }
+      const rx = ranks[v1];
+      const ry = ranks[v2];
+      const rho = pearsonCorrelation(rx, ry);
+      const df = Math.max(1, n - 2);
+      const rhoSq = Math.min(0.999999, rho * rho);
+      const tStat = rho * Math.sqrt(df / (1 - rhoSq));
+      const pVal = tPValue(tStat, df);
+
+      spearman[v1][v2] = {
+        coef: Number(rho.toFixed(4)),
+        pValue: Number(pVal.toFixed(4)),
+        isSignificant: pVal < 0.05
+      };
+    }
+  }
+
+  return {
+    variables,
+    n,
+    pearson,
+    spearman
+  };
 }
 
 /**
@@ -2936,27 +3034,46 @@ export function testPanelNormality(
   const probChi2 = Number(Math.max(0.0001, Math.min(0.9999, chiSquarePValue(adjChi2, 2))).toFixed(4));
   const skNormal = probChi2 > alpha;
 
-  // 2. Stata `swilk` (Shapiro-Wilk W, V, z, Prob>z)
+  // 2. Stata `swilk` (Shapiro-Wilk W, V, z, Prob>z) (Royston 1992 Algorithm)
   const sorted = [...residuals].sort((a, b) => a - b);
   let numW = 0;
-  for (let i = 0; i < n; i++) {
-    const pQuant = (i + 1 - 0.375) / (n + 0.25);
-    // Approx inverse normal quantile (Beasley-Springer-Moro / rational approx)
-    const qNorm = approxInvNormal(pQuant);
-    numW += qNorm * (sorted[i] - mean);
-  }
   let aNormSq = 0;
   for (let i = 0; i < n; i++) {
     const pQuant = (i + 1 - 0.375) / (n + 0.25);
     const qNorm = approxInvNormal(pQuant);
+    numW += qNorm * (sorted[i] - mean);
     aNormSq += qNorm * qNorm;
   }
   const wRaw = m2 > 1e-12 && aNormSq > 1e-12 ? (numW * numW) / (aNormSq * m2) : 0.985;
-  const wStat = Math.max(0.65, Math.min(0.9995, wRaw));
-  const vStat = Math.max(0.1, (1 - wStat) * n * 0.72);
-  const zSwilk = Number(((Math.log(1 - wStat) + 4.2 - 0.55 * Math.log(n)) * 1.65).toFixed(3));
-  const pNorm = Number(Math.max(0.0001, Math.min(0.9999, 1 - normalCdf(zSwilk))).toFixed(4));
-  const isNormal = pNorm > alpha;
+  const wStat = Math.max(0.01, Math.min(0.9999, wRaw));
+
+  let zSwilk = 0;
+  let vStat = 1.0;
+  const lnN = Math.log(n);
+
+  if (n >= 12) {
+    const mu = -1.5861 - 0.31082 * lnN - 0.083751 * lnN * lnN + 0.0038915 * Math.pow(lnN, 3);
+    const sigma = Math.exp(-0.4803 - 0.082676 * lnN + 0.0030302 * lnN * lnN);
+    const y = Math.log(1 - wStat);
+    zSwilk = (y - mu) / sigma;
+    const expectedOneMinusW = Math.exp(mu + 0.5 * sigma * sigma);
+    vStat = Math.max(0.01, (1 - wStat) / expectedOneMinusW);
+  } else if (n >= 4) {
+    const gamma = -2.273 + 0.459 * lnN;
+    const mu = 0.5440 - 0.39978 * lnN + 0.025054 * lnN * lnN - 0.0006714 * Math.pow(lnN, 3);
+    const sigma = Math.exp(1.3822 - 0.77857 * lnN + 0.062767 * lnN * lnN - 0.0020322 * Math.pow(lnN, 3));
+    const arg = gamma - Math.log(1 - wStat);
+    const y = arg > 1e-6 ? -Math.log(arg) : -10;
+    zSwilk = (y - mu) / sigma;
+    vStat = Math.max(0.01, (1 - wStat) * n * 0.72);
+  } else {
+    zSwilk = 0;
+    vStat = 1.0;
+  }
+
+  const pNorm = Number(Math.max(0.0001, Math.min(0.9999, 1 - normalCdf(zSwilk))).toFixed(5));
+  const swilkNormal = pNorm > alpha;
+  const isNormal = swilkNormal && skNormal;
   const cltProtected = n >= 30;
 
   // 3. Stata `ksmirnov` (Kolmogorov-Smirnov / Lilliefors D-stat)
