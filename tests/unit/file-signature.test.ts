@@ -58,6 +58,20 @@ describe('File Signature Validator & Formula Sanitizer', () => {
     expect(resFake.isValid).toBe(false);
   });
 
+  it('memvalidasi format SPSS .sav ($FL2 / $FL3)', () => {
+    const savHeader = Buffer.from([0x24, 0x46, 0x4c, 0x32, 0x00, 0x00, 0x00]);
+    const res = validateFileSignature(savHeader);
+    expect(res.isValid).toBe(true);
+    expect(res.format).toBe('sav');
+  });
+
+  it('memvalidasi format Stata .dta (<stata_dta>)', () => {
+    const dtaHeader = Buffer.from('<stata_dta><header></header></stata_dta>');
+    const res = validateFileSignature(dtaHeader);
+    expect(res.isValid).toBe(true);
+    expect(res.format).toBe('dta');
+  });
+
   it('menetralkan formula injection (=, +, -, @)', () => {
     expect(sanitizeCellValue('=1+2')).toBe("'=1+2");
     expect(sanitizeCellValue('+cmd|/c calc')).toBe("'+cmd|/c calc");

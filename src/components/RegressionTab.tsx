@@ -20,15 +20,27 @@ import {
   ShieldCheck, 
   Database,
   Lock,
-  UserCheck
+  UserCheck,
+  Activity,
+  FileText
 } from 'lucide-react';
 import { inspectColumn, validateRegressionConfig, ValidationSummary } from '@/lib/regression-validator';
 import { RegressionResultsView } from './RegressionResultsView';
 import { OLSFitResult } from '@/lib/regression-engine';
 import { sanitizeCellValue } from '@/lib/file-signature';
+import {
+  classifyAnalysisPath,
+  validateAndProfileDataset,
+  calculateDescriptiveStatistics,
+  calculateCorrelationMatrix,
+  generateVisualChartData,
+  INTERNAL_MENU_STRUCTURE,
+  DEFAULT_WORKFLOW_STEPS
+} from '@/lib/regression-data-processor';
 
 interface RegressionTabProps {
   onNavigateHome?: () => void;
+  onNavigateToPanel?: () => void;
 }
 
 // Sample dataset untuk pengujian langsung tanpa perlu upload
@@ -106,6 +118,10 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
   const [fitError, setFitError] = useState<string | null>(null);
   const [fitResult, setFitResult] = useState<OLSFitResult | null>(null);
 
+  // Tahap 1: State Tambahan (Struktur Internal & Visualisasi)
+  const [showInternalStructure, setShowInternalStructure] = useState<boolean>(false);
+  const [step6SubTab, setStep6SubTab] = useState<'validation' | 'descriptives' | 'correlation' | 'charts'>('validation');
+
   // List of columns in current sheet
   const availableColumns = useMemo(() => {
     if (!allRows || allRows.length === 0) return [];
@@ -121,6 +137,39 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
     });
     return map;
   }, [availableColumns, allRows]);
+
+  // Profiling & Validasi Dataset Lengkap
+  const datasetProfile = useMemo(() => {
+    return validateAndProfileDataset(allRows, fileName);
+  }, [allRows, fileName]);
+
+  // Klasifikasi 4 Jalur Analisis
+  const analysisPath = useMemo(() => {
+    return classifyAnalysisPath(isTimeSeries, xCols.length);
+  }, [isTimeSeries, xCols.length]);
+
+  // Variabel Aktif (Y + X)
+  const activeVariables = useMemo(() => {
+    return [yCol, ...xCols].filter(c => c && availableColumns.includes(c));
+  }, [yCol, xCols, availableColumns]);
+
+  // 8 Parameter Statistik Deskriptif SPSS
+  const descriptiveStats = useMemo(() => {
+    if (activeVariables.length === 0) return [];
+    return calculateDescriptiveStatistics(allRows, activeVariables);
+  }, [allRows, activeVariables]);
+
+  // Matriks Korelasi (Pearson & Spearman)
+  const correlationData = useMemo(() => {
+    if (activeVariables.length < 2) return null;
+    return calculateCorrelationMatrix(allRows, activeVariables);
+  }, [allRows, activeVariables]);
+
+  // Visual Chart Data (Histogram, Boxplot, Scatterplot)
+  const visualChartData = useMemo(() => {
+    if (!yCol) return null;
+    return generateVisualChartData(allRows, yCol, xCols[0], isTimeSeries ? timeCol : undefined);
+  }, [allRows, yCol, xCols, isTimeSeries, timeCol]);
 
   // Handler pemilihan sheet yang memperbarui baris data dan variabel
   const selectSheetByName = (sheetName: string, sheetsSource?: any[]) => {
@@ -357,7 +406,7 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
     <div className="regression-wrapper" style={{ padding: '8px 0 60px 0' }}>
       
       {/* Header Bar Modul Regresi */}
-      <div className="regression-banner card" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+      <div className="regression-banner card" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '28px' }}>📊</span>
@@ -368,6 +417,47 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
               <p style={{ fontSize: '13px', color: 'var(--stone)', margin: '4px 0 0 0' }}>
                 Mesin regresi linear OLS bergaya SPSS, uji asumsi klasik komprehensif, dan pelaporan jujur M0.
               </p>
+              
+              {/* Dynamic 4-Path Badge & 15-Module Structure Button */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: isTimeSeries ? '#eff6ff' : '#f0fdf4',
+                  border: isTimeSeries ? '1px solid #bfdbfe' : '1px solid #bbf7d0',
+                  color: isTimeSeries ? '#1d4ed8' : '#15803d',
+                  padding: '3px 10px',
+                  borderRadius: '20px',
+                  fontSize: '11.5px',
+                  fontWeight: 800
+                }}>
+                  <Activity size={13} />
+                  {analysisPath.label}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => setShowInternalStructure(true)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    background: 'var(--dew)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--moss)',
+                    padding: '3px 10px',
+                    borderRadius: '20px',
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                  title="Klik untuk melihat 15 komponen modul dan status workflow"
+                >
+                  <Info size={13} />
+                  Struktur 15 Modul & Workflow
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -392,6 +482,31 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
           </button>
         </div>
       </div>
+
+      {/* Advisory Banner: Potensi Data Panel */}
+      {datasetProfile.isPotentialPanel && (
+        <div style={{
+          marginBottom: '20px',
+          padding: '14px 18px',
+          borderRadius: '12px',
+          background: '#fef3c7',
+          border: '1.5px solid #f59e0b',
+          color: '#92400e',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '12px'
+        }}>
+          <AlertTriangle size={20} color="#b45309" style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '13.5px', fontWeight: 800, marginBottom: '2px' }}>
+              Perhatian Ekonometrika: Potensi Struktur Data Panel Terdeteksi!
+            </div>
+            <div style={{ fontSize: '12.5px', lineHeight: 1.5 }}>
+              {datasetProfile.panelAdvisoryMessage}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Auth Guard Card if not logged in */}
       {!isAuthenticated && (
@@ -491,7 +606,7 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                   Langkah 1: Masukkan Sumber Data Spreadsheet
                 </h3>
                 <p style={{ fontSize: '13px', color: 'var(--stone)', marginBottom: '20px' }}>
-                  Sistem mendukung format <strong>.xlsx</strong>, <strong>.xls</strong>, dan <strong>.csv</strong>. File diverifikasi berdasarkan tanda tangan biner (Magic Bytes) untuk keamanan.
+                  Sistem mendukung format <strong>.xlsx</strong>, <strong>.xls</strong>, <strong>.csv</strong>, SPSS <strong>.sav</strong>, dan Stata <strong>.dta</strong>. File diverifikasi berdasarkan tanda tangan biner (Magic Bytes) untuk keamanan.
                 </p>
 
                 {/* Tab Pilihan Upload vs Link */}
@@ -502,7 +617,7 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                     onClick={() => setSourceType('upload')}
                   >
                     <UploadCloud size={18} style={{ marginRight: '8px' }} />
-                    Unggah File Lokal
+                    Unggah File Lokal (.xlsx, .csv, .sav, .dta)
                   </button>
                   <button
                     className={`btn ${sourceType === 'link' ? 'btn-primary' : 'btn-outline'}`}
@@ -535,15 +650,15 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                     >
                       <FileSpreadsheet size={48} color="var(--fern)" style={{ marginBottom: '12px' }} />
                       <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--moss)' }}>
-                        Pilih file Excel / CSV dari perangkat Anda
+                        Pilih file Excel, CSV, SPSS (.sav), atau Stata (.dta)
                       </span>
                       <span style={{ fontSize: '12px', color: 'var(--stone)', marginTop: '4px' }}>
-                        Maksimal ukuran file: 10 MB (.xlsx, .xls, .csv). Makro (.xlsm) ditolak.
+                        Maksimal ukuran file: 10 MB (.xlsx, .xls, .csv, .sav, .dta). Makro (.xlsm) ditolak.
                       </span>
                       <input 
                         id="regression-file-input"
                         type="file" 
-                        accept=".xlsx,.xls,.csv"
+                        accept=".xlsx,.xls,.csv,.sav,.dta"
                         style={{ display: 'none' }}
                         onChange={handleFileUpload}
                       />
@@ -702,6 +817,36 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                 <p style={{ fontSize: '13px', color: 'var(--stone)', marginBottom: '16px' }}>
                   Sel yang diawali karakter formula (<code>=</code>, <code>+</code>, <code>-</code>, <code>@</code>) telah dinetralkan demi keamanan data.
                 </p>
+
+                {/* Ringkasan Profiling Dataset */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+                  <div style={{ background: 'var(--dew)', padding: '10px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--stone)', fontWeight: 700 }}>Total Observasi (N)</div>
+                    <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--moss)' }}>{datasetProfile.totalObservations}</div>
+                  </div>
+                  <div style={{ background: 'var(--dew)', padding: '10px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--stone)', fontWeight: 700 }}>Total Variabel (k)</div>
+                    <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--fern)' }}>{datasetProfile.totalVariables}</div>
+                  </div>
+                  <div style={{ background: 'var(--dew)', padding: '10px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--stone)', fontWeight: 700 }}>Baris Duplikat</div>
+                    <div style={{ fontSize: '16px', fontWeight: 800, color: datasetProfile.duplicateCount > 0 ? '#b45309' : 'var(--fern)' }}>
+                      {datasetProfile.duplicateCount} ({datasetProfile.duplicatePercent}%)
+                    </div>
+                  </div>
+                  <div style={{ background: 'var(--dew)', padding: '10px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--stone)', fontWeight: 700 }}>Sel Kosong (Missing)</div>
+                    <div style={{ fontSize: '16px', fontWeight: 800, color: datasetProfile.hasMissing ? '#b45309' : 'var(--fern)' }}>
+                      {datasetProfile.totalMissingCells}
+                    </div>
+                  </div>
+                  <div style={{ background: 'var(--dew)', padding: '10px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--stone)', fontWeight: 700 }}>Kolom Waktu</div>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: datasetProfile.dateTimeColumns.length > 0 ? '#1d4ed8' : 'var(--stone)' }}>
+                      {datasetProfile.dateTimeColumns.length > 0 ? datasetProfile.dateTimeColumns.join(', ') : 'Tidak ada'}
+                    </div>
+                  </div>
+                </div>
 
                 {/* Tabel Pratinjau Data Semantik */}
                 <div className="result-table-wrap" style={{ maxHeight: '340px', overflowY: 'auto', marginBottom: '20px' }}>
@@ -1062,93 +1207,288 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                 <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--moss)', marginBottom: '8px' }}>
                   Langkah 6: Ringkasan Validasi Konfigurasi Regresi
                 </h3>
-                <p style={{ fontSize: '13px', color: 'var(--stone)', marginBottom: '20px' }}>
-                  Pemeriksaan invarian sistem (I1, I2, I3, I5, I6) dan kecukupan ukuran sampel menurut Green (1991).
+                <p style={{ fontSize: '13px', color: 'var(--stone)', marginBottom: '16px' }}>
+                  Pemeriksaan invarian sistem (I1, I2, I3, I5, I6), kecukupan ukuran sampel menurut Green (1991), statistik deskriptif 8 parameter, dan matriks korelasi.
                 </p>
 
-                {/* Status Validasi Utama */}
-                <div style={{
-                  padding: '16px',
-                  borderRadius: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  marginBottom: '20px',
-                  background: validationSummary.isValid ? '#dcfce7' : '#fee2e2',
-                  border: validationSummary.isValid ? '1px solid #86efac' : '1px solid #fca5a5'
-                }}>
-                  {validationSummary.isValid ? (
-                    <CheckCircle2 size={24} color="#166534" />
-                  ) : (
-                    <XCircle size={24} color="#991b1b" />
-                  )}
+                {/* Sub-Tab Navigasi Step 6 */}
+                <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border)', paddingBottom: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${step6SubTab === 'validation' ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => setStep6SubTab('validation')}
+                    style={{ minHeight: '38px', fontSize: '12px' }}
+                  >
+                    <CheckCircle2 size={14} style={{ marginRight: '5px' }} />
+                    Validasi Invarian & Green (1991)
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${step6SubTab === 'descriptives' ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => setStep6SubTab('descriptives')}
+                    style={{ minHeight: '38px', fontSize: '12px' }}
+                  >
+                    <FileText size={14} style={{ marginRight: '5px' }} />
+                    Statistik Deskriptif (8 Parameter)
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${step6SubTab === 'correlation' ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => setStep6SubTab('correlation')}
+                    style={{ minHeight: '38px', fontSize: '12px' }}
+                  >
+                    <Activity size={14} style={{ marginRight: '5px' }} />
+                    Matriks Korelasi
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${step6SubTab === 'charts' ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => setStep6SubTab('charts')}
+                    style={{ minHeight: '38px', fontSize: '12px' }}
+                  >
+                    <Sliders size={14} style={{ marginRight: '5px' }} />
+                    Visualisasi & Boxplot
+                  </button>
+                </div>
+
+                {/* Sub-Tab 1: Validasi Invarian & Green */}
+                {step6SubTab === 'validation' && (
                   <div>
-                    <div style={{ fontSize: '14px', fontWeight: 800, color: validationSummary.isValid ? '#166534' : '#991b1b' }}>
-                      {validationSummary.isValid ? 'Konfigurasi Memenuhi Syarat Estimasi Regresi OLS' : 'Konfigurasi Mengandung Kesalahan (Harus Diperbaiki)'}
+                    {/* Status Validasi Utama */}
+                    <div style={{
+                      padding: '16px',
+                      borderRadius: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      marginBottom: '20px',
+                      background: validationSummary.isValid ? '#dcfce7' : '#fee2e2',
+                      border: validationSummary.isValid ? '1px solid #86efac' : '1px solid #fca5a5'
+                    }}>
+                      {validationSummary.isValid ? (
+                        <CheckCircle2 size={24} color="#166534" />
+                      ) : (
+                        <XCircle size={24} color="#991b1b" />
+                      )}
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: 800, color: validationSummary.isValid ? '#166534' : '#991b1b' }}>
+                          {validationSummary.isValid ? 'Konfigurasi Memenuhi Syarat Estimasi Regresi OLS' : 'Konfigurasi Mengandung Kesalahan (Harus Diperbaiki)'}
+                        </div>
+                        <div style={{ fontSize: '12px', color: validationSummary.isValid ? '#14532d' : '#7f1d1d' }}>
+                          {validationSummary.isValid ? 'Semua asumsi minimal terpenuhi. Siap dieksekusi oleh mesin statistik.' : 'Tinjau daftar kesalahan di bawah sebelum melanjutkan.'}
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ fontSize: '12px', color: validationSummary.isValid ? '#14532d' : '#7f1d1d' }}>
-                      {validationSummary.isValid ? 'Semua asumsi minimal terpenuhi. Siap dieksekusi oleh mesin statistik.' : 'Tinjau daftar kesalahan di bawah sebelum melanjutkan.'}
+
+                    {/* Ringkasan Parameter */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+                      <div style={{ padding: '12px', borderRadius: '10px', background: 'var(--dew)', border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--stone)', fontWeight: 700 }}>Tipe Model</div>
+                        <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--fern)' }}>{validationSummary.modelType}</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text)' }}>k = {validationSummary.kPredictors} prediktor</div>
+                      </div>
+
+                      <div style={{ padding: '12px', borderRadius: '10px', background: 'var(--dew)', border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--stone)', fontWeight: 700 }}>Sampel Terpakai (N)</div>
+                        <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--moss)' }}>{validationSummary.sampleSize.nUsed}</div>
+                        <div style={{ fontSize: '11px', color: 'var(--stone)' }}>dari {validationSummary.sampleSize.nInitial} baris</div>
+                      </div>
+
+                      <div style={{ padding: '12px', borderRadius: '10px', background: 'var(--dew)', border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--stone)', fontWeight: 700 }}>Missing Data</div>
+                        <div style={{ fontSize: '16px', fontWeight: 800, color: validationSummary.sampleSize.pctMissing > 20 ? '#d97706' : 'var(--text)' }}>
+                          {validationSummary.sampleSize.pctMissing}%
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--stone)' }}>{validationSummary.sampleSize.rowsDropped} baris terbuang</div>
+                      </div>
+
+                      <div style={{ padding: '12px', borderRadius: '10px', background: 'var(--dew)', border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--stone)', fontWeight: 700 }}>Signifikansi (&alpha;)</div>
+                        <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--fern)' }}>{validationSummary.alpha}</div>
+                        <div style={{ fontSize: '11px', color: 'var(--stone)' }}>Keyakinan {(1 - validationSummary.alpha) * 100}%</div>
+                      </div>
                     </div>
-                  </div>
-                </div>
 
-                {/* Ringkasan Parameter */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-                  <div style={{ padding: '12px', borderRadius: '10px', background: 'var(--dew)', border: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--stone)', fontWeight: 700 }}>Tipe Model</div>
-                    <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--fern)' }}>{validationSummary.modelType}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text)' }}>k = {validationSummary.kPredictors} prediktor</div>
-                  </div>
+                    {/* Pesan Kesalahan (Blocking) */}
+                    {validationSummary.errors.length > 0 && (
+                      <div style={{ marginBottom: '16px' }}>
+                        <h5 style={{ fontSize: '13px', fontWeight: 800, color: '#991b1b', marginBottom: '6px' }}>
+                          Kesalahan yang Memblokir ({validationSummary.errors.length}):
+                        </h5>
+                        <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#7f1d1d' }}>
+                          {validationSummary.errors.map((err, idx) => (
+                            <li key={idx} style={{ marginBottom: '4px' }}>{err}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
 
-                  <div style={{ padding: '12px', borderRadius: '10px', background: 'var(--dew)', border: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--stone)', fontWeight: 700 }}>Sampel Terpakai (N)</div>
-                    <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--moss)' }}>{validationSummary.sampleSize.nUsed}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--stone)' }}>dari {validationSummary.sampleSize.nInitial} baris</div>
-                  </div>
-
-                  <div style={{ padding: '12px', borderRadius: '10px', background: 'var(--dew)', border: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--stone)', fontWeight: 700 }}>Missing Data</div>
-                    <div style={{ fontSize: '16px', fontWeight: 800, color: validationSummary.sampleSize.pctMissing > 20 ? '#d97706' : 'var(--text)' }}>
-                      {validationSummary.sampleSize.pctMissing}%
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--stone)' }}>{validationSummary.sampleSize.rowsDropped} baris terbuang</div>
-                  </div>
-
-                  <div style={{ padding: '12px', borderRadius: '10px', background: 'var(--dew)', border: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--stone)', fontWeight: 700 }}>Signifikansi (&alpha;)</div>
-                    <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--fern)' }}>{validationSummary.alpha}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--stone)' }}>Keyakinan {(1 - validationSummary.alpha) * 100}%</div>
-                  </div>
-                </div>
-
-                {/* Pesan Kesalahan (Blocking) */}
-                {validationSummary.errors.length > 0 && (
-                  <div style={{ marginBottom: '16px' }}>
-                    <h5 style={{ fontSize: '13px', fontWeight: 800, color: '#991b1b', marginBottom: '6px' }}>
-                      Kesalahan yang Memblokir ({validationSummary.errors.length}):
-                    </h5>
-                    <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#7f1d1d' }}>
-                      {validationSummary.errors.map((err, idx) => (
-                        <li key={idx} style={{ marginBottom: '4px' }}>{err}</li>
-                      ))}
-                    </ul>
+                    {/* Pesan Peringatan (Non-blocking) */}
+                    {validationSummary.warnings.length > 0 && (
+                      <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '10px', background: '#fef8ec', border: '1px solid #f0cc7a' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                          <AlertTriangle size={16} color="#b45309" />
+                          <span style={{ fontSize: '13px', fontWeight: 800, color: '#92400e' }}>
+                            Catatan & Peringatan Metodologis ({validationSummary.warnings.length}):
+                          </span>
+                        </div>
+                        <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '12.5px', color: '#78350f' }}>
+                          {validationSummary.warnings.map((warn, idx) => (
+                            <li key={idx} style={{ marginBottom: '4px' }}>{warn}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* Pesan Peringatan (Non-blocking) */}
-                {validationSummary.warnings.length > 0 && (
-                  <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '10px', background: '#fef8ec', border: '1px solid #f0cc7a' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                      <AlertTriangle size={16} color="#b45309" />
-                      <span style={{ fontSize: '13px', fontWeight: 800, color: '#92400e' }}>
-                        Catatan & Peringatan Metodologis ({validationSummary.warnings.length}):
-                      </span>
+                {/* Sub-Tab 2: Statistik Deskriptif (8 Parameter SPSS) */}
+                {step6SubTab === 'descriptives' && (
+                  <div style={{ marginBottom: '20px' }}>
+                    <h4 style={{ fontSize: '14px', fontWeight: 800, color: 'var(--moss)', marginBottom: '8px' }}>
+                      Tabel Statistik Deskriptif (Standar SPSS)
+                    </h4>
+                    <p style={{ fontSize: '12.5px', color: 'var(--stone)', marginBottom: '12px' }}>
+                      Menampilkan 8 parameter statistik: N, Min, Max, Mean, Variance, Std. Deviation, Skewness (G1), dan Kurtosis (G2).
+                    </p>
+                    <div className="result-table-wrap" style={{ overflowX: 'auto' }}>
+                      <table className="result-table" style={{ fontSize: '12px', width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1.5px solid var(--border)' }}>
+                            <th style={{ textAlign: 'left', padding: '8px 10px' }}>Variabel</th>
+                            <th style={{ textAlign: 'right', padding: '8px 10px' }}>N</th>
+                            <th style={{ textAlign: 'right', padding: '8px 10px' }}>Min</th>
+                            <th style={{ textAlign: 'right', padding: '8px 10px' }}>Max</th>
+                            <th style={{ textAlign: 'right', padding: '8px 10px' }}>Mean</th>
+                            <th style={{ textAlign: 'right', padding: '8px 10px' }}>Std. Dev</th>
+                            <th style={{ textAlign: 'right', padding: '8px 10px' }}>Variance</th>
+                            <th style={{ textAlign: 'right', padding: '8px 10px' }}>Skewness</th>
+                            <th style={{ textAlign: 'right', padding: '8px 10px' }}>Kurtosis</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {descriptiveStats.map(s => (
+                            <tr key={s.variable} style={{ borderBottom: '1px solid var(--border)' }}>
+                              <td style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 700 }}>{s.variable}</td>
+                              <td style={{ textAlign: 'right', padding: '8px 10px' }}>{s.n}</td>
+                              <td style={{ textAlign: 'right', padding: '8px 10px' }}>{s.min}</td>
+                              <td style={{ textAlign: 'right', padding: '8px 10px' }}>{s.max}</td>
+                              <td style={{ textAlign: 'right', padding: '8px 10px' }}>{s.mean}</td>
+                              <td style={{ textAlign: 'right', padding: '8px 10px' }}>{s.stdDev}</td>
+                              <td style={{ textAlign: 'right', padding: '8px 10px' }}>{s.variance}</td>
+                              <td style={{ textAlign: 'right', padding: '8px 10px' }}>{s.skewness}</td>
+                              <td style={{ textAlign: 'right', padding: '8px 10px' }}>{s.kurtosis}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                    <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '12.5px', color: '#78350f' }}>
-                      {validationSummary.warnings.map((warn, idx) => (
-                        <li key={idx} style={{ marginBottom: '4px' }}>{warn}</li>
-                      ))}
-                    </ul>
+                  </div>
+                )}
+
+                {/* Sub-Tab 3: Matriks Korelasi */}
+                {step6SubTab === 'correlation' && (
+                  <div style={{ marginBottom: '20px' }}>
+                    <h4 style={{ fontSize: '14px', fontWeight: 800, color: 'var(--moss)', marginBottom: '8px' }}>
+                      Matriks Korelasi (Pearson & Spearman)
+                    </h4>
+                    <p style={{ fontSize: '12.5px', color: 'var(--stone)', marginBottom: '12px' }}>
+                      Koefisien korelasi linier (Pearson) dan peringkat monoton (Spearman) antar pasangan variabel terpilih.
+                    </p>
+                    {correlationData ? (
+                      <div className="result-table-wrap" style={{ overflowX: 'auto' }}>
+                        <table className="result-table" style={{ fontSize: '12px', width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1.5px solid var(--border)' }}>
+                              <th style={{ textAlign: 'left', padding: '8px 10px' }}>Variabel</th>
+                              {correlationData.variables.map(v => (
+                                <th key={v} style={{ textAlign: 'right', padding: '8px 10px' }}>{v}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {correlationData.variables.map(v1 => (
+                              <tr key={v1} style={{ borderBottom: '1px solid var(--border)' }}>
+                                <td style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 700 }}>
+                                  {v1}
+                                  <div style={{ fontSize: '10px', color: 'var(--stone)' }}>Pearson / Spearman</div>
+                                </td>
+                                {correlationData.variables.map(v2 => {
+                                  const rP = correlationData.pearson[v1]?.[v2] ?? 0;
+                                  const rS = correlationData.spearman[v1]?.[v2] ?? 0;
+                                  return (
+                                    <td key={v2} style={{ textAlign: 'right', padding: '8px 10px' }}>
+                                      <div style={{ fontWeight: 700, color: 'var(--fern)' }}>{rP.toFixed(4)}</div>
+                                      <div style={{ fontSize: '11px', color: 'var(--stone)' }}>&rho; = {rS.toFixed(4)}</div>
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '13px', color: 'var(--stone)' }}>
+                        Pilih minimal 1 variabel independen (X) untuk menghitung korelasi.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Sub-Tab 4: Visualisasi Grafik & Boxplot */}
+                {step6SubTab === 'charts' && (
+                  <div style={{ marginBottom: '20px' }}>
+                    <h4 style={{ fontSize: '14px', fontWeight: 800, color: 'var(--moss)', marginBottom: '8px' }}>
+                      Visualisasi Distribusi & Ringkasan 5 Angka (Boxplot)
+                    </h4>
+                    {visualChartData ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                        {/* Boxplot Card */}
+                        <div style={{ background: 'var(--dew)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                          <h5 style={{ fontSize: '13px', fontWeight: 800, color: 'var(--moss)', marginBottom: '8px' }}>
+                            Boxplot Ringkasan 5 Angka ({yCol})
+                          </h5>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
+                            <div>Minimum: <strong>{visualChartData.boxplot.min}</strong></div>
+                            <div>Kuartil 1 (Q1): <strong>{visualChartData.boxplot.q1}</strong></div>
+                            <div>Median (Q2): <strong>{visualChartData.boxplot.median}</strong></div>
+                            <div>Kuartil 3 (Q3): <strong>{visualChartData.boxplot.q3}</strong></div>
+                            <div>Maksimum: <strong>{visualChartData.boxplot.max}</strong></div>
+                            <div>IQR: <strong>{visualChartData.boxplot.iqr}</strong></div>
+                          </div>
+                          {visualChartData.boxplot.outliers.length > 0 ? (
+                            <div style={{ marginTop: '8px', fontSize: '11px', color: '#b45309' }}>
+                              Terdeteksi {visualChartData.boxplot.outliers.length} potensi outlier (&gt;1.5 IQR).
+                            </div>
+                          ) : (
+                            <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--fern)' }}>
+                              Tidak ada outlier ekstrem di luar pagar IQR.
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Histogram Frequency Card */}
+                        <div style={{ background: 'var(--dew)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                          <h5 style={{ fontSize: '13px', fontWeight: 800, color: 'var(--moss)', marginBottom: '8px' }}>
+                            Frekuensi Histogram ({yCol})
+                          </h5>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '160px', overflowY: 'auto' }}>
+                            {visualChartData.histogram.map((bin, idx) => (
+                              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px' }}>
+                                <span style={{ width: '90px', color: 'var(--stone)' }}>{bin.binStart} s/d {bin.binEnd}</span>
+                                <div style={{ flex: 1, background: 'var(--surface)', height: '12px', borderRadius: '4px', overflow: 'hidden' }}>
+                                  <div style={{ width: `${Math.min(100, bin.count * 15)}%`, background: 'var(--fern)', height: '100%' }} />
+                                </div>
+                                <span style={{ width: '30px', textAlign: 'right', fontWeight: 700 }}>{bin.count}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '13px', color: 'var(--stone)' }}>Pilih variabel dependen Y terlebih dahulu.</div>
+                    )}
                   </div>
                 )}
 
@@ -1273,6 +1613,131 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* Modal Struktur Arsitektur 15 Modul & 12 Langkah Workflow */}
+      {showInternalStructure && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px'
+          }}
+          onClick={() => setShowInternalStructure(false)}
+        >
+          <div 
+            style={{
+              background: 'var(--surface)',
+              border: '1.5px solid var(--border)',
+              borderRadius: '16px',
+              maxWidth: '780px',
+              width: '100%',
+              maxHeight: '88vh',
+              overflowY: 'auto',
+              padding: '24px',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.3)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--moss)', margin: 0 }}>
+                  Struktur Arsitektur 15 Modul & Workflow Tahap 1
+                </h3>
+                <p style={{ fontSize: '12.5px', color: 'var(--stone)', margin: '4px 0 0 0' }}>
+                  Fondasi sistem Analisis Regresi Statistik OLS (Cross-Section & Time Series)
+                </p>
+              </div>
+              <button 
+                type="button" 
+                className="btn btn-outline btn-sm"
+                onClick={() => setShowInternalStructure(false)}
+                style={{ padding: '4px 10px', fontSize: '12px' }}
+              >
+                Tutup
+              </button>
+            </div>
+
+            {/* 15 Modul Internal */}
+            <h4 style={{ fontSize: '13px', textTransform: 'uppercase', color: 'var(--fern)', fontWeight: 800, marginBottom: '8px' }}>
+              A. 15 Bagian Struktur Internal
+            </h4>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '8px', marginBottom: '24px' }}>
+              {INTERNAL_MENU_STRUCTURE.map(m => (
+                <div key={m.id} style={{ background: 'var(--dew)', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text)' }}>{m.title}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--stone)', marginTop: '2px' }}>{m.desc}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* 12 Langkah Workflow */}
+            <h4 style={{ fontSize: '13px', textTransform: 'uppercase', color: 'var(--fern)', fontWeight: 800, marginBottom: '8px' }}>
+              B. 12 Langkah Next Step Workflow
+            </h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {DEFAULT_WORKFLOW_STEPS.map(step => {
+                const isPassed = currentStep > step.id;
+                const isActive = currentStep === step.id;
+                return (
+                  <div 
+                    key={step.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      background: isActive ? 'var(--dew)' : 'transparent',
+                      border: isActive ? '1px solid var(--border)' : '1px solid transparent'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        backgroundColor: isPassed ? 'var(--fern)' : (isActive ? 'var(--moss)' : 'var(--mist)'),
+                        color: isPassed || isActive ? '#ffffff' : 'var(--stone)'
+                      }}>
+                        {isPassed ? '✓' : step.id}
+                      </span>
+                      <div>
+                        <span style={{ fontSize: '12.5px', fontWeight: isActive ? 800 : 600, color: 'var(--text)' }}>
+                          {step.title}
+                        </span>
+                        <span style={{ fontSize: '11px', color: 'var(--stone)', marginLeft: '8px' }}>
+                          — {step.description}
+                        </span>
+                      </div>
+                    </div>
+                    <span style={{
+                      fontSize: '10.5px',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      fontWeight: 700,
+                      background: isPassed ? '#dcfce7' : (isActive ? '#dbeafe' : 'var(--mist)'),
+                      color: isPassed ? '#166534' : (isActive ? '#1e40af' : 'var(--stone)')
+                    }}>
+                      {isPassed ? 'Completed' : (isActive ? 'Active' : 'Pending')}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 

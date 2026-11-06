@@ -21,6 +21,8 @@ import {
 } from "docx";
 import { OLSFitResult } from "./regression-engine";
 import { generateDeterministicInterpretation } from "./regression-interpretation";
+import { RecommendationEngineOutput } from "./regression-recommendation-engine";
+import { ModelComparisonReport } from "./regression-model-comparison";
 
 export interface DocxExportOptions {
   result: OLSFitResult;
@@ -39,6 +41,8 @@ export interface DocxExportOptions {
     label: "Konfirmatori" | "Eksploratori";
     passRate?: number;
   }>;
+  recommendationOutput?: RecommendationEngineOutput;
+  comparisonReport?: ModelComparisonReport;
 }
 
 export async function generateRegressionDocx(options: DocxExportOptions): Promise<Buffer> {
@@ -52,6 +56,8 @@ export async function generateRegressionDocx(options: DocxExportOptions): Promis
     exploratoryReason,
     kTried = 1,
     modelsHistory = [],
+    recommendationOutput,
+    comparisonReport,
   } = options;
 
   const narrative = generateDeterministicInterpretation(result, {
@@ -412,9 +418,79 @@ export async function generateRegressionDocx(options: DocxExportOptions): Promis
               ]
             : []),
 
+          // 6. Rekomendasi Statistik (Tahap 3)
+          ...(recommendationOutput && recommendationOutput.cards.length > 0
+            ? [
+                new Paragraph({
+                  children: [new TextRun({ text: "6. Rekomendasi Statistik Ilmiah (Tahap 3 Engine)", bold: true, size: 24 })],
+                  heading: HeadingLevel.HEADING_3,
+                  spacing: { before: 300, after: 100 },
+                }),
+                ...createSPSSTable(
+                  "Tabel 6.1: Rekapitulasi Rekomendasi Pelanggaran Asumsi",
+                  ["Kategori", "Nama Pengujian", "Status", "Rekomendasi Utama", "Alternatif Sah"],
+                  recommendationOutput.cards.map((c) => [
+                    c.category.toUpperCase(),
+                    c.testName,
+                    c.status,
+                    c.primaryRecommendation,
+                    c.alternativeMethods.map((m) => m.name).join("; "),
+                  ])
+                ),
+              ]
+            : []),
+
+          // 7. Model Comparison Matrix (Tahap 3)
+          ...(comparisonReport && comparisonReport.models.length > 0
+            ? [
+                new Paragraph({
+                  children: [new TextRun({ text: "7. Matriks Perbandingan Model (AIC, BIC, RMSE, MAE)", bold: true, size: 24 })],
+                  heading: HeadingLevel.HEADING_3,
+                  spacing: { before: 300, after: 100 },
+                }),
+                ...createSPSSTable(
+                  "Tabel 7.1: Evaluasi Kriteria Informasi dan Kesalahan Prediksi",
+                  ["Indikator", ...comparisonReport.models.map((m) => `${m.title} (${m.modelId})`)],
+                  comparisonReport.comparisonMatrix.map((row) => [
+                    row.indicator,
+                    ...comparisonReport.models.map((m) => String(row.values[m.modelId] ?? "-")),
+                  ])
+                ),
+                new Paragraph({
+                  children: [
+                    new TextRun({ text: `Model Inferensial Terbaik: `, bold: true, size: 18 }),
+                    new TextRun({ text: comparisonReport.bestInferentialModel.justification, size: 18 }),
+                  ],
+                  spacing: { before: 100, after: 80 },
+                }),
+                new Paragraph({
+                  children: [
+                    new TextRun({ text: `Model Prediktif Terbaik: `, bold: true, size: 18 }),
+                    new TextRun({ text: comparisonReport.bestPredictiveModel.justification, size: 18 }),
+                  ],
+                  spacing: { after: 150 },
+                }),
+              ]
+            : []),
+
+          // 8. Peringatan Metodologis Kausalitas & Limitasi
+          new Paragraph({
+            children: [new TextRun({ text: "8. Peringatan Metodologis Kausalitas & Limitasi Penelitian", bold: true, size: 24 })],
+            heading: HeadingLevel.HEADING_3,
+            spacing: { before: 300, after: 100 },
+          }),
+          new Paragraph({
+            children: [new TextRun({ text: narrative.nonCausalAdvisory, size: 18, italics: true })],
+            spacing: { after: 100 },
+          }),
+          new Paragraph({
+            children: [new TextRun({ text: narrative.covarianceEstimatorNote, size: 18, color: "0055aa" })],
+            spacing: { after: 200 },
+          }),
+
           // Status & Methodological Notes
           new Paragraph({
-            children: [new TextRun({ text: "6. Pernyataan Metodologis & Sumber Perbedaan terhadap SPSS", bold: true, size: 24 })],
+            children: [new TextRun({ text: "9. Catatan Teknis Kompatibilitas terhadap SPSS", bold: true, size: 24 })],
             heading: HeadingLevel.HEADING_3,
             spacing: { before: 300, after: 100 },
           }),

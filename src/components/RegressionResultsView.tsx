@@ -24,6 +24,28 @@ import {
 import { generateDeterministicInterpretation } from '../lib/regression-interpretation';
 import { DiagnosticPlots } from './DiagnosticPlots';
 import {
+  generateVariablesEnteredRemoved,
+  computeAdvancedAssumptions,
+  validateAgainstSPSS,
+  SPSSValidationReport
+} from '../lib/regression-spss-compatibility';
+import {
+  computeADF,
+  computeKPSS,
+  applyDifferencing,
+  computeEngleGrangerCointegration,
+  computeARCHLM
+} from '../lib/regression-time-series-diagnostics';
+import {
+  generateStatisticalRecommendations,
+  StatisticalRecommendationCard,
+  RecommendationEngineOutput
+} from '../lib/regression-recommendation-engine';
+import {
+  buildModelComparisonReport,
+  ModelComparisonReport
+} from '../lib/regression-model-comparison';
+import {
   CheckCircle2,
   AlertTriangle,
   MinusCircle,
@@ -126,6 +148,9 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
   const [showS3Modal, setShowS3Modal] = useState(false);
   const [showRemedialModal, setShowRemedialModal] = useState(false);
   const [isExportingDocx, setIsExportingDocx] = useState(false);
+  const [isExportingXlsx, setIsExportingXlsx] = useState(false);
+  const [showRecommendationsModal, setShowRecommendationsModal] = useState(false);
+  const [showModelComparisonModal, setShowModelComparisonModal] = useState(false);
 
   // Models history: M0 is permanent and always present!
   const [models, setModels] = useState<StoredModel[]>([
@@ -254,6 +279,91 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
 
   // Box-Cox profile
   const boxCoxProfile = rawY.length > 0 && rawX.length > 0 ? computeBoxCoxProfile(rawY, rawX) : null;
+
+  // Tahap 2: State Validasi SPSS & Diagnostik Lanjutan
+  const [showSpssValidation, setShowSpssValidation] = useState<boolean>(false);
+  const [showTimeSeriesDiagnostics, setShowTimeSeriesDiagnostics] = useState<boolean>(false);
+
+  // Variables Entered / Removed (Tabel Standar SPSS)
+  const varsEnteredRemoved = useMemo(() => {
+    return generateVariablesEnteredRemoved(
+      1,
+      variables.xCols,
+      (variables.enteredMethod?.toLowerCase() as any) || 'enter'
+    );
+  }, [variables]);
+
+  // Advanced Assumptions (Jarque-Bera, White, Glejser, Goldfeld-Quandt, Ljung-Box)
+  const advancedAssumptions = useMemo(() => {
+    const residuals = activeResult.plots.resVsFit.map(p => p.residual);
+    return computeAdvancedAssumptions(rawX, residuals);
+  }, [rawX, activeResult]);
+
+  // Time Series Advanced Diagnostics (ADF, KPSS, Differencing, Engle-Granger, ARCH-LM)
+  const tsDiagnostics = useMemo(() => {
+    if (!isTimeSeries || rawY.length < 15) return null;
+    const residuals = activeResult.plots.resVsFit.map(p => p.residual);
+    return {
+      adf: computeADF(rawY, 'constant', 4),
+      kpss: computeKPSS(rawY, 'level', 4),
+      diff: applyDifferencing(rawY),
+      cointegration: computeEngleGrangerCointegration(rawY, rawX),
+      arch: computeARCHLM(residuals, 2)
+    };
+  }, [isTimeSeries, rawY, rawX, activeResult]);
+
+  // SPSS Validation Report
+  const spssValidationReport = useMemo(() => {
+    return validateAgainstSPSS(activeResult, {
+      r: activeResult.modelSummary.r,
+      rSquared: activeResult.modelSummary.rSquared,
+      adjRSquared: activeResult.modelSummary.adjRSquared,
+      stdErrorEstimate: activeResult.modelSummary.stdErrorEstimate,
+      durbinWatson: activeResult.modelSummary.durbinWatson,
+      fStat: activeResult.anova.regression.f,
+      fSig: activeResult.anova.regression.sig,
+      ssRegression: activeResult.anova.regression.ss,
+      ssResidual: activeResult.anova.residual.ss,
+      dfRegression: activeResult.anova.regression.df,
+      dfResidual: activeResult.anova.residual.df,
+      coefficients: activeResult.coefficients.map(c => ({
+        variable: c.variable,
+        b: c.b,
+        stdError: c.stdError,
+        beta: c.beta,
+        t: c.t,
+        sig: c.sig,
+        vif: c.collinearity.vif
+      }))
+    });
+  }, [activeResult]);
+
+  // Tahap 3: Statistical Recommendations Engine
+  const recommendationOutput = useMemo(() => {
+    return generateStatisticalRecommendations(activeResult, {
+      rawY,
+      rawX,
+      isTimeSeries,
+      alpha
+    });
+  }, [activeResult, rawY, rawX, isTimeSeries, alpha]);
+
+  // Tahap 3: Model Comparison Report Matrix (AIC, BIC, RMSE, MAE)
+  const modelComparisonReport = useMemo(() => {
+    return buildModelComparisonReport(
+      models.map((m) => ({
+        id: m.id,
+        title: m.title,
+        type: m.type,
+        result: m.result,
+        label: m.label,
+        passRate: m.passRateResult?.passRate
+      })),
+      rawY,
+      rawX,
+      isTimeSeries
+    );
+  }, [models, rawY, rawX, isTimeSeries]);
 
   // SPSS Table Style Objects (Horizontal borders only, zero vertical rules)
   const spssTableStyle: React.CSSProperties = {
@@ -947,7 +1057,9 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
             result: m.result,
             label: m.label,
             passRate: m.passRateResult?.passRate
-          }))
+          })),
+          recommendationOutput,
+          comparisonReport: modelComparisonReport
         })
       });
 
@@ -966,6 +1078,99 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
       alert(e.message || 'Gagal mengekspor file Word');
     } finally {
       setIsExportingDocx(false);
+    }
+  };
+
+  // Handler: Export Excel (.xlsx Multi-Sheet)
+  const handleExportXlsx = async () => {
+    setIsExportingXlsx(true);
+    try {
+      const res = await fetch('/api/regression/export-xlsx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          result: activeResult,
+          datasetName: fileName,
+          sheetName: selectedSheet,
+          comparisonReport: modelComparisonReport,
+          recommendationOutput
+        })
+      });
+
+      if (!res.ok) throw new Error('Gagal menghasilkan file Excel.');
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Hasil_Regresi_SPSS_${activeModel.id}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (e: any) {
+      alert(e.message || 'Gagal mengekspor file Excel');
+    } finally {
+      setIsExportingXlsx(false);
+    }
+  };
+
+  // Handler: Export CSV (Residuals & Prediksi)
+  const handleExportCsv = () => {
+    try {
+      const headers = ['Case_Number', variables.yCol, 'Predicted_Y', 'Residual', 'Std_Residual'];
+      const rows = activeResult.plots.resVsFit.map((p, idx) => {
+        const yVal = rawY[idx] !== undefined ? rawY[idx] : p.fitted + p.residual;
+        const stdRes = activeResult.modelSummary.stdErrorEstimate > 0
+          ? (p.residual / activeResult.modelSummary.stdErrorEstimate).toFixed(4)
+          : '0';
+        return [idx + 1, yVal, p.fitted.toFixed(4), p.residual.toFixed(4), stdRes].join(',');
+      });
+      const csvContent = [headers.join(','), ...rows].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Residuals_${variables.yCol}_${activeModel.id}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (e: any) {
+      alert('Gagal mengekspor CSV: ' + (e.message || String(e)));
+    }
+  };
+
+  // Handler: Export JSON (Audit Trail Lengkap)
+  const handleExportJson = () => {
+    try {
+      const auditPayload = {
+        modelId: activeModel.id,
+        title: activeModel.title,
+        label: activeModel.label,
+        engineVersion: activeResult.engineVersion,
+        exportedAt: new Date().toISOString(),
+        dataset: { fileName, sheet: selectedSheet, n: activeResult.sampleSize.nUsed },
+        variables: activeResult.variables,
+        modelSummary: activeResult.modelSummary,
+        anova: activeResult.anova,
+        coefficients: activeResult.coefficients,
+        assumptions: activeResult.assumptions,
+        scores: activeResult.scores,
+        recommendations: recommendationOutput,
+        comparison: modelComparisonReport
+      };
+      const blob = new Blob([JSON.stringify(auditPayload, null, 2)], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Audit_Regresi_${activeModel.id}.json`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (e: any) {
+      alert('Gagal mengekspor JSON: ' + (e.message || String(e)));
     }
   };
 
@@ -1044,7 +1249,49 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
             <ShieldCheck size={14} /> Status: {activeModel.label} (K={models.length})
           </div>
 
-          {/* Export Word (.docx) Button */}
+          {/* Tombol Rekomendasi Statistik */}
+          <button
+            type="button"
+            onClick={() => setShowRecommendationsModal(!showRecommendationsModal)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              border: '1px solid #f59e0b',
+              background: showRecommendationsModal ? '#f59e0b' : 'rgba(245, 158, 11, 0.15)',
+              color: showRecommendationsModal ? '#000000' : '#fbbf24',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: 'pointer'
+            }}
+          >
+            <Sliders size={13} /> Rekomendasi Statistik ({recommendationOutput.summary.violatedAssumptions} Pelanggaran)
+          </button>
+
+          {/* Tombol Komparasi Model */}
+          <button
+            type="button"
+            onClick={() => setShowModelComparisonModal(!showModelComparisonModal)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              border: '1px solid #8b5cf6',
+              background: showModelComparisonModal ? '#8b5cf6' : 'rgba(139, 92, 246, 0.15)',
+              color: showModelComparisonModal ? '#ffffff' : '#c4b5fd',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: 'pointer'
+            }}
+          >
+            <TrendingUpIcon size={13} /> Komparasi Model ({models.length})
+          </button>
+
+          {/* Export Word (.docx) */}
           <button
             type="button"
             onClick={handleExportDocx}
@@ -1053,18 +1300,83 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
               display: 'inline-flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '6px 14px',
+              padding: '6px 12px',
               borderRadius: '6px',
               border: '1px solid #0284c7',
               background: '#0284c7',
               color: '#ffffff',
-              fontSize: '12.5px',
+              fontSize: '12px',
               fontWeight: 700,
               cursor: isExportingDocx ? 'not-allowed' : 'pointer',
               opacity: isExportingDocx ? 0.7 : 1
             }}
           >
-            <Download size={14} /> {isExportingDocx ? 'Membuat Word...' : 'Ekspor Word (.docx)'}
+            <Download size={13} /> {isExportingDocx ? 'Word...' : 'Word (.docx)'}
+          </button>
+
+          {/* Export Excel (.xlsx Multi-Tab) */}
+          <button
+            type="button"
+            onClick={handleExportXlsx}
+            disabled={isExportingXlsx}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              border: '1px solid #059669',
+              background: '#059669',
+              color: '#ffffff',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: isExportingXlsx ? 'not-allowed' : 'pointer',
+              opacity: isExportingXlsx ? 0.7 : 1
+            }}
+          >
+            <Download size={13} /> {isExportingXlsx ? 'Excel...' : 'Excel (.xlsx)'}
+          </button>
+
+          {/* Export CSV */}
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '6px 10px',
+              borderRadius: '6px',
+              border: '1px solid var(--border-color, #475569)',
+              background: 'var(--bg-secondary, #0f172a)',
+              color: 'var(--text-primary, #f8fafc)',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            CSV
+          </button>
+
+          {/* Export JSON Audit */}
+          <button
+            type="button"
+            onClick={handleExportJson}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '6px 10px',
+              borderRadius: '6px',
+              border: '1px solid var(--border-color, #475569)',
+              background: 'var(--bg-secondary, #0f172a)',
+              color: 'var(--text-primary, #f8fafc)',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            JSON
           </button>
         </div>
       </div>
@@ -1304,8 +1616,269 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
             >
               <TrendingUpIcon size={14} /> Tools Optimasi R² (4 Metode Sah)
             </button>
+
+            <button
+              type="button"
+              onClick={() => setShowSpssValidation(!showSpssValidation)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 14px',
+                borderRadius: '6px',
+                border: '1px solid #3b82f6',
+                background: showSpssValidation ? '#3b82f6' : 'rgba(59, 130, 246, 0.15)',
+                color: showSpssValidation ? '#ffffff' : '#60a5fa',
+                fontSize: '12.5px',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              <ShieldCheck size={14} /> Mode Validasi SPSS ({spssValidationReport.concordancePercent}%)
+            </button>
+
+            {isTimeSeries && (
+              <button
+                type="button"
+                onClick={() => setShowTimeSeriesDiagnostics(!showTimeSeriesDiagnostics)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 14px',
+                  borderRadius: '6px',
+                  border: '1px solid #06b6d4',
+                  background: showTimeSeriesDiagnostics ? '#06b6d4' : 'rgba(6, 182, 212, 0.15)',
+                  color: showTimeSeriesDiagnostics ? '#ffffff' : '#22d3ee',
+                  fontSize: '12.5px',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                <TrendingUpIcon size={14} /> Diagnostik Time Series
+              </button>
+            )}
           </div>
         </div>
+
+        {/* ========================================================
+            MODE VALIDASI BENCHMARK IBM SPSS STATISTICS
+           ======================================================== */}
+        {showSpssValidation && (
+          <div style={{
+            background: 'var(--bg-secondary, #0f172a)',
+            borderRadius: '8px',
+            border: '1px solid #3b82f6',
+            padding: '16px',
+            marginBottom: '20px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ShieldCheck size={18} color="#60a5fa" />
+                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#93c5fd' }}>
+                    Laporan Validasi Komparasi SPSS vs Mesin Aplikasi
+                  </h3>
+                </div>
+                <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#cbd5e1' }}>
+                  Membandingkan parameter numerik model aplikasi terhadap benchmark standar IBM SPSS Statistics dengan threshold toleransi 1e-4 dan Log Relative Error (LRE &ge; 4.0).
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ padding: '4px 10px', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.2)', border: '1px solid #3b82f6', fontSize: '11.5px', color: '#bfdbfe' }}>
+                  Kesesuaian: <strong>{spssValidationReport.concordancePercent}%</strong> ({spssValidationReport.items.filter(i => i.status !== 'DISCREPANCY').length}/{spssValidationReport.items.length} Metrik)
+                </div>
+                <div style={{ padding: '4px 10px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.2)', border: '1px solid #10b981', fontSize: '11.5px', color: '#6ee7b7' }}>
+                  Rata-rata LRE: <strong>{formatDec(spssValidationReport.averageLRE, 2)}</strong> Presisi Digit
+                </div>
+                <span style={{
+                  padding: '4px 10px',
+                  borderRadius: '4px',
+                  fontWeight: 700,
+                  fontSize: '11.5px',
+                  background: spssValidationReport.overallStatus === 'PASS' ? '#059669' : '#d97706',
+                  color: '#ffffff'
+                }}>
+                  {spssValidationReport.overallStatus}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ overflowX: 'auto', marginBottom: '12px' }}>
+              <table style={spssTableStyle}>
+                <caption style={spssCaptionStyle}>Comparison of Regression Outputs vs. IBM SPSS Statistics Benchmark</caption>
+                <thead>
+                  <tr>
+                    <th style={{ ...spssThStyle, textAlign: 'left' }}>Metrik</th>
+                    <th style={{ ...spssThStyle, textAlign: 'left' }}>Variabel</th>
+                    <th style={{ ...spssThStyle, textAlign: 'right' }}>Nilai SPSS</th>
+                    <th style={{ ...spssThStyle, textAlign: 'right' }}>Nilai Aplikasi</th>
+                    <th style={{ ...spssThStyle, textAlign: 'right' }}>Selisih Absolut</th>
+                    <th style={{ ...spssThStyle, textAlign: 'right' }}>Selisih Relatif</th>
+                    <th style={{ ...spssThStyle, textAlign: 'right' }}>LRE</th>
+                    <th style={{ ...spssThStyle, textAlign: 'center' }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {spssValidationReport.items.map((item, idx) => (
+                    <tr key={idx}>
+                      <td style={{ ...spssTdStyle, fontWeight: 500 }}>{item.metric}</td>
+                      <td style={{ ...spssTdStyle }}>{item.variable || '-'}</td>
+                      <td style={{ ...spssTdStyle, textAlign: 'right' }}>{typeof item.spssValue === 'number' ? formatDec(item.spssValue, 4) : item.spssValue}</td>
+                      <td style={{ ...spssTdStyle, textAlign: 'right' }}>{typeof item.appValue === 'number' ? formatDec(item.appValue, 4) : item.appValue}</td>
+                      <td style={{ ...spssTdStyle, textAlign: 'right' }}>{item.absDiff !== undefined ? item.absDiff.toExponential(2) : '-'}</td>
+                      <td style={{ ...spssTdStyle, textAlign: 'right' }}>{item.relDiff !== undefined ? `${(item.relDiff * 100).toFixed(4)}%` : '-'}</td>
+                      <td style={{ ...spssTdStyle, textAlign: 'right' }}>{item.lre !== undefined ? item.lre.toFixed(1) : '-'}</td>
+                      <td style={{ ...spssTdStyle, textAlign: 'center' }}>
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          background: item.status === 'EXACT_MATCH' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                          color: item.status === 'EXACT_MATCH' ? '#34d399' : '#f87171'
+                        }}>
+                          {item.status === 'EXACT_MATCH' ? <Check size={12} /> : <X size={12} />}
+                          {item.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ background: 'var(--bg-card, #1e293b)', padding: '10px 14px', borderRadius: '6px', fontSize: '11.5px', color: '#94a3b8' }}>
+              <p style={{ margin: '0 0 4px 0' }}>
+                <strong>Keterangan Diagnostik:</strong> Nilai selisih absolut &le; 1e-4 diklasifikasikan sebagai <code style={{ color: '#34d399' }}>EXACT_MATCH</code>, membuktikan kesamaan numerik antara algoritma internal dengan solver QR/SVD IBM SPSS Statistics.
+              </p>
+              {spssValidationReport.diagnostics.length > 0 && (
+                <ul style={{ margin: 0, paddingLeft: '16px', color: '#cbd5e1' }}>
+                  {spssValidationReport.diagnostics.map((diag, dIdx) => (
+                    <li key={dIdx}>{diag}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================
+            DIAGNOSTIK TIME SERIES (ADF, KPSS, ARCH-LM, KOINTEGRASI)
+           ======================================================== */}
+        {(showTimeSeriesDiagnostics || isTimeSeries) && tsDiagnostics && (
+          <div style={{
+            background: 'var(--bg-secondary, #0f172a)',
+            borderRadius: '8px',
+            border: '1px solid #06b6d4',
+            padding: '16px',
+            marginBottom: '20px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <TrendingUpIcon size={18} />
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#67e8f9' }}>
+                Diagnostik Deret Waktu Lanjutan (Time Series Diagnostics)
+              </h3>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+              {/* 1. ADF Unit Root Test */}
+              <div style={{ background: 'var(--bg-card, #1e293b)', borderRadius: '6px', padding: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontWeight: 700, fontSize: '12.5px', color: '#f8fafc' }}>1. Augmented Dickey-Fuller (ADF)</span>
+                  <span style={{
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    fontSize: '10.5px',
+                    fontWeight: 700,
+                    background: tsDiagnostics.adf.isStationary ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                    color: tsDiagnostics.adf.isStationary ? '#34d399' : '#f87171'
+                  }}>
+                    {tsDiagnostics.adf.isStationary ? 'STASIONER' : 'UNIT ROOT'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '11.5px', color: '#94a3b8', lineHeight: 1.5 }}>
+                  <div>Statistik ADF: <strong>{formatDec(tsDiagnostics.adf.statistic, 4)}</strong> (Lag: {tsDiagnostics.adf.lagsUsed})</div>
+                  <div>Nilai Kritis 1%: {formatDec(tsDiagnostics.adf.criticalValues['1%'])} | 5%: {formatDec(tsDiagnostics.adf.criticalValues['5%'])} | 10%: {formatDec(tsDiagnostics.adf.criticalValues['10%'])}</div>
+                  <div style={{ marginTop: '4px', color: '#cbd5e1' }}>{tsDiagnostics.adf.details}</div>
+                </div>
+              </div>
+
+              {/* 2. KPSS Stationarity Test */}
+              <div style={{ background: 'var(--bg-card, #1e293b)', borderRadius: '6px', padding: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontWeight: 700, fontSize: '12.5px', color: '#f8fafc' }}>2. KPSS Stationarity Test</span>
+                  <span style={{
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    fontSize: '10.5px',
+                    fontWeight: 700,
+                    background: tsDiagnostics.kpss.isStationary ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                    color: tsDiagnostics.kpss.isStationary ? '#34d399' : '#f87171'
+                  }}>
+                    {tsDiagnostics.kpss.isStationary ? 'STASIONER' : 'NON-STASIONER'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '11.5px', color: '#94a3b8', lineHeight: 1.5 }}>
+                  <div>Statistik LM (KPSS): <strong>{formatDec(tsDiagnostics.kpss.statistic, 4)}</strong> (Lag: {tsDiagnostics.kpss.lagsUsed})</div>
+                  <div>Nilai Kritis 1%: {formatDec(tsDiagnostics.kpss.criticalValues['1%'])} | 5%: {formatDec(tsDiagnostics.kpss.criticalValues['5%'])} | 10%: {formatDec(tsDiagnostics.kpss.criticalValues['10%'])}</div>
+                  <div style={{ marginTop: '4px', color: '#cbd5e1' }}>{tsDiagnostics.kpss.details}</div>
+                </div>
+              </div>
+
+              {/* 3. Differencing Variance Reduction */}
+              <div style={{ background: 'var(--bg-card, #1e293b)', borderRadius: '6px', padding: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontWeight: 700, fontSize: '12.5px', color: '#f8fafc' }}>3. Reduksi Varians Differencing</span>
+                  <span style={{
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    fontSize: '10.5px',
+                    fontWeight: 700,
+                    background: 'rgba(59, 130, 246, 0.2)',
+                    color: '#60a5fa'
+                  }}>
+                    {tsDiagnostics.diff.varianceReduction ? 'REDUKSI VARIANS BERHASIL' : 'VARIANS TIDAK TURUN'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '11.5px', color: '#94a3b8', lineHeight: 1.5 }}>
+                  <div>Observasi Series: <strong>{tsDiagnostics.diff.original.length}</strong></div>
+                  <div>Observasi Diff 1: <strong>{tsDiagnostics.diff.firstDiff.length}</strong> | Diff 2: <strong>{tsDiagnostics.diff.secondDiff.length}</strong></div>
+                  <div style={{ marginTop: '4px', color: '#cbd5e1' }}>
+                    {tsDiagnostics.diff.varianceReduction ? 'Differencing berhasil menurunkan dispersi varians deret waktu.' : 'Peringatan: Differencing berulang berpotensi overdifferencing.'}
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Engle-Granger Cointegration & ARCH-LM */}
+              <div style={{ background: 'var(--bg-card, #1e293b)', borderRadius: '6px', padding: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontWeight: 700, fontSize: '12.5px', color: '#f8fafc' }}>4. Kointegrasi & Efek ARCH-LM</span>
+                  <span style={{
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    fontSize: '10.5px',
+                    fontWeight: 700,
+                    background: tsDiagnostics.cointegration.isCointegrated ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                    color: tsDiagnostics.cointegration.isCointegrated ? '#34d399' : '#fbbf24'
+                  }}>
+                    {tsDiagnostics.cointegration.isCointegrated ? 'TERKOINTEGRASI' : 'TIDAK KOINTEGRASI'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '11.5px', color: '#94a3b8', lineHeight: 1.5 }}>
+                  <div>Engle-Granger ADF: <strong>{formatDec(tsDiagnostics.cointegration.statistic, 4)}</strong> (p: {formatSig(tsDiagnostics.cointegration.pValue)})</div>
+                  <div>ARCH-LM Stat: <strong>{formatDec(tsDiagnostics.arch.statistic, 3)}</strong> (df: {tsDiagnostics.arch.df}, p: {formatSig(tsDiagnostics.arch.pValue)})</div>
+                  <div style={{ marginTop: '4px', color: '#cbd5e1' }}>
+                    {tsDiagnostics.arch.hasARCHEffect ? '⚠️ Efek ARCH terdeteksi pada residual deret waktu.' : 'Bebas dari efek heteroskedastisitas bersyarat (ARCH).'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '12px' }}>
           {assumptions.map((item, idx) => {
@@ -1385,12 +1958,191 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
             );
           })}
         </div>
+
+        {/* ========================================================
+            UJI ASUMSI KLASIK LANJUTAN (SPSS COMPATIBILITY SUITE)
+           ======================================================== */}
+        {advancedAssumptions && (
+          <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-color, #334155)' }}>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#94a3b8', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Uji Asumsi Klasik Lanjutan (Robust & Spesifikasi Tambahan):
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '12px' }}>
+              {/* Jarque-Bera */}
+              <div style={{
+                background: 'var(--bg-secondary, #0f172a)',
+                border: `1px solid ${advancedAssumptions.jarqueBera.passed ? '#059669' : '#b45309'}`,
+                borderRadius: '6px',
+                padding: '12px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary, #f8fafc)' }}>Normalitas: Jarque-Bera</span>
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    background: advancedAssumptions.jarqueBera.passed ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                    color: advancedAssumptions.jarqueBera.passed ? '#34d399' : '#fbbf24'
+                  }}>
+                    {advancedAssumptions.jarqueBera.passed ? 'NORMAL' : 'TIDAK NORMAL'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary, #94a3b8)', marginBottom: '4px' }}>
+                  Statistik JB: <strong>{formatDec(advancedAssumptions.jarqueBera.statistic)}</strong> | Sig: <strong>{formatSig(advancedAssumptions.jarqueBera.pValue)}</strong>
+                </div>
+                <div style={{ fontSize: '12px', color: advancedAssumptions.jarqueBera.passed ? 'var(--text-primary, #e2e8f0)' : '#fef08a', lineHeight: 1.4 }}>
+                  {advancedAssumptions.jarqueBera.details}
+                </div>
+              </div>
+
+              {/* White Test */}
+              <div style={{
+                background: 'var(--bg-secondary, #0f172a)',
+                border: `1px solid ${advancedAssumptions.whiteTest.passed ? '#059669' : '#b45309'}`,
+                borderRadius: '6px',
+                padding: '12px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary, #f8fafc)' }}>Heteroskedastisitas: White LM</span>
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    background: advancedAssumptions.whiteTest.passed ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                    color: advancedAssumptions.whiteTest.passed ? '#34d399' : '#fbbf24'
+                  }}>
+                    {advancedAssumptions.whiteTest.passed ? 'HOMOSKEDASTIS' : 'HETEROSKEDASTIS'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary, #94a3b8)', marginBottom: '4px' }}>
+                  LM Stat: <strong>{formatDec(advancedAssumptions.whiteTest.statistic)}</strong> (df: {advancedAssumptions.whiteTest.df}) | Sig: <strong>{formatSig(advancedAssumptions.whiteTest.pValue)}</strong>
+                </div>
+                <div style={{ fontSize: '12px', color: advancedAssumptions.whiteTest.passed ? 'var(--text-primary, #e2e8f0)' : '#fef08a', lineHeight: 1.4 }}>
+                  {advancedAssumptions.whiteTest.details}
+                </div>
+              </div>
+
+              {/* Glejser Test */}
+              <div style={{
+                background: 'var(--bg-secondary, #0f172a)',
+                border: `1px solid ${advancedAssumptions.glejserTest.passed ? '#059669' : '#b45309'}`,
+                borderRadius: '6px',
+                padding: '12px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary, #f8fafc)' }}>Heteroskedastisitas: Glejser</span>
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    background: advancedAssumptions.glejserTest.passed ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                    color: advancedAssumptions.glejserTest.passed ? '#34d399' : '#fbbf24'
+                  }}>
+                    {advancedAssumptions.glejserTest.passed ? 'HOMOSKEDASTIS' : 'HETEROSKEDASTIS'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary, #94a3b8)', marginBottom: '4px' }}>
+                  Min p-value (|e| ~ X): <strong>{formatSig(advancedAssumptions.glejserTest.pValue)}</strong>
+                </div>
+                <div style={{ fontSize: '12px', color: advancedAssumptions.glejserTest.passed ? 'var(--text-primary, #e2e8f0)' : '#fef08a', lineHeight: 1.4 }}>
+                  {advancedAssumptions.glejserTest.details}
+                </div>
+              </div>
+
+              {/* Goldfeld-Quandt Test */}
+              <div style={{
+                background: 'var(--bg-secondary, #0f172a)',
+                border: `1px solid ${advancedAssumptions.goldfeldQuandt.passed ? '#059669' : '#b45309'}`,
+                borderRadius: '6px',
+                padding: '12px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary, #f8fafc)' }}>Heteroskedastisitas: Goldfeld-Quandt</span>
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    background: advancedAssumptions.goldfeldQuandt.passed ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                    color: advancedAssumptions.goldfeldQuandt.passed ? '#34d399' : '#fbbf24'
+                  }}>
+                    {advancedAssumptions.goldfeldQuandt.passed ? 'HOMOSKEDASTIS' : 'HETEROSKEDASTIS'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary, #94a3b8)', marginBottom: '4px' }}>
+                  F Stat: <strong>{formatDec(advancedAssumptions.goldfeldQuandt.statistic)}</strong> (df: {advancedAssumptions.goldfeldQuandt.df1}, {advancedAssumptions.goldfeldQuandt.df2}) | Sig: <strong>{formatSig(advancedAssumptions.goldfeldQuandt.pValue)}</strong>
+                </div>
+                <div style={{ fontSize: '12px', color: advancedAssumptions.goldfeldQuandt.passed ? 'var(--text-primary, #e2e8f0)' : '#fef08a', lineHeight: 1.4 }}>
+                  {advancedAssumptions.goldfeldQuandt.details}
+                </div>
+              </div>
+
+              {/* Ljung-Box Test */}
+              <div style={{
+                background: 'var(--bg-secondary, #0f172a)',
+                border: `1px solid ${advancedAssumptions.ljungBox.passed ? '#059669' : '#b45309'}`,
+                borderRadius: '6px',
+                padding: '12px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary, #f8fafc)' }}>Autokorelasi: Ljung-Box Q</span>
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    background: advancedAssumptions.ljungBox.passed ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                    color: advancedAssumptions.ljungBox.passed ? '#34d399' : '#fbbf24'
+                  }}>
+                    {advancedAssumptions.ljungBox.passed ? 'BEBAS AUTOKORELASI' : 'TERDETEKSI AUTOKORELASI'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary, #94a3b8)', marginBottom: '4px' }}>
+                  Q Stat: <strong>{formatDec(advancedAssumptions.ljungBox.statistic)}</strong> (df: {advancedAssumptions.ljungBox.df}) | Sig: <strong>{formatSig(advancedAssumptions.ljungBox.pValue)}</strong>
+                </div>
+                <div style={{ fontSize: '12px', color: advancedAssumptions.ljungBox.passed ? 'var(--text-primary, #e2e8f0)' : '#fef08a', lineHeight: 1.4 }}>
+                  {advancedAssumptions.ljungBox.details}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ========================================================
-          9 TABEL STANDAR SPSS & INTERPRETASI AKADEMIK
+          TABEL OUTPUT RESMI STANDAR IBM SPSS STATISTICS
          ======================================================== */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        {/* Table A: Variables Entered/Removed */}
+        <div style={{ background: 'var(--bg-card, #1e293b)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color, #334155)', overflowX: 'auto' }}>
+          <table style={spssTableStyle}>
+            <caption style={spssCaptionStyle}>Variables Entered/Removed<sup>a</sup></caption>
+            <thead>
+              <tr>
+                <th style={{ ...spssThStyle, textAlign: 'center' }}>Model</th>
+                <th style={{ ...spssThStyle, textAlign: 'left' }}>Variables Entered</th>
+                <th style={{ ...spssThStyle, textAlign: 'left' }}>Variables Removed</th>
+                <th style={{ ...spssThStyle, textAlign: 'left' }}>Method</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style={{ ...spssTdStyle, textAlign: 'center', fontWeight: 600 }}>{varsEnteredRemoved.model}</td>
+                <td style={{ ...spssTdStyle, textAlign: 'left' }}>{varsEnteredRemoved.variablesEntered.join(', ')}<sup>b</sup></td>
+                <td style={{ ...spssTdStyle, textAlign: 'left' }}>{varsEnteredRemoved.variablesRemoved.length > 0 ? varsEnteredRemoved.variablesRemoved.join(', ') : '.'}</td>
+                <td style={{ ...spssTdStyle, textAlign: 'left' }}>{varsEnteredRemoved.method}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div style={footnoteStyle}>
+            <div>a. Dependent Variable: {variables.yCol}</div>
+            <div>b. {varsEnteredRemoved.notes}</div>
+          </div>
+        </div>
+
         {/* Table 0: Descriptive Statistics */}
         <div style={{ background: 'var(--bg-card, #1e293b)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color, #334155)', overflowX: 'auto' }}>
           <table style={spssTableStyle}>
@@ -1608,6 +2360,121 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
           </div>
         </div>
 
+        {/* Table E: Residuals Statistics */}
+        {residualsStatistics && residualsStatistics.length > 0 && (
+          <div style={{ background: 'var(--bg-card, #1e293b)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color, #334155)', overflowX: 'auto' }}>
+            <table style={spssTableStyle}>
+              <caption style={spssCaptionStyle}>Residuals Statistics<sup>a</sup></caption>
+              <thead>
+                <tr>
+                  <th style={{ ...spssThStyle, textAlign: 'left' }}>Metric</th>
+                  <th style={{ ...spssThStyle, textAlign: 'right' }}>Minimum</th>
+                  <th style={{ ...spssThStyle, textAlign: 'right' }}>Maximum</th>
+                  <th style={{ ...spssThStyle, textAlign: 'right' }}>Mean</th>
+                  <th style={{ ...spssThStyle, textAlign: 'right' }}>Std. Deviation</th>
+                  <th style={{ ...spssThStyle, textAlign: 'right' }}>N</th>
+                </tr>
+              </thead>
+              <tbody>
+                {residualsStatistics.map((row, idx) => (
+                  <tr key={idx}>
+                    <td style={{ ...spssTdStyle, fontWeight: 500 }}>{row.metric}</td>
+                    <td style={{ ...spssTdStyle, textAlign: 'right' }}>{formatDec(row.min)}</td>
+                    <td style={{ ...spssTdStyle, textAlign: 'right' }}>{formatDec(row.max)}</td>
+                    <td style={{ ...spssTdStyle, textAlign: 'right' }}>{formatDec(row.mean)}</td>
+                    <td style={{ ...spssTdStyle, textAlign: 'right' }}>{formatDec(row.stdDev)}</td>
+                    <td style={{ ...spssTdStyle, textAlign: 'right' }}>{row.n}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={footnoteStyle}>
+              <div>a. Dependent Variable: {variables.yCol}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Table F: Collinearity Diagnostics */}
+        {collinearityDiagnostics && collinearityDiagnostics.length > 0 && (
+          <div style={{ background: 'var(--bg-card, #1e293b)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color, #334155)', overflowX: 'auto' }}>
+            <table style={spssTableStyle}>
+              <caption style={spssCaptionStyle}>Collinearity Diagnostics<sup>a</sup></caption>
+              <thead>
+                <tr>
+                  <th rowSpan={2} style={{ ...spssThStyle, textAlign: 'center', verticalAlign: 'bottom' }}>Model</th>
+                  <th rowSpan={2} style={{ ...spssThStyle, textAlign: 'center', verticalAlign: 'bottom' }}>Dimension</th>
+                  <th rowSpan={2} style={{ ...spssThStyle, textAlign: 'right', verticalAlign: 'bottom' }}>Eigenvalue</th>
+                  <th rowSpan={2} style={{ ...spssThStyle, textAlign: 'right', verticalAlign: 'bottom' }}>Condition Index</th>
+                  <th colSpan={Object.keys(collinearityDiagnostics[0]?.varianceProportions || {}).length} style={{ ...spssThStyle, textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>Variance Proportions</th>
+                </tr>
+                <tr>
+                  {Object.keys(collinearityDiagnostics[0]?.varianceProportions || {}).map((colName, cIdx) => (
+                    <th key={cIdx} style={{ ...spssThStyle, textAlign: 'right', fontSize: '11px' }}>{colName}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {collinearityDiagnostics.map((row, idx) => (
+                  <tr key={idx}>
+                    {idx === 0 && (
+                      <td rowSpan={collinearityDiagnostics.length} style={{ ...spssTdStyle, textAlign: 'center', fontWeight: 600, verticalAlign: 'top' }}>
+                        1
+                      </td>
+                    )}
+                    <td style={{ ...spssTdStyle, textAlign: 'center' }}>{row.dimension}</td>
+                    <td style={{ ...spssTdStyle, textAlign: 'right' }}>{formatDec(row.eigenvalue)}</td>
+                    <td style={{ ...spssTdStyle, textAlign: 'right' }}>{formatDec(row.conditionIndex)}</td>
+                    {Object.values(row.varianceProportions).map((val, vpIdx) => (
+                      <td key={vpIdx} style={{ ...spssTdStyle, textAlign: 'right' }}>{formatCorr(val)}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={footnoteStyle}>
+              <div>a. Dependent Variable: {variables.yCol}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Table G: Casewise Diagnostics */}
+        <div style={{ background: 'var(--bg-card, #1e293b)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color, #334155)', overflowX: 'auto' }}>
+          <table style={spssTableStyle}>
+            <caption style={spssCaptionStyle}>Casewise Diagnostics<sup>a</sup></caption>
+            <thead>
+              <tr>
+                <th style={{ ...spssThStyle, textAlign: 'center' }}>Case Number</th>
+                <th style={{ ...spssThStyle, textAlign: 'right' }}>Std. Residual</th>
+                <th style={{ ...spssThStyle, textAlign: 'right' }}>{variables.yCol}</th>
+                <th style={{ ...spssThStyle, textAlign: 'right' }}>Predicted Value</th>
+                <th style={{ ...spssThStyle, textAlign: 'right' }}>Residual</th>
+              </tr>
+            </thead>
+            <tbody>
+              {casewiseDiagnostics && casewiseDiagnostics.length > 0 ? (
+                casewiseDiagnostics.map((row, idx) => (
+                  <tr key={idx}>
+                    <td style={{ ...spssTdStyle, textAlign: 'center' }}>{row.caseNumber}</td>
+                    <td style={{ ...spssTdStyle, textAlign: 'right', color: Math.abs(row.stdResidual) > 3 ? '#ef4444' : '#f59e0b', fontWeight: 600 }}>{formatDec(row.stdResidual)}</td>
+                    <td style={{ ...spssTdStyle, textAlign: 'right' }}>{formatDec(row.yValue)}</td>
+                    <td style={{ ...spssTdStyle, textAlign: 'right' }}>{formatDec(row.predictedValue)}</td>
+                    <td style={{ ...spssTdStyle, textAlign: 'right' }}>{formatDec(row.residual)}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={5} style={{ ...spssTdStyle, textAlign: 'center', color: 'var(--text-secondary, #94a3b8)', fontStyle: 'italic', padding: '16px' }}>
+                    Tidak ada observasi dengan residual terstandarisasi |Std. Residual| &ge; 3.0 (Bebas dari outlier residual ekstrem).
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <div style={footnoteStyle}>
+            <div>a. Dependent Variable: {variables.yCol}</div>
+          </div>
+        </div>
+
         {/* Diagnostic Plots SVG */}
         <div style={{ background: 'var(--bg-card, #1e293b)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color, #334155)' }}>
           <h3 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: 600, color: 'var(--text-primary, #f8fafc)' }}>
@@ -1616,6 +2483,424 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
           <DiagnosticPlots plots={activeResult.plots} yCol={variables.yCol} isTimeSeries={isTimeSeries} />
         </div>
       </div>
+
+      {/* ========================================================
+          PERINGATAN METODOLOGIS KAUSALITAS & ESTIMATOR KOVARIANS
+         ======================================================== */}
+      <div style={{
+        marginTop: '24px',
+        padding: '16px 20px',
+        background: 'var(--bg-card, #1e293b)',
+        borderRadius: '8px',
+        border: '1px solid var(--border-color, #334155)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Info size={16} color="#60a5fa" />
+          <span style={{ fontSize: '13px', fontWeight: 700, color: '#93c5fd' }}>
+            Pedoman Metodologis & Batasan Kausalitas Regresi (Kaidah Akademik Tahap 3)
+          </span>
+        </div>
+        <p style={{ margin: 0, fontSize: '12.5px', color: '#cbd5e1', lineHeight: '1.6' }}>
+          {interpretation.nonCausalAdvisory}
+        </p>
+        <div style={{
+          padding: '8px 12px',
+          background: 'var(--bg-secondary, #0f172a)',
+          borderRadius: '6px',
+          fontSize: '12px',
+          color: '#34d399',
+          borderLeft: '3px solid #10b981'
+        }}>
+          {interpretation.covarianceEstimatorNote}
+        </div>
+      </div>
+
+      {/* ========================================================
+          DRAWER / MODAL REKOMENDASI STATISTIK ILMIAH (13 ITEMS)
+         ======================================================== */}
+      {showRecommendationsModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 65,
+          padding: '16px'
+        }}>
+          <div style={{
+            background: 'var(--bg-card, #1e293b)',
+            borderRadius: '10px',
+            border: '1px solid #f59e0b',
+            maxWidth: '900px',
+            width: '100%',
+            maxHeight: '92vh',
+            overflowY: 'auto',
+            padding: '24px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Sliders size={20} color="#fbbf24" />
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#fef08a' }}>
+                    Sistem Rekomendasi Statistik (Rule-Based Engine)
+                  </h3>
+                </div>
+                <p style={{ margin: '4px 0 0 0', fontSize: '12.5px', color: '#cbd5e1' }}>
+                  Evaluasi eksplisit terhadap seluruh diagnostik regresi, dampak model, dan solusi sah berdasarkan kaidah statistika.
+                </p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  fontWeight: 700,
+                  fontSize: '12px',
+                  background: recommendationOutput.summary.overallHealth === 'EXCELLENT' ? '#059669' : (recommendationOutput.summary.overallHealth === 'GOOD' ? '#0284c7' : '#d97706'),
+                  color: '#ffffff'
+                }}>
+                  Health Score: {recommendationOutput.summary.healthScore}% ({recommendationOutput.summary.overallHealth})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowRecommendationsModal(false)}
+                  style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '24px', cursor: 'pointer' }}
+                >
+                  &times;
+                </button>
+              </div>
+            </div>
+
+            {/* Rekomendasi Cards Grid */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {recommendationOutput.cards.map((card) => {
+                const isPass = card.status === 'LULUS';
+                const isWarning = card.status === 'WASPADA';
+                const borderColor = isPass ? '#059669' : (isWarning ? '#d97706' : '#dc2626');
+
+                return (
+                  <div
+                    key={card.id}
+                    style={{
+                      background: 'var(--bg-secondary, #0f172a)',
+                      borderRadius: '8px',
+                      border: `1px solid ${borderColor}`,
+                      padding: '16px'
+                    }}
+                  >
+                    {/* Header: Item 1-6 */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '10.5px',
+                            fontWeight: 700,
+                            background: 'rgba(255,255,255,0.08)',
+                            color: '#94a3b8',
+                            textTransform: 'uppercase'
+                          }}>
+                            {card.category}
+                          </span>
+                          <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary, #f8fafc)' }}>
+                            1. {card.testName}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '4px' }}>
+                          2. Statistik: <strong>{formatDec(card.statistic)}</strong> ({card.statisticName}) | 3. Sig: <strong>{card.pValue !== undefined ? formatSig(card.pValue) : '-'}</strong> | 4. Alpha: <strong>{card.alpha}</strong> | 5. Keputusan H0: <strong>{card.h0Decision}</strong>
+                        </div>
+                      </div>
+                      <span style={{
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        background: isPass ? 'rgba(16, 185, 129, 0.2)' : (isWarning ? 'rgba(245, 158, 11, 0.2)' : 'rgba(239, 68, 68, 0.2)'),
+                        color: isPass ? '#34d399' : (isWarning ? '#fbbf24' : '#f87171')
+                      }}>
+                        6. STATUS: {card.status}
+                      </span>
+                    </div>
+
+                    {/* Interpretation & Causes: Item 7-9 */}
+                    <div style={{ fontSize: '12px', color: '#cbd5e1', lineHeight: '1.5', marginBottom: '10px' }}>
+                      <p style={{ margin: '0 0 6px 0' }}>
+                        <strong>7. Interpretasi:</strong> {card.interpretation}
+                      </p>
+                      <p style={{ margin: '0 0 6px 0', color: '#94a3b8' }}>
+                        <strong>8. Potensi Penyebab:</strong> {card.potentialCauses.join(' ')}
+                      </p>
+                      <p style={{ margin: 0, color: '#fef08a' }}>
+                        <strong>9. Dampak Terhadap Model:</strong> {card.modelImpact}
+                      </p>
+                    </div>
+
+                    {/* Primary & Alternative Recommendations: Item 10-11 */}
+                    <div style={{
+                      background: 'rgba(0,0,0,0.25)',
+                      padding: '10px 12px',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      marginBottom: '10px',
+                      borderLeft: `3px solid ${borderColor}`
+                    }}>
+                      <div style={{ fontWeight: 700, color: '#38bdf8', marginBottom: '4px' }}>
+                        10. Rekomendasi Utama:
+                      </div>
+                      <div style={{ color: '#f8fafc', marginBottom: '8px' }}>
+                        {card.primaryRecommendation}
+                      </div>
+
+                      {card.alternativeMethods.length > 0 && (
+                        <div>
+                          <div style={{ fontWeight: 600, color: '#94a3b8', fontSize: '11px', marginBottom: '4px' }}>
+                            11. Alternatif Metode yang Sah:
+                          </div>
+                          <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '11.5px', color: '#cbd5e1' }}>
+                            {card.alternativeMethods.map((alt) => (
+                              <li key={alt.id} style={{ marginBottom: '2px' }}>
+                                <strong>{alt.name}:</strong> {alt.description} ({alt.applicability})
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Methodological Consequences: Item 12 */}
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                      gap: '6px',
+                      fontSize: '11px',
+                      padding: '8px 10px',
+                      background: 'var(--bg-card, #1e293b)',
+                      borderRadius: '6px',
+                      marginBottom: '10px'
+                    }}>
+                      <div style={{ color: card.methodologicalConsequences.coefficientsChange ? '#fbbf24' : '#94a3b8' }}>
+                        Koefisien Berubah: <strong>{card.methodologicalConsequences.coefficientsChange ? 'Ya' : 'Tidak'}</strong>
+                      </div>
+                      <div style={{ color: card.methodologicalConsequences.standardErrorChange ? '#fbbf24' : '#94a3b8' }}>
+                        SE Berubah: <strong>{card.methodologicalConsequences.standardErrorChange ? 'Ya' : 'Tidak'}</strong>
+                      </div>
+                      <div style={{ color: card.methodologicalConsequences.pValueChange ? '#fbbf24' : '#94a3b8' }}>
+                        p-value Berubah: <strong>{card.methodologicalConsequences.pValueChange ? 'Ya' : 'Tidak'}</strong>
+                      </div>
+                      <div style={{ color: card.methodologicalConsequences.sampleSizeChange ? '#fbbf24' : '#94a3b8' }}>
+                        Ukuran n Berubah: <strong>{card.methodologicalConsequences.sampleSizeChange ? 'Ya' : 'Tidak'}</strong>
+                      </div>
+                      <div style={{ color: card.methodologicalConsequences.interpretationChange ? '#fbbf24' : '#94a3b8' }}>
+                        Interpretasi Berubah: <strong>{card.methodologicalConsequences.interpretationChange ? 'Ya' : 'Tidak'}</strong>
+                      </div>
+                    </div>
+
+                    {/* Available Actions: Item 13 */}
+                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                      {card.availableActions.canApply && card.availableActions.remedialType && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowRecommendationsModal(false);
+                            setShowRemedialModal(true);
+                            setSelectedRemedialType(card.availableActions.remedialType || '');
+                          }}
+                          style={{
+                            padding: '6px 12px',
+                            borderRadius: '4px',
+                            border: '1px solid #10b981',
+                            background: '#10b981',
+                            color: '#ffffff',
+                            fontSize: '11.5px',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          13. {card.availableActions.actionLabel}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowRecommendationsModal(false)}
+                        style={{
+                          padding: '6px 10px',
+                          borderRadius: '4px',
+                          border: '1px solid var(--border-color, #475569)',
+                          background: 'transparent',
+                          color: '#94a3b8',
+                          fontSize: '11.5px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Lewati / Pertahankan M0
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          DRAWER / MODAL KOMPARASI MODEL MULTI-SPESIFIKASI (AIC/BIC)
+         ======================================================== */}
+      {showModelComparisonModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 65,
+          padding: '16px'
+        }}>
+          <div style={{
+            background: 'var(--bg-card, #1e293b)',
+            borderRadius: '10px',
+            border: '1px solid #8b5cf6',
+            maxWidth: '900px',
+            width: '100%',
+            maxHeight: '92vh',
+            overflowY: 'auto',
+            padding: '24px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <TrendingUpIcon size={20} />
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#c4b5fd' }}>
+                    Matriks Komparasi Model & Evaluasi Prediktif (AIC, BIC, RMSE)
+                  </h3>
+                </div>
+                <p style={{ margin: '4px 0 0 0', fontSize: '12.5px', color: '#cbd5e1' }}>
+                  Membandingkan goodness of fit, trade-off kompleksitas (penalti k), dan kestabilan out-of-sample di antara seluruh model yang dieksplorasi.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowModelComparisonModal(false)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '24px', cursor: 'pointer' }}
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Best Model Recommendations Badges */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+              <div style={{ background: 'rgba(16, 185, 129, 0.15)', border: '1px solid #10b981', borderRadius: '6px', padding: '12px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#34d399', marginBottom: '4px' }}>
+                  🏆 Rekomendasi Model Inferensial Terbaik:
+                </div>
+                <div style={{ fontSize: '12.5px', color: '#ffffff', fontWeight: 600 }}>
+                  {modelComparisonReport.bestInferentialModel.title} ({modelComparisonReport.bestInferentialModel.modelId})
+                </div>
+                <div style={{ fontSize: '11.5px', color: '#a7f3d0', marginTop: '4px' }}>
+                  {modelComparisonReport.bestInferentialModel.justification}
+                </div>
+              </div>
+
+              <div style={{ background: 'rgba(59, 130, 246, 0.15)', border: '1px solid #3b82f6', borderRadius: '6px', padding: '12px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#60a5fa', marginBottom: '4px' }}>
+                  🎯 Rekomendasi Model Prediktif Terbaik:
+                </div>
+                <div style={{ fontSize: '12.5px', color: '#ffffff', fontWeight: 600 }}>
+                  {modelComparisonReport.bestPredictiveModel.title} ({modelComparisonReport.bestPredictiveModel.modelId})
+                </div>
+                <div style={{ fontSize: '11.5px', color: '#bfdbfe', marginTop: '4px' }}>
+                  {modelComparisonReport.bestPredictiveModel.justification}
+                </div>
+              </div>
+            </div>
+
+            {/* Comparison Matrix Table */}
+            <div style={{ overflowX: 'auto', marginBottom: '16px' }}>
+              <table style={spssTableStyle}>
+                <caption style={spssCaptionStyle}>Multi-Model Evaluation Matrix</caption>
+                <thead>
+                  <tr>
+                    <th style={{ ...spssThStyle, textAlign: 'left' }}>Indikator Ekonometrika</th>
+                    {modelComparisonReport.models.map((m) => (
+                      <th key={m.modelId} style={{ ...spssThStyle, textAlign: 'right' }}>
+                        {m.title} ({m.modelId})
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {modelComparisonReport.comparisonMatrix.map((row, idx) => (
+                    <tr key={idx}>
+                      <td style={{ ...spssTdStyle, fontWeight: 500 }}>{row.indicator}</td>
+                      {modelComparisonReport.models.map((m) => {
+                        const isBest = row.bestModelId === m.modelId;
+                        return (
+                          <td
+                            key={m.modelId}
+                            style={{
+                              ...spssTdStyle,
+                              textAlign: 'right',
+                              fontWeight: isBest ? 700 : 400,
+                              color: isBest ? '#34d399' : 'inherit'
+                            }}
+                          >
+                            {row.values[m.modelId] ?? '-'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Out-of-sample Cross-Validation (Predictive) */}
+            {modelComparisonReport.predictiveValidation && (
+              <div style={{
+                background: 'var(--bg-secondary, #0f172a)',
+                borderRadius: '6px',
+                padding: '14px',
+                border: '1px solid rgba(255,255,255,0.06)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: '#f8fafc' }}>
+                    Evaluasi Out-of-Sample ({modelComparisonReport.predictiveValidation.splitType === 'time_series_rolling_origin' ? 'Rolling-Origin Time Series (No Leakage)' : 'Train-Test 70/30'})
+                  </span>
+                  <span style={{
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    background: modelComparisonReport.predictiveValidation.isOverfittingRisk ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                    color: modelComparisonReport.predictiveValidation.isOverfittingRisk ? '#f87171' : '#34d399'
+                  }}>
+                    {modelComparisonReport.predictiveValidation.isOverfittingRisk ? 'RISIKO OVERFITTING' : 'GENERALISASI STABIL'}
+                  </span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px', fontSize: '12px', color: '#cbd5e1' }}>
+                  <div>Sampel Train: <strong>{modelComparisonReport.predictiveValidation.trainSampleSize}</strong></div>
+                  <div>Sampel Test: <strong>{modelComparisonReport.predictiveValidation.testSampleSize}</strong></div>
+                  <div>Train RMSE: <strong>{formatDec(modelComparisonReport.predictiveValidation.trainRmse)}</strong></div>
+                  <div>Test RMSE: <strong>{formatDec(modelComparisonReport.predictiveValidation.testRmse)}</strong></div>
+                  <div>Overfitting Gap: <strong>{formatDec(modelComparisonReport.predictiveValidation.overfittingGap)}</strong></div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ========================================================
           DRAWER / MODAL REMEDIAL PERBAIKAN ASUMSI YANG SAH

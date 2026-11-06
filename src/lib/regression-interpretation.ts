@@ -38,6 +38,8 @@ export interface DeterministicNarrative {
   status: string;
   lowR2Note?: string;
   remedialNote?: string;
+  nonCausalAdvisory: string;
+  covarianceEstimatorNote: string;
 }
 
 export function generateDeterministicInterpretation(
@@ -106,17 +108,17 @@ export function generateDeterministicInterpretation(
     const tVal = c.t.toFixed(3);
 
     const tDesc = isHypoAccepted
-      ? `Uji t (Uji Parsial) untuk ${c.variable}: Diperoleh nilai t hitung = ${tVal} dengan Sig. = ${cSigFormatted} < alpha (${alpha}). Maka H0 ditolak (Ha diterima), yang membuktikan bahwa ${c.variable} berpengaruh ${direction} secara signifikan terhadap ${yCol}.`
-      : `Uji t (Uji Parsial) untuk ${c.variable}: Diperoleh nilai t hitung = ${tVal} dengan Sig. = ${cSigFormatted} >= alpha (${alpha}). Maka H0 gagal ditolak, yang membuktikan bahwa ${c.variable} tidak memiliki pengaruh yang signifikan secara statistik terhadap ${yCol}.`;
+      ? `Uji t (Uji Parsial) untuk ${c.variable}: Diperoleh nilai t hitung = ${tVal} dengan Sig. = ${cSigFormatted} < alpha (${alpha}). Maka H0 ditolak, yang menunjukkan bahwa ${c.variable} berasosiasi secara linear ${direction} signifikan dengan ${yCol} (hubungan asosiasi linear, bukan pembuktian kausalitas).`
+      : `Uji t (Uji Parsial) untuk ${c.variable}: Diperoleh nilai t hitung = ${tVal} dengan Sig. = ${cSigFormatted} >= alpha (${alpha}). Maka H0 gagal ditolak; artinya data sampel belum memberikan bukti statistik yang cukup untuk menyatakan adanya hubungan linear antara ${c.variable} dan ${yCol} pada tingkat signifikansi ${alpha} (gagal tolak H0 bukan bukti pasti ketiadaan hubungan riil atau non-linear).`;
 
     let betaDesc = "";
     if (result.modelType === "MLR" && c.beta !== undefined) {
-      betaDesc = ` Nilai Standardized Beta sebesar ${c.beta.toFixed(3)} menunjukkan bobot kontribusi relatif ${c.variable} terhadap variasi ${yCol}.`;
+      betaDesc = ` Nilai Standardized Beta sebesar ${c.beta.toFixed(3)} menunjukkan kontribusi komparatif relatif ${c.variable} terhadap variasi terstandarisasi ${yCol}.`;
     }
 
     tTestSentences.push(`${tDesc}${betaDesc}`);
     coefSentences.push(
-      `Koefisien regresi ${c.variable} adalah ${c.b.toFixed(3)}. Artinya, setiap peningkatan 1 satuan ${c.variable} akan diikuti oleh ${changeWord} ${yCol} sebesar ${absB} satuan dengan asumsi variabel lain konstan (CI 95%: ${lo} hingga ${hi}). ${tDesc}`
+      `Koefisien regresi ${c.variable} adalah ${c.b.toFixed(3)} (SE = ${c.stdError.toFixed(3)}, 95% CI: ${lo} hingga ${hi}). Rata-rata perubahan ${yCol} yang diasosiasikan dengan setiap kenaikan 1 satuan ${c.variable} adalah sebesar ${absB} satuan ${changeWord}, ceteris paribus (dengan asumsi variabel lain dalam model konstan). ${tDesc}`
     );
   }
 
@@ -172,8 +174,19 @@ export function generateDeterministicInterpretation(
     status += ` Peringatan Metodologis: Karena terdapat eksplorasi jamak (${ctx.exploratoryReason || "perbandingan beberapa spesifikasi"}), estimasi p-value dan interval keyakinan cenderung terlalu optimistis. Replikasi pada dataset independen sangat dianjurkan.`;
   }
 
+  // Non-causal & Covariance Estimator Advisories (Kaidah Metodologi Prompt 3)
+  const nonCausalAdvisory =
+    "Peringatan Metodologis Kausalitas: Analisis regresi linear ini bersumber dari data observasional. Koefisien determinasi R² mengukur proporsi variabilitas linear sampel yang terjelaskan, BUKAN persentase pengaruh kausal sebab-akibat. Uji hipotesis yang tidak signifikan (gagal tolak H0) menunjukkan ketiadaan bukti statistik hubungan linear pada alpha yang dipilih, bukan bukti pasti tidak adanya hubungan riil atau non-linear.";
+
+  const covarianceEstimatorNote =
+    ctx.modelType.includes("robust") || ctx.title.toLowerCase().includes("robust") || ctx.title.toLowerCase().includes("hc3")
+      ? "Estimator Kovarians: Model menggunakan Heteroskedasticity-Consistent Covariance Matrix (HC3) untuk inferensi statistik yang kebal terhadap heteroskedastisitas sampel kecil tanpa mengubah nilai koefisien OLS."
+      : (ctx.title.toLowerCase().includes("hac") || ctx.title.toLowerCase().includes("newey")
+        ? "Estimator Kovarians: Model menggunakan Newey-West Heteroskedasticity and Autocorrelation Consistent (HAC) Covariance Matrix untuk inferensi deret waktu tanpa mengubah koefisien OLS."
+        : "Estimator Kovarians: Model menggunakan matriks kovarians OLS analitik standar s²(XᵀX)⁻¹.");
+
   // Executive summary combining core findings
-  const executiveSummary = `Analisis regresi linear bergaya SPSS terhadap ${yCol} dengan prediktor ${xList} menghasilkan model ${modelFeasible} (F=${fStat}, p=${pValFormatted}, R²=${r2Str}). Sebanyak ${r2Pct}% variasi variabel dependen dapat dijelaskan oleh model. ${assumptions.filter(a => a.includes("tidak") || a.includes("gagal")).length > 0 ? "Beberapa uji asumsi klasik terdeteksi melanggar kriteria dan memerlukan perhatian." : "Seluruh asumsi klasik utama terpenuhi."}`;
+  const executiveSummary = `Analisis regresi linear bergaya SPSS terhadap ${yCol} dengan prediktor ${xList} menghasilkan model ${modelFeasible} (F=${fStat}, p=${pValFormatted}, R²=${r2Str}). Sebanyak ${r2Pct}% variasi variabel dependen terasosiasi secara linear dengan prediktor model. ${assumptions.filter(a => a.includes("tidak") || a.includes("gagal")).length > 0 ? "Beberapa uji asumsi klasik terdeteksi melanggar kriteria dan memerlukan perhatian." : "Seluruh asumsi klasik utama terpenuhi."}`;
 
   return {
     executiveSummary,
@@ -186,5 +199,7 @@ export function generateDeterministicInterpretation(
     status,
     lowR2Note,
     remedialNote,
+    nonCausalAdvisory,
+    covarianceEstimatorNote,
   };
 }

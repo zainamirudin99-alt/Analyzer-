@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateFileSignature } from '@/lib/file-signature';
+import { parseSpssSav, parseStataDta } from '@/lib/spss-stata-parser';
 import * as XLSX from 'xlsx';
 
 export const dynamic = 'force-dynamic';
@@ -12,7 +13,7 @@ export async function POST(req: NextRequest) {
 
     if (!file) {
       return NextResponse.json(
-        { success: false, error: 'File dataset (.xlsx, .xls, .csv) wajib diunggah.' },
+        { success: false, error: 'File dataset (.xlsx, .xls, .csv, .sav, .dta) wajib diunggah.' },
         { status: 400 }
       );
     }
@@ -33,7 +34,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Parse Spreadsheet
+    // 2. Parse SPSS (.sav) atau Stata (.dta)
+    if (sigResult.format === 'sav' || sigResult.format === 'dta') {
+      const parsed = sigResult.format === 'sav' ? parseSpssSav(buffer) : parseStataDta(buffer);
+      const sheetName = sigResult.format === 'sav' ? 'SPSS_Dataset' : 'Stata_Dataset';
+      const sheetsData = [{
+        sheetName,
+        rowCount: parsed.rowCount,
+        columnCount: parsed.columnCount,
+        columns: parsed.columns,
+        previewRows: parsed.previewRows,
+        allRows: parsed.rows
+      }];
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          sourceType: 'upload',
+          originalName: file.name,
+          sizeBytes: buffer.length,
+          detectedFormat: sigResult.format,
+          sheetNames: [sheetName],
+          sheets: sheetsData,
+          fileBase64: buffer.toString('base64')
+        }
+      });
+    }
+
+    // 3. Parse Spreadsheet (.xlsx, .xls, .csv)
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const sheetNames = workbook.SheetNames;
 

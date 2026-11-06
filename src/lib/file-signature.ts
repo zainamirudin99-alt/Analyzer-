@@ -2,7 +2,7 @@
 // File Signature (Magic Bytes) Validator & CSV/Excel Sanitizer
 // ============================================================
 
-export type SupportedFormat = 'xlsx' | 'xls' | 'csv';
+export type SupportedFormat = 'xlsx' | 'xls' | 'csv' | 'sav' | 'dta';
 
 export interface FileValidationResult {
   isValid: boolean;
@@ -72,7 +72,36 @@ export function validateFileSignature(buffer: Buffer): FileValidationResult {
     return { isValid: true, format: 'xls' };
   }
 
-  // 3. Cek CSV (Plaintext ASCII / UTF-8)
+  // 3. Cek SPSS Data File (.sav / .zsav)
+  // Magic bytes: 24 46 4C 32 ($FL2) atau 24 46 4C 33 ($FL3)
+  if (
+    buffer.length >= 4 &&
+    buffer[0] === 0x24 &&
+    buffer[1] === 0x46 &&
+    buffer[2] === 0x4c &&
+    (buffer[3] === 0x32 || buffer[3] === 0x33)
+  ) {
+    return { isValid: true, format: 'sav' };
+  }
+
+  // 4. Cek Stata Data File (.dta)
+  // Modern Stata 117+ starts with <stata_dta> (0x3C 0x73 0x74 0x61 0x74 0x61 0x5F 0x64 0x74 0x61 0x3E)
+  // Legacy Stata 113-115 starts with release byte 0x71 (113), 0x72 (114), 0x73 (115) followed by byteorder 0x01/0x02
+  if (
+    buffer.length >= 11 &&
+    buffer.toString('ascii', 0, 11) === '<stata_dta>'
+  ) {
+    return { isValid: true, format: 'dta' };
+  }
+  if (
+    buffer.length >= 4 &&
+    [113, 114, 115].includes(buffer[0]) &&
+    (buffer[1] === 1 || buffer[1] === 2)
+  ) {
+    return { isValid: true, format: 'dta' };
+  }
+
+  // 5. Cek CSV (Plaintext ASCII / UTF-8)
   // Tidak boleh ada null bytes (\0) di 4096 byte pertama
   const checkLength = Math.min(buffer.length, 4096);
   let hasNullByte = false;
@@ -93,7 +122,7 @@ export function validateFileSignature(buffer: Buffer): FileValidationResult {
 
   return {
     isValid: false,
-    error: 'Format file tidak didukung atau ekstensi dipalsukan. Hanya mendukung file .xlsx, .xls, dan .csv yang sah.'
+    error: 'Format file tidak didukung atau ekstensi dipalsukan. Hanya mendukung file .xlsx, .xls, .csv, .sav, dan .dta yang sah.'
   };
 }
 

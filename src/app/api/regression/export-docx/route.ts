@@ -14,6 +14,8 @@ export async function POST(req: NextRequest) {
       exploratoryReason,
       kTried = 1,
       modelsHistory = [],
+      recommendationOutput,
+      comparisonReport,
     } = body;
 
     if (!result || !result.coefficients || !result.modelSummary) {
@@ -33,6 +35,8 @@ export async function POST(req: NextRequest) {
       exploratoryReason,
       kTried,
       modelsHistory,
+      recommendationOutput,
+      comparisonReport,
     });
 
     const filename = `Hasil_Regresi_SPSS_${new Date().toISOString().slice(0, 10)}.docx`;
