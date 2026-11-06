@@ -123,24 +123,29 @@ export const PanelStepper: React.FC<PanelStepperProps> = ({
                 padding: '10px 12px',
                 minHeight: '44px',
                 borderRadius: '10px',
-                border: 'none',
+                border: isActive
+                  ? '1.5px solid var(--primary)'
+                  : isCompleted
+                  ? '1px solid var(--border)'
+                  : '1px solid transparent',
                 background: isActive
                   ? 'var(--primary)'
                   : isCompleted
-                  ? 'var(--primary-glow)'
+                  ? 'var(--surface-sunken)'
                   : 'transparent',
                 color: isActive
-                  ? '#ffffff'
+                  ? 'var(--text-inverse, #050811)'
                   : isCompleted
-                  ? 'var(--primary)'
+                  ? 'var(--text)'
                   : isAccessible
                   ? 'var(--text)'
                   : 'var(--text-muted)',
                 cursor: isAccessible ? 'pointer' : 'not-allowed',
-                opacity: isAccessible ? 1 : 0.45,
+                opacity: isAccessible ? 1 : 0.4,
                 textAlign: 'left',
                 width: '100%',
-                transition: 'all 0.2s ease'
+                boxShadow: isActive ? '0 4px 14px var(--primary-glow)' : 'none',
+                transition: 'all 0.18s ease'
               }}
             >
               <div
@@ -153,13 +158,18 @@ export const PanelStepper: React.FC<PanelStepperProps> = ({
                   borderRadius: '50%',
                   flexShrink: 0,
                   fontSize: '12px',
-                  fontWeight: 700,
+                  fontWeight: 800,
                   background: isActive
-                    ? 'rgba(255, 255, 255, 0.25)'
+                    ? 'rgba(0, 0, 0, 0.22)'
+                    : isCompleted
+                    ? 'var(--primary-glow)'
+                    : 'var(--surface-sunken)',
+                  color: isActive
+                    ? 'var(--text-inverse, #050811)'
                     : isCompleted
                     ? 'var(--primary)'
-                    : 'var(--surface-sunken)',
-                  color: isActive ? '#ffffff' : isCompleted ? '#ffffff' : 'var(--text-muted)'
+                    : 'var(--text-muted)',
+                  border: isCompleted && !isActive ? '1.5px solid var(--primary)' : '1px solid var(--border)'
                 }}
               >
                 {isCompleted && !isActive ? (
@@ -173,10 +183,11 @@ export const PanelStepper: React.FC<PanelStepperProps> = ({
                 <div
                   style={{
                     fontSize: '13px',
-                    fontWeight: isActive ? 700 : 600,
+                    fontWeight: isActive ? 800 : isCompleted ? 700 : 600,
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
-                    textOverflow: 'ellipsis'
+                    textOverflow: 'ellipsis',
+                    color: isActive ? 'var(--text-inverse, #050811)' : 'var(--text)'
                   }}
                 >
                   {step.title}
@@ -184,10 +195,11 @@ export const PanelStepper: React.FC<PanelStepperProps> = ({
                 <div
                   style={{
                     fontSize: '11px',
-                    opacity: isActive ? 0.85 : 0.75,
+                    opacity: isActive ? 0.9 : 0.75,
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
-                    textOverflow: 'ellipsis'
+                    textOverflow: 'ellipsis',
+                    color: isActive ? 'var(--text-inverse, #050811)' : 'var(--text-muted)'
                   }}
                 >
                   {step.shortDesc}

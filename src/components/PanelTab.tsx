@@ -806,26 +806,26 @@ export const PanelTab: React.FC = () => {
       <div
         className="no-print"
         style={{
-          background: 'var(--card, #ffffff)',
-          border: '1px solid var(--border, #d2e2ca)',
+          background: 'var(--card-bg, #ffffff)',
+          border: '1px solid var(--border)',
           borderRadius: 'var(--radius, 16px)',
           padding: '24px',
           marginBottom: '24px',
-          boxShadow: 'var(--shadow, 0 4px 20px rgba(30, 61, 20, 0.08))'
+          boxShadow: 'var(--shadow)'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
           <div>
-            <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--bark, #2b221a)', margin: 0 }}>
+            <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text)', margin: 0 }}>
               Step 1: Input Data &amp; Pemetaan Variabel Awal
             </h3>
-            <p style={{ fontSize: '13px', color: 'var(--stone, #687962)', margin: '4px 0 0 0' }}>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
               Unggah berkas Excel (.xlsx, .xls), CSV, atau tautan Google Sheets, lalu tentukan kolom Entitas, Waktu, Dependen (Y), dan Independen (X).
             </p>
           </div>
 
           {/* Source Tabs */}
-          <div style={{ display: 'flex', gap: '8px', background: 'var(--dew, #eef7eb)', padding: '4px', borderRadius: '10px' }}>
+          <div style={{ display: 'flex', gap: '8px', background: 'var(--surface-sunken)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border)' }}>
             <button
               type="button"
               onClick={() => setSourceType('upload')}
@@ -836,13 +836,14 @@ export const PanelTab: React.FC = () => {
                 padding: '8px 14px',
                 minHeight: '38px',
                 borderRadius: '8px',
-                border: 'none',
-                background: sourceType === 'upload' ? '#ffffff' : 'transparent',
-                color: sourceType === 'upload' ? 'var(--moss, #1e3d14)' : 'var(--stone, #687962)',
+                border: sourceType === 'upload' ? '1px solid var(--border)' : '1px solid transparent',
+                background: sourceType === 'upload' ? 'var(--surface)' : 'transparent',
+                color: sourceType === 'upload' ? 'var(--text)' : 'var(--text-muted)',
                 fontWeight: sourceType === 'upload' ? 700 : 500,
                 fontSize: '13px',
                 cursor: 'pointer',
-                boxShadow: sourceType === 'upload' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none'
+                boxShadow: sourceType === 'upload' ? 'var(--shadow)' : 'none',
+                transition: 'all 0.15s ease'
               }}
             >
               <UploadCloud size={15} />
@@ -859,13 +860,14 @@ export const PanelTab: React.FC = () => {
                 padding: '8px 14px',
                 minHeight: '38px',
                 borderRadius: '8px',
-                border: 'none',
-                background: sourceType === 'link' ? '#ffffff' : 'transparent',
-                color: sourceType === 'link' ? 'var(--moss, #1e3d14)' : 'var(--stone, #687962)',
+                border: sourceType === 'link' ? '1px solid var(--border)' : '1px solid transparent',
+                background: sourceType === 'link' ? 'var(--surface)' : 'transparent',
+                color: sourceType === 'link' ? 'var(--text)' : 'var(--text-muted)',
                 fontWeight: sourceType === 'link' ? 700 : 500,
                 fontSize: '13px',
                 cursor: 'pointer',
-                boxShadow: sourceType === 'link' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none'
+                boxShadow: sourceType === 'link' ? 'var(--shadow)' : 'none',
+                transition: 'all 0.15s ease'
               }}
             >
               <Link2 size={15} />
@@ -882,13 +884,14 @@ export const PanelTab: React.FC = () => {
                 padding: '8px 14px',
                 minHeight: '38px',
                 borderRadius: '8px',
-                border: 'none',
-                background: sourceType === 'preset' ? '#ffffff' : 'transparent',
-                color: sourceType === 'preset' ? 'var(--moss, #1e3d14)' : 'var(--stone, #687962)',
+                border: sourceType === 'preset' ? '1px solid var(--border)' : '1px solid transparent',
+                background: sourceType === 'preset' ? 'var(--surface)' : 'transparent',
+                color: sourceType === 'preset' ? 'var(--text)' : 'var(--text-muted)',
                 fontWeight: sourceType === 'preset' ? 700 : 500,
                 fontSize: '13px',
                 cursor: 'pointer',
-                boxShadow: sourceType === 'preset' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none'
+                boxShadow: sourceType === 'preset' ? 'var(--shadow)' : 'none',
+                transition: 'all 0.15s ease'
               }}
             >
               <Database size={15} />
@@ -933,11 +936,11 @@ export const PanelTab: React.FC = () => {
                 minWidth: '280px',
                 padding: '12px 16px',
                 minHeight: '44px',
-                fontSize: '16px',
+                fontSize: '15px',
                 borderRadius: '8px',
-                border: '1px solid var(--border, #d2e2ca)',
-                background: '#ffffff',
-                color: 'var(--bark, #2b221a)'
+                border: '1.5px solid var(--border)',
+                background: 'var(--surface-sunken)',
+                color: 'var(--text)'
               }}
             />
             <button
@@ -952,8 +955,8 @@ export const PanelTab: React.FC = () => {
                 minHeight: '44px',
                 borderRadius: '8px',
                 border: 'none',
-                background: 'var(--fern, #2e6922)',
-                color: '#ffffff',
+                background: 'var(--primary)',
+                color: 'var(--text-inverse, #050811)',
                 fontWeight: 700,
                 fontSize: '14px',
                 cursor: isLoadingFile || !googleSheetsUrl.trim() ? 'not-allowed' : 'pointer',
@@ -987,18 +990,18 @@ export const PanelTab: React.FC = () => {
         )}
 
         {/* Sheet Selector & Info Bar */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', borderTop: '1px solid var(--border, #d2e2ca)', paddingTop: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--stone, #687962)' }}>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)' }}>
               Berkas Aktif:
             </span>
-            <span style={{ fontWeight: 700, color: 'var(--bark, #2b221a)', fontSize: '13px' }}>
+            <span style={{ fontWeight: 700, color: 'var(--text)', fontSize: '13px' }}>
               {fileName}
             </span>
 
             {sheetsList.length > 1 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '12px' }}>
-                <span style={{ fontSize: '13px', color: 'var(--stone, #687962)' }}>Sheet:</span>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Sheet:</span>
                 <div style={{ display: 'flex', gap: '4px' }}>
                   {sheetsList.map(name => (
                     <button
@@ -1010,12 +1013,13 @@ export const PanelTab: React.FC = () => {
                         minHeight: '32px',
                         borderRadius: '6px',
                         border: '1px solid',
-                        borderColor: activeSheet === name ? 'var(--fern, #2e6922)' : 'var(--border, #d2e2ca)',
-                        background: activeSheet === name ? 'var(--dew, #eef7eb)' : '#ffffff',
-                        color: activeSheet === name ? 'var(--moss, #1e3d14)' : 'var(--stone, #687962)',
+                        borderColor: activeSheet === name ? 'var(--primary)' : 'var(--border)',
+                        background: activeSheet === name ? 'var(--primary-glow)' : 'var(--surface-sunken)',
+                        color: activeSheet === name ? 'var(--primary)' : 'var(--text)',
                         fontWeight: activeSheet === name ? 700 : 500,
                         fontSize: '12px',
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
                       }}
                     >
                       {name}
@@ -1026,7 +1030,7 @@ export const PanelTab: React.FC = () => {
             )}
           </div>
 
-          <div style={{ fontSize: '12px', color: 'var(--stone, #687962)' }}>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
             Total {dataRows.length} baris observasi | {columns.length} kolom
           </div>
         </div>
@@ -1035,25 +1039,18 @@ export const PanelTab: React.FC = () => {
         {previewRows.length > 0 && (
           <div style={{ marginTop: '16px', marginBottom: '20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-              <Table size={14} color="var(--stone, #687962)" />
-              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--stone, #687962)' }}>
+              <Table size={14} color="var(--text-muted)" />
+              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>
                 Pratinjau Data (10 Baris Pertama):
               </span>
             </div>
-            <div
-              style={{
-                overflowX: 'auto',
-                border: '1px solid var(--border, #d2e2ca)',
-                borderRadius: '8px',
-                background: '#ffffff'
-              }}
-            >
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+            <div className="panel-table-wrap">
+              <table className="panel-table">
                 <thead>
-                  <tr style={{ background: 'var(--dew, #eef7eb)', borderBottom: '1px solid var(--border, #d2e2ca)' }}>
-                    <th style={{ padding: '8px 12px', fontWeight: 700, color: 'var(--moss, #1e3d14)' }}>#</th>
+                  <tr>
+                    <th style={{ width: '45px' }}>#</th>
                     {columns.map(c => (
-                      <th key={c} style={{ padding: '8px 12px', fontWeight: 700, color: 'var(--moss, #1e3d14)' }}>
+                      <th key={c}>
                         {c}
                       </th>
                     ))}
@@ -1064,13 +1061,12 @@ export const PanelTab: React.FC = () => {
                     <tr
                       key={i}
                       style={{
-                        borderBottom: i === previewRows.length - 1 ? 'none' : '1px solid #f0f4ee',
-                        background: i % 2 === 0 ? '#ffffff' : '#fafdf8'
+                        background: i % 2 === 0 ? 'var(--surface)' : 'var(--surface-sunken)'
                       }}
                     >
-                      <td style={{ padding: '6px 12px', color: 'var(--stone, #687962)' }}>{i + 1}</td>
+                      <td style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{i + 1}</td>
                       {columns.map(c => (
-                        <td key={c} style={{ padding: '6px 12px', color: 'var(--bark, #2b221a)' }}>
+                        <td key={c} style={{ color: 'var(--text)' }}>
                           {String(r[c] ?? '')}
                         </td>
                       ))}
@@ -1083,26 +1079,17 @@ export const PanelTab: React.FC = () => {
         )}
 
         {/* Variable Mapping Grid */}
-        <div style={{ borderTop: '1px solid var(--border, #d2e2ca)', paddingTop: '20px' }}>
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: '20px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '16px' }}>
             {/* Kolom ID */}
             <div>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--stone, #687962)', marginBottom: '6px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
                 Kolom Entitas (idCol)
               </label>
               <select
+                className="panel-select"
                 value={idCol}
                 onChange={e => setIdCol(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px 14px',
-                  minHeight: '44px',
-                  fontSize: '16px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border, #d2e2ca)',
-                  background: '#ffffff',
-                  color: 'var(--bark, #2b221a)'
-                }}
               >
                 {columns.map(c => (
                   <option key={c} value={c}>{c}</option>
@@ -1112,22 +1099,13 @@ export const PanelTab: React.FC = () => {
 
             {/* Kolom Waktu */}
             <div>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--stone, #687962)', marginBottom: '6px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
                 Kolom Waktu (timeCol)
               </label>
               <select
+                className="panel-select"
                 value={timeCol}
                 onChange={e => setTimeCol(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px 14px',
-                  minHeight: '44px',
-                  fontSize: '16px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border, #d2e2ca)',
-                  background: '#ffffff',
-                  color: 'var(--bark, #2b221a)'
-                }}
               >
                 {columns.map(c => (
                   <option key={c} value={c}>{c}</option>
@@ -1137,22 +1115,13 @@ export const PanelTab: React.FC = () => {
 
             {/* Kolom Y */}
             <div>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--stone, #687962)', marginBottom: '6px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
                 Variabel Dependen (Y)
               </label>
               <select
+                className="panel-select"
                 value={yCol}
                 onChange={e => setYCol(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px 14px',
-                  minHeight: '44px',
-                  fontSize: '16px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border, #d2e2ca)',
-                  background: '#ffffff',
-                  color: 'var(--bark, #2b221a)'
-                }}
               >
                 {columns.map(c => (
                   <option key={c} value={c}>{c}</option>
@@ -1163,7 +1132,7 @@ export const PanelTab: React.FC = () => {
 
           {/* Kolom X (Multi-Select Checkboxes) */}
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--stone, #687962)', marginBottom: '8px' }}>
+            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>
               Variabel Independen (X) — Minimal 1
             </label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
@@ -1177,23 +1146,24 @@ export const PanelTab: React.FC = () => {
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
-                      gap: '6px',
+                      gap: '8px',
                       padding: '8px 14px',
                       minHeight: '44px',
                       borderRadius: '8px',
-                      border: `1px solid ${isChecked ? 'var(--fern, #2e6922)' : 'var(--border, #d2e2ca)'}`,
-                      background: isChecked ? 'var(--dew, #eef7eb)' : '#ffffff',
-                      color: isChecked ? 'var(--moss, #1e3d14)' : 'var(--bark, #2b221a)',
+                      border: `1.5px solid ${isChecked ? 'var(--primary)' : 'var(--border)'}`,
+                      background: isChecked ? 'var(--primary-glow)' : 'var(--surface-sunken)',
+                      color: isChecked ? 'var(--primary)' : 'var(--text)',
                       fontSize: '14px',
                       fontWeight: isChecked ? 700 : 500,
-                      cursor: 'pointer'
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
                     }}
                   >
                     <input
                       type="checkbox"
                       checked={isChecked}
                       readOnly
-                      style={{ pointerEvents: 'none' }}
+                      style={{ pointerEvents: 'none', accentColor: 'var(--primary)' }}
                     />
                     <span>{c}</span>
                   </button>
@@ -1265,8 +1235,8 @@ export const PanelTab: React.FC = () => {
                   minHeight: '40px',
                   borderRadius: '8px',
                   border: 'none',
-                  background: 'var(--fern, #2e6922)',
-                  color: '#ffffff',
+                  background: 'var(--primary)',
+                  color: 'var(--text-inverse, #050811)',
                   fontSize: '13px',
                   fontWeight: 700,
                   cursor: 'pointer'
@@ -1285,20 +1255,20 @@ export const PanelTab: React.FC = () => {
         id="panel-cleaning-card"
         className="no-print"
         style={{
-          background: 'var(--card, #ffffff)',
-          border: '1px solid var(--border, #d2e2ca)',
+          background: 'var(--card-bg, #ffffff)',
+          border: '1px solid var(--border)',
           borderRadius: 'var(--radius, 16px)',
           padding: '24px',
           marginBottom: '24px',
-          boxShadow: 'var(--shadow, 0 4px 20px rgba(30, 61, 20, 0.08))'
+          boxShadow: 'var(--shadow)'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
           <div>
-            <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--bark, #2b221a)', margin: 0 }}>
+            <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text)', margin: 0 }}>
               Step 2: Cleaning Data, Cek Missing Value &amp; Pilihan Penanganan Nilai 0
             </h3>
-            <p style={{ fontSize: '13px', color: 'var(--stone, #687962)', margin: '4px 0 0 0' }}>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
               Sistem menganalisis apa yang harus dibersihkan (duplikasi, missing value, dan sel bernilai <code>0</code>). Pilih apakah nilai <code>0</code> adalah angka <code>0</code> sebenarnya atau berarti tidak ada pengungkapan (No Disclosure).
             </p>
           </div>
@@ -1314,47 +1284,47 @@ export const PanelTab: React.FC = () => {
           }}
         >
           {/* Badge 1: Observasi Bersih */}
-          <div style={{ background: 'var(--sage, #f7faf5)', border: '1px solid var(--border, #d2e2ca)', borderRadius: '10px', padding: '14px' }}>
-            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--stone, #687962)' }}>Kualitas Observasi</div>
-            <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--moss, #1e3d14)', marginTop: '4px' }}>
+          <div style={{ background: 'var(--surface-sunken)', border: '1px solid var(--border)', borderRadius: '10px', padding: '14px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>Kualitas Observasi</div>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text)', marginTop: '4px' }}>
               {cleaningReport.validObs} / {cleaningReport.totalRawObs}
             </div>
-            <div style={{ fontSize: '12px', color: 'var(--stone, #687962)', marginTop: '2px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
               {cleaningReport.droppedObs === 0 ? 'Lengkap (0 baris dibuang)' : `${cleaningReport.droppedObs} baris dibuang (Missing/Dup/0)`}
             </div>
           </div>
 
           {/* Badge 2: Duplikasi */}
-          <div style={{ background: 'var(--sage, #f7faf5)', border: '1px solid var(--border, #d2e2ca)', borderRadius: '10px', padding: '14px' }}>
-            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--stone, #687962)' }}>Duplikasi ({idCol}, {timeCol})</div>
-            <div style={{ fontSize: '18px', fontWeight: 800, color: cleaningReport.duplicateCount === 0 ? 'var(--moss, #1e3d14)' : '#dc2626', marginTop: '4px' }}>
+          <div style={{ background: 'var(--surface-sunken)', border: '1px solid var(--border)', borderRadius: '10px', padding: '14px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>Duplikasi ({idCol}, {timeCol})</div>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: cleaningReport.duplicateCount === 0 ? 'var(--text)' : 'var(--danger)', marginTop: '4px' }}>
               {cleaningReport.duplicateCount} Observasi
             </div>
-            <div style={{ fontSize: '12px', color: 'var(--stone, #687962)', marginTop: '2px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
               {cleaningReport.duplicateCount === 0 ? 'Unik (Invarian I10 Terpenuhi)' : 'Telah dieliminasi via duplicates drop'}
             </div>
           </div>
 
           {/* Badge 3: Deteksi Nilai 0 */}
-          <div style={{ background: cleaningReport.totalZeroCells > 0 ? '#fffbeb' : 'var(--sage, #f7faf5)', border: `1px solid ${cleaningReport.totalZeroCells > 0 ? '#fcd34d' : 'var(--border, #d2e2ca)'}`, borderRadius: '10px', padding: '14px' }}>
-            <div style={{ fontSize: '12px', fontWeight: 600, color: cleaningReport.totalZeroCells > 0 ? '#92400e' : 'var(--stone, #687962)' }}>
+          <div style={{ background: cleaningReport.totalZeroCells > 0 ? 'var(--warn-bg)' : 'var(--surface-sunken)', border: `1px solid ${cleaningReport.totalZeroCells > 0 ? 'var(--warn-border)' : 'var(--border)'}`, borderRadius: '10px', padding: '14px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: cleaningReport.totalZeroCells > 0 ? 'var(--warn)' : 'var(--text-muted)' }}>
               Deteksi Sel Bernilai 0 (Nol)
             </div>
-            <div style={{ fontSize: '18px', fontWeight: 800, color: cleaningReport.totalZeroCells > 0 ? '#b45309' : 'var(--moss, #1e3d14)', marginTop: '4px' }}>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: cleaningReport.totalZeroCells > 0 ? 'var(--warn)' : 'var(--text)', marginTop: '4px' }}>
               {cleaningReport.totalZeroCells} Sel Bernilai 0
             </div>
-            <div style={{ fontSize: '12px', color: cleaningReport.totalZeroCells > 0 ? '#92400e' : 'var(--stone, #687962)', marginTop: '2px' }}>
+            <div style={{ fontSize: '12px', color: cleaningReport.totalZeroCells > 0 ? 'var(--warn)' : 'var(--text-muted)', marginTop: '2px' }}>
               {cleaningReport.totalZeroCells > 0 ? 'Pilih perlakuan nilai 0 di bawah' : 'Tidak ada nilai 0 pada Y dan X'}
             </div>
           </div>
 
           {/* Badge 4: Time Invariant Check (I12) */}
-          <div style={{ background: 'var(--sage, #f7faf5)', border: '1px solid var(--border, #d2e2ca)', borderRadius: '10px', padding: '14px' }}>
-            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--stone, #687962)' }}>Invarian I12 (Time-Invariant)</div>
-            <div style={{ fontSize: '18px', fontWeight: 800, color: cleaningReport.timeInvariantVars.length === 0 ? 'var(--moss, #1e3d14)' : '#d97706', marginTop: '4px' }}>
+          <div style={{ background: 'var(--surface-sunken)', border: '1px solid var(--border)', borderRadius: '10px', padding: '14px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>Invarian I12 (Time-Invariant)</div>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: cleaningReport.timeInvariantVars.length === 0 ? 'var(--text)' : 'var(--warn)', marginTop: '4px' }}>
               {cleaningReport.timeInvariantVars.length === 0 ? 'Aman (Variatif)' : `${cleaningReport.timeInvariantVars.length} Terdeteksi`}
             </div>
-            <div style={{ fontSize: '12px', color: 'var(--stone, #687962)', marginTop: '2px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
               {cleaningReport.timeInvariantVars.length === 0 ? 'Semua X memiliki variasi within' : `Drop di FE: ${cleaningReport.timeInvariantVars.join(', ')}`}
             </div>
           </div>
@@ -1363,18 +1333,18 @@ export const PanelTab: React.FC = () => {
         {/* Pilihan Penanganan Data Bernilai 0 (True Zero vs Tidak Ada Pengungkapan) */}
         <div
           style={{
-            background: '#f8fafc',
-            border: '1px solid var(--border, #d2e2ca)',
+            background: 'var(--surface-sunken)',
+            border: '1px solid var(--border)',
             borderRadius: '12px',
             padding: '16px 20px',
             marginBottom: '16px'
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
-            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--bark, #2b221a)' }}>
+            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text)' }}>
               Pilihan Perlakuan Data Bernilai <code>0</code> (Nol): Apakah Benar <code>0</code> atau Tidak Ada Pengungkapan?
             </div>
-            <span style={{ fontSize: '12px', fontWeight: 600, color: '#0369a1', background: '#e0f2fe', padding: '3px 10px', borderRadius: '999px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--primary)', background: 'var(--primary-glow)', padding: '3px 10px', borderRadius: '999px' }}>
               Terdeteksi {cleaningReport.totalZeroCells} sel bernilai 0
             </span>
           </div>
@@ -1391,9 +1361,9 @@ export const PanelTab: React.FC = () => {
                     fontSize: '12px',
                     padding: '4px 10px',
                     borderRadius: '6px',
-                    background: '#ffffff',
-                    border: '1px solid #cbd5e1',
-                    color: '#334155'
+                    background: 'var(--surface)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text)'
                   }}
                 >
                   <strong>{col}:</strong> Missing = {missCount}, Nilai 0 = <strong>{zeroCount}</strong>
@@ -1435,16 +1405,16 @@ export const PanelTab: React.FC = () => {
                     textAlign: 'left',
                     padding: '12px 14px',
                     borderRadius: '10px',
-                    border: isSelected ? '2px solid var(--fern, #2e6922)' : '1px solid #cbd5e1',
-                    background: isSelected ? 'var(--dew, #eef7eb)' : '#ffffff',
+                    border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border)',
+                    background: isSelected ? 'var(--primary-glow)' : 'var(--surface)',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease'
                   }}
                 >
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: isSelected ? 'var(--moss, #1e3d14)' : '#1e293b', marginBottom: '4px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: isSelected ? 'var(--primary)' : 'var(--text)', marginBottom: '4px' }}>
                     {opt.title}
                   </div>
-                  <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
                     {opt.desc}
                   </div>
                 </button>
@@ -1469,8 +1439,8 @@ export const PanelTab: React.FC = () => {
               minHeight: '42px',
               borderRadius: '8px',
               border: 'none',
-              background: 'var(--fern, #2e6922)',
-              color: '#ffffff',
+              background: 'var(--primary)',
+              color: 'var(--text-inverse, #050811)',
               fontSize: '13px',
               fontWeight: 700,
               cursor: 'pointer'
@@ -1487,20 +1457,20 @@ export const PanelTab: React.FC = () => {
         id="panel-ln-card"
         className="no-print"
         style={{
-          background: 'var(--card, #ffffff)',
-          border: '1px solid var(--border, #d2e2ca)',
+          background: 'var(--card-bg, #ffffff)',
+          border: '1px solid var(--border)',
           borderRadius: 'var(--radius, 16px)',
           padding: '24px',
           marginBottom: '24px',
-          boxShadow: 'var(--shadow, 0 4px 20px rgba(30, 61, 20, 0.08))'
+          boxShadow: 'var(--shadow)'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
           <div>
-            <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--bark, #2b221a)', margin: 0 }}>
+            <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text)', margin: 0 }}>
               Step 3: Analisis Distribusi Data &amp; Transformasi Logaritma Natural (<code>LN</code>)
             </h3>
-            <p style={{ fontSize: '13px', color: 'var(--stone, #687962)', margin: '4px 0 0 0' }}>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
               Setelah data dibersihkan, sistem menganalisis kemencengan (<em>skewness</em>), keruncingan (<em>kurtosis</em>), dan rentang skala tiap variabel untuk mendeteksi variabel mana yang perlu ditransformasi dengan <code>LN</code> sebelum masuk ke <code>xtset</code>.
             </p>
           </div>
@@ -1827,15 +1797,15 @@ export const PanelTab: React.FC = () => {
           style={{
             marginBottom: '20px',
             padding: '14px 20px',
-            background: '#ffffff',
-            border: '1px solid var(--border, #d2e2ca)',
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
             borderRadius: '12px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             flexWrap: 'wrap',
             gap: '12px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+            boxShadow: 'var(--shadow)'
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1844,19 +1814,19 @@ export const PanelTab: React.FC = () => {
                 width: '32px',
                 height: '32px',
                 borderRadius: '8px',
-                background: 'var(--dew, #eef7eb)',
+                background: 'var(--primary-glow)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
               }}
             >
-              <FileText size={18} color="var(--fern, #2e6922)" />
+              <FileText size={18} color="var(--primary)" />
             </div>
             <div>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--bark, #2b221a)' }}>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text)' }}>
                 Hasil Regresi Panel Tersedia: Model Terpilih {fitResult.selection.selectedModel} — Variabel Akhir: Y = <code>{fitResult.activeYCol || yCol}</code>, X = <code>{(fitResult.finalActiveXCols || xCols).join(', ')}</code>
               </div>
-              <div style={{ fontSize: '12px', color: 'var(--stone, #687962)' }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                 {fitResult.declaration.entityCount} Entitas, {fitResult.declaration.tMax} Periode, {fitResult.declaration.totalObs} Observasi ({fitResult.declaration.isBalanced ? 'Balanced' : 'Unbalanced'})
               </div>
             </div>
@@ -1874,13 +1844,13 @@ export const PanelTab: React.FC = () => {
                 minHeight: '40px',
                 borderRadius: '8px',
                 border: 'none',
-                background: 'var(--fern, #2e6922)',
-                color: '#ffffff',
+                background: 'var(--primary)',
+                color: 'var(--text-inverse, #050811)',
                 fontSize: '13px',
                 fontWeight: 700,
                 cursor: isExportingDocx ? 'wait' : 'pointer',
                 opacity: isExportingDocx ? 0.7 : 1,
-                boxShadow: '0 1px 3px rgba(46, 105, 34, 0.2)'
+                boxShadow: 'var(--shadow)'
               }}
               title="Unduh Laporan Lengkap Microsoft Word (.docx)"
             >
@@ -1897,16 +1867,16 @@ export const PanelTab: React.FC = () => {
                 padding: '9px 16px',
                 minHeight: '40px',
                 borderRadius: '8px',
-                border: '1px solid var(--border, #d2e2ca)',
-                background: '#ffffff',
-                color: 'var(--bark, #2b221a)',
+                border: '1px solid var(--border)',
+                background: 'var(--surface-sunken)',
+                color: 'var(--text)',
                 fontSize: '13px',
                 fontWeight: 600,
                 cursor: 'pointer'
               }}
               title="Cetak atau Simpan sebagai PDF"
             >
-              <Printer size={14} color="var(--stone, #687962)" />
+              <Printer size={14} color="var(--text)" />
               <span>Cetak PDF</span>
             </button>
 
@@ -1919,16 +1889,16 @@ export const PanelTab: React.FC = () => {
                 padding: '9px 16px',
                 minHeight: '40px',
                 borderRadius: '8px',
-                border: '1px solid var(--border, #d2e2ca)',
-                background: isCopiedSummary ? '#ecfdf5' : '#ffffff',
-                color: isCopiedSummary ? '#065f46' : 'var(--bark, #2b221a)',
+                border: '1px solid var(--border)',
+                background: isCopiedSummary ? 'var(--primary-glow)' : 'var(--surface-sunken)',
+                color: isCopiedSummary ? 'var(--primary)' : 'var(--text)',
                 fontSize: '13px',
                 fontWeight: 600,
                 cursor: 'pointer'
               }}
               title="Salin Ringkasan Hasil ke Clipboard"
             >
-              {isCopiedSummary ? <Check size={14} color="#059669" /> : <Copy size={14} color="var(--stone, #687962)" />}
+              {isCopiedSummary ? <Check size={14} color="var(--primary)" /> : <Copy size={14} color="var(--text)" />}
               <span>{isCopiedSummary ? 'Tersalin ke Clipboard!' : 'Salin Ringkasan'}</span>
             </button>
           </div>
@@ -2070,24 +2040,24 @@ export const PanelTab: React.FC = () => {
                 gap: '14px',
                 marginBottom: '16px',
                 padding: '18px 20px',
-                background: '#ffffff',
+                background: 'var(--surface)',
                 borderRadius: '12px',
-                border: '1px solid #cbd5e1',
-                boxShadow: '0 2px 10px rgba(0, 0, 0, 0.04)'
+                border: '1px solid var(--border)',
+                boxShadow: 'var(--shadow)'
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text)' }}>
                     Matriks Korelasi Antar-Variabel (Standar Stata)
                   </h3>
-                  <p style={{ margin: '4px 0 0 0', fontSize: '12.5px', color: '#475569' }}>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '12.5px', color: 'var(--text-muted)' }}>
                     Pilih antara <strong>Pearson (Linier Parametrik)</strong> atau <strong>Spearman (Peringkat Non-Parametrik)</strong>. Spearman sangat dianjurkan jika data memiliki skewness tinggi atau nilai ekstrem (outlier).
                   </p>
                 </div>
 
                 {/* Mode Selector Toggle */}
-                <div style={{ display: 'inline-flex', background: '#f1f5f9', padding: '3px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'inline-flex', background: 'var(--surface-sunken)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border)' }}>
                   <button
                     type="button"
                     onClick={() => setStep6CorrMode('pearson')}
@@ -2098,8 +2068,8 @@ export const PanelTab: React.FC = () => {
                       borderRadius: '6px',
                       border: 'none',
                       cursor: 'pointer',
-                      background: step6CorrMode === 'pearson' ? '#0284c7' : 'transparent',
-                      color: step6CorrMode === 'pearson' ? '#ffffff' : '#475569',
+                      background: step6CorrMode === 'pearson' ? 'var(--primary)' : 'transparent',
+                      color: step6CorrMode === 'pearson' ? 'var(--text-inverse, #050811)' : 'var(--text-muted)',
                       transition: 'all 0.15s ease'
                     }}
                   >
@@ -2115,8 +2085,8 @@ export const PanelTab: React.FC = () => {
                       borderRadius: '6px',
                       border: 'none',
                       cursor: 'pointer',
-                      background: step6CorrMode === 'spearman' ? '#8b5cf6' : 'transparent',
-                      color: step6CorrMode === 'spearman' ? '#ffffff' : '#475569',
+                      background: step6CorrMode === 'spearman' ? 'var(--accent)' : 'transparent',
+                      color: step6CorrMode === 'spearman' ? '#ffffff' : 'var(--text-muted)',
                       transition: 'all 0.15s ease'
                     }}
                   >
@@ -2126,10 +2096,10 @@ export const PanelTab: React.FC = () => {
               </div>
 
               {/* Table */}
-              <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+              <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--surface)' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                   <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#334155' }}>
+                    <tr style={{ background: 'var(--surface-sunken)', borderBottom: '1px solid var(--border)', color: 'var(--text)' }}>
                       <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700 }}>Variabel</th>
                       {fitResult.correlationMatrix.variables.map(v => (
                         <th key={v} style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700 }}>
@@ -2145,13 +2115,13 @@ export const PanelTab: React.FC = () => {
                         : fitResult.correlationMatrix!.spearman;
 
                       return (
-                        <tr key={v1} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '8px 12px', fontWeight: 700, color: '#0f172a' }}>
+                        <tr key={v1} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td style={{ padding: '8px 12px', fontWeight: 700, color: 'var(--text)' }}>
                             <code>{v1}</code>
                           </td>
                           {fitResult.correlationMatrix.variables.map((v2, cIdx) => {
                             if (cIdx > rIdx) {
-                              return <td key={v2} style={{ padding: '8px 10px', textAlign: 'center', color: '#cbd5e1' }}>—</td>;
+                              return <td key={v2} style={{ padding: '8px 10px', textAlign: 'center', color: 'var(--text-muted)' }}>—</td>;
                             }
                             const cell = matrixData[v1]?.[v2];
                             const coef = cell?.coef ?? (rIdx === cIdx ? 1 : 0);
@@ -2159,13 +2129,13 @@ export const PanelTab: React.FC = () => {
                             const isSig = cell?.isSignificant && rIdx !== cIdx;
 
                             // Heatmap color
-                            let bg = '#ffffff';
+                            let bg = 'transparent';
                             if (rIdx !== cIdx) {
                               const absC = Math.abs(coef);
                               if (coef > 0) {
-                                bg = `rgba(2, 132, 199, ${Math.min(0.35, absC * 0.35)})`;
+                                bg = `rgba(2, 132, 199, ${Math.min(0.28, absC * 0.28)})`;
                               } else {
-                                bg = `rgba(239, 68, 68, ${Math.min(0.35, absC * 0.35)})`;
+                                bg = `rgba(239, 68, 68, ${Math.min(0.28, absC * 0.28)})`;
                               }
                             }
 
@@ -2177,15 +2147,15 @@ export const PanelTab: React.FC = () => {
                                   textAlign: 'right',
                                   background: bg,
                                   fontWeight: rIdx === cIdx ? 800 : isSig ? 700 : 500,
-                                  color: rIdx === cIdx ? '#64748b' : '#0f172a'
+                                  color: rIdx === cIdx ? 'var(--text-muted)' : 'var(--text)'
                                 }}
                               >
                                 <div>
                                   {coef.toFixed(4)}
-                                  {isSig && <span style={{ color: '#dc2626', fontWeight: 800 }}>*</span>}
+                                  {isSig && <span style={{ color: 'var(--danger)', fontWeight: 800 }}>*</span>}
                                 </div>
                                 {rIdx !== cIdx && (
-                                  <div style={{ fontSize: '10px', color: '#64748b' }}>
+                                  <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
                                     p={pVal < 0.0001 ? '<0.0001' : pVal.toFixed(4)}
                                   </div>
                                 )}
@@ -2290,10 +2260,10 @@ export const PanelTab: React.FC = () => {
               style={{
                 marginBottom: '16px',
                 padding: '18px',
-                background: '#ffffff',
+                background: 'var(--surface)',
                 borderRadius: '12px',
-                border: '1px solid var(--border, #d2e2ca)',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)'
+                border: '1px solid var(--border)',
+                boxShadow: 'var(--shadow)'
               }}
             >
               <h3
@@ -2301,7 +2271,7 @@ export const PanelTab: React.FC = () => {
                   margin: '0 0 12px 0',
                   fontSize: '16px',
                   fontWeight: 800,
-                  color: 'var(--bark, #2b221a)',
+                  color: 'var(--text)',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
@@ -2312,11 +2282,11 @@ export const PanelTab: React.FC = () => {
                 <span
                   style={{
                     fontSize: '11px',
-                    fontWeight: 600,
+                    fontWeight: 700,
                     padding: '2px 8px',
                     borderRadius: '12px',
-                    background: '#e0f2fe',
-                    color: '#0369a1'
+                    background: 'var(--primary-glow)',
+                    color: 'var(--primary)'
                   }}
                 >
                   Disesuaikan dengan Keadaan Data
@@ -2337,24 +2307,24 @@ export const PanelTab: React.FC = () => {
                   style={{
                     padding: '14px',
                     borderRadius: '10px',
-                    background: '#f8fafc',
-                    border: '1px solid #e2e8f0'
+                    background: 'var(--surface-sunken)',
+                    border: '1px solid var(--border)'
                   }}
                 >
-                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginBottom: '4px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text)', marginBottom: '4px' }}>
                     1. Uji Chow (Pendekatan Dummy LSDV)
                   </div>
-                  <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>
                     <code>{fitResult.selection.chow.dummyApproach?.stataCmd || 'reg y x i.id_num'}</code> &amp; <code>testparm i.id_num</code>
                   </div>
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>
                     F({fitResult.selection.chow.df1}, {fitResult.selection.chow.df2}) = {fitResult.selection.chow.stat}
                   </div>
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: fitResult.selection.chow.p < 0.05 ? '#16a34a' : '#475569' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: fitResult.selection.chow.p < 0.05 ? 'var(--success)' : 'var(--text-muted)' }}>
                     Prob &gt; F = {fitResult.selection.chow.p < 0.0001 ? '0.0000' : fitResult.selection.chow.p.toFixed(4)}
                   </div>
                   {fitResult.selection.chow.dummyApproach && (
-                    <div style={{ fontSize: '11px', color: '#475569', marginTop: '4px' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
                       LSDV R² = {fitResult.selection.chow.dummyApproach.r2LSDV} ({fitResult.selection.chow.dummyApproach.nDummies} dummy entitas)
                     </div>
                   )}
@@ -2365,8 +2335,9 @@ export const PanelTab: React.FC = () => {
                         fontWeight: 700,
                         padding: '3px 8px',
                         borderRadius: '4px',
-                        background: fitResult.selection.chow.preferred === 'FEM' ? '#dcfce7' : '#f1f5f9',
-                        color: fitResult.selection.chow.preferred === 'FEM' ? '#166534' : '#475569'
+                        background: fitResult.selection.chow.preferred === 'FEM' ? 'var(--success-bg)' : 'var(--surface)',
+                        color: fitResult.selection.chow.preferred === 'FEM' ? 'var(--success)' : 'var(--text-muted)',
+                        border: '1px solid var(--border)'
                       }}
                     >
                       Keputusan Chow: Pilih {fitResult.selection.chow.preferred}
@@ -2379,24 +2350,24 @@ export const PanelTab: React.FC = () => {
                   style={{
                     padding: '14px',
                     borderRadius: '10px',
-                    background: '#f8fafc',
-                    border: '1px solid #e2e8f0'
+                    background: 'var(--surface-sunken)',
+                    border: '1px solid var(--border)'
                   }}
                 >
-                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginBottom: '4px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text)', marginBottom: '4px' }}>
                     2. Uji Hausman (FEM vs REM)
                   </div>
-                  <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>
                     <code>hausman fe_model re_model, sigmamore</code>
                   </div>
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>
                     chi2({fitResult.selection.hausman.df}) = {fitResult.selection.hausman.chi2}
                   </div>
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: fitResult.selection.hausman.p < 0.05 ? '#16a34a' : '#475569' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: fitResult.selection.hausman.p < 0.05 ? 'var(--success)' : 'var(--text-muted)' }}>
                     Prob &gt; chi2 = {fitResult.selection.hausman.p.toFixed(4)}
                   </div>
                   {fitResult.selection.hausman.dataConditionNote && (
-                    <div style={{ fontSize: '11px', color: '#475569', marginTop: '4px' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
                       {fitResult.selection.hausman.dataConditionNote}
                     </div>
                   )}
@@ -2407,8 +2378,9 @@ export const PanelTab: React.FC = () => {
                         fontWeight: 700,
                         padding: '3px 8px',
                         borderRadius: '4px',
-                        background: fitResult.selection.hausman.preferred === 'REM' ? '#dcfce7' : '#fef3c7',
-                        color: fitResult.selection.hausman.preferred === 'REM' ? '#166534' : '#92400e'
+                        background: fitResult.selection.hausman.preferred === 'REM' ? 'var(--success-bg)' : 'var(--warn-bg)',
+                        color: fitResult.selection.hausman.preferred === 'REM' ? 'var(--success)' : 'var(--warn)',
+                        border: '1px solid var(--border)'
                       }}
                     >
                       Keputusan Hausman: Pilih {fitResult.selection.hausman.preferred}
@@ -2420,8 +2392,9 @@ export const PanelTab: React.FC = () => {
                           fontWeight: 600,
                           padding: '2px 6px',
                           borderRadius: '4px',
-                          background: '#fee2e2',
-                          color: '#b91c1c'
+                          background: 'var(--danger-bg)',
+                          color: 'var(--danger)',
+                          border: '1px solid var(--danger-border)'
                         }}
                       >
                         Non-PSD (Mundlak CRE Aktif)
@@ -2435,23 +2408,23 @@ export const PanelTab: React.FC = () => {
                   style={{
                     padding: '14px',
                     borderRadius: '10px',
-                    background: '#f8fafc',
-                    border: '1px solid #e2e8f0'
+                    background: 'var(--surface-sunken)',
+                    border: '1px solid var(--border)'
                   }}
                 >
-                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginBottom: '4px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text)', marginBottom: '4px' }}>
                     3. Uji Breusch-Pagan LM (xttest0)
                   </div>
-                  <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>
                     CEM (Pooled OLS) vs REM (Random Effects)
                   </div>
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>
                     chibar2({fitResult.selection.breuschPaganLM.df}) = {fitResult.selection.breuschPaganLM.chibar2}
                   </div>
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: fitResult.selection.breuschPaganLM.p < 0.05 ? '#16a34a' : '#475569' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: fitResult.selection.breuschPaganLM.p < 0.05 ? 'var(--success)' : 'var(--text-muted)' }}>
                     Prob &gt; chibar2 = {fitResult.selection.breuschPaganLM.p < 0.0001 ? '0.0000' : fitResult.selection.breuschPaganLM.p.toFixed(4)}
                   </div>
-                  <div style={{ fontSize: '11px', color: '#475569', marginTop: '4px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
                     {fitResult.selection.chow.preferred === 'CEM' || fitResult.selection.hausman.preferred === 'REM'
                       ? 'Uji LM menjadi penentu akhir antara CEM vs REM.'
                       : 'Konfirmasi pelengkap karena Chow & Hausman telah memilih FEM.'}
@@ -2463,8 +2436,9 @@ export const PanelTab: React.FC = () => {
                         fontWeight: 700,
                         padding: '3px 8px',
                         borderRadius: '4px',
-                        background: fitResult.selection.breuschPaganLM.preferred === 'REM' ? '#dcfce7' : '#f1f5f9',
-                        color: fitResult.selection.breuschPaganLM.preferred === 'REM' ? '#166534' : '#475569'
+                        background: fitResult.selection.breuschPaganLM.preferred === 'REM' ? 'var(--success-bg)' : 'var(--surface)',
+                        color: fitResult.selection.breuschPaganLM.preferred === 'REM' ? 'var(--success)' : 'var(--text-muted)',
+                        border: '1px solid var(--border)'
                       }}
                     >
                       Keputusan LM: Pilih {fitResult.selection.breuschPaganLM.preferred}
@@ -2502,10 +2476,10 @@ export const PanelTab: React.FC = () => {
               style={{
                 marginBottom: '16px',
                 padding: '14px 18px',
-                background: '#ffffff',
+                background: 'var(--surface)',
                 borderRadius: '10px',
-                border: '1px solid var(--border, #d2e2ca)',
-                boxShadow: '0 2px 6px rgba(0, 0, 0, 0.03)',
+                border: '1px solid var(--border)',
+                boxShadow: 'var(--shadow)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
@@ -2514,25 +2488,25 @@ export const PanelTab: React.FC = () => {
               }}
             >
               <div>
-                <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                   Spesifikasi Model Terpilih (Menggunakan Variabel Terakhir):
                 </div>
-                <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--bark, #2b221a)', marginTop: '2px' }}>
+                <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text)', marginTop: '2px' }}>
                   Model {fitResult.selection.selectedModel} — Y: <code>{fitResult.activeYCol || yCol}</code> | X: <code>{(fitResult.finalActiveXCols || xCols).join(', ')}</code>
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                <div style={{ textAlign: 'center', padding: '6px 12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '11px', color: '#64748b' }}>R² within</div>
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>{fitResult.selectedModel.r2.within.toFixed(4)}</div>
+                <div style={{ textAlign: 'center', padding: '6px 12px', background: 'var(--surface-sunken)', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>R² within</div>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>{fitResult.selectedModel.r2.within.toFixed(4)}</div>
                 </div>
-                <div style={{ textAlign: 'center', padding: '6px 12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '11px', color: '#64748b' }}>R² between</div>
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>{fitResult.selectedModel.r2.between.toFixed(4)}</div>
+                <div style={{ textAlign: 'center', padding: '6px 12px', background: 'var(--surface-sunken)', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>R² between</div>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>{fitResult.selectedModel.r2.between.toFixed(4)}</div>
                 </div>
-                <div style={{ textAlign: 'center', padding: '6px 12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '11px', color: '#64748b' }}>R² overall</div>
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>{fitResult.selectedModel.r2.overall.toFixed(4)}</div>
+                <div style={{ textAlign: 'center', padding: '6px 12px', background: 'var(--surface-sunken)', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>R² overall</div>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>{fitResult.selectedModel.r2.overall.toFixed(4)}</div>
                 </div>
               </div>
             </div>
@@ -2545,18 +2519,18 @@ export const PanelTab: React.FC = () => {
               <div
                 style={{
                   padding: '18px',
-                  background: '#ffffff',
+                  background: 'var(--surface)',
                   borderRadius: '12px',
-                  border: '1px solid var(--border, #d2e2ca)',
-                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)'
+                  border: '1px solid var(--border)',
+                  boxShadow: 'var(--shadow)'
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
                   <div>
-                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: 'var(--bark, #2b221a)' }}>
+                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: 'var(--text)' }}>
                       1. Uji Multikolinearitas &amp; Transformasi Orthogonal (<code>orthog</code>)
                     </h3>
-                    <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#475569' }}>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
                       Karena model terpilih adalah <strong>{fitResult.selection.selectedModel}</strong>, sistem otomatis menggunakan{' '}
                       <strong>
                         {fitResult.assumptions.vif.approach === 'uncentered'
@@ -2572,8 +2546,8 @@ export const PanelTab: React.FC = () => {
                       fontWeight: 700,
                       padding: '4px 10px',
                       borderRadius: '999px',
-                      background: '#e0f2fe',
-                      color: '#0369a1'
+                      background: 'var(--primary-glow)',
+                      color: 'var(--primary)'
                     }}
                   >
                     Perintah Stata: {fitResult.assumptions.vif.stataCmd || 'vif, uncentered'}
@@ -2581,10 +2555,10 @@ export const PanelTab: React.FC = () => {
                 </div>
 
                 {/* Tabel VIF Awal & Pilihan orthog */}
-                <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '12px' }}>
+                <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: '8px', marginBottom: '12px', background: 'var(--surface)' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
                     <thead>
-                      <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                      <tr style={{ background: 'var(--surface-sunken)', borderBottom: '1px solid var(--border)', color: 'var(--text)' }}>
                         <th style={{ padding: '8px 12px', fontWeight: 700 }}>Transformasi <code>orthog</code></th>
                         <th style={{ padding: '8px 12px', fontWeight: 700 }}>Variabel Awal</th>
                         <th style={{ padding: '8px 12px', fontWeight: 700 }}>VIF Awal ({fitResult.assumptions.vif.approach})</th>
@@ -2601,28 +2575,29 @@ export const PanelTab: React.FC = () => {
                         const postVifItem = orthReport?.postOrthogVif.variables[finalName];
                         const isOrthogChecked = Boolean(orthName);
                         return (
-                          <tr key={varName} style={{ borderBottom: '1px solid #f1f5f9', background: isOrthogChecked ? '#f0fdf4' : '#ffffff' }}>
+                          <tr key={varName} style={{ borderBottom: '1px solid var(--border)', background: isOrthogChecked ? 'var(--primary-glow)' : 'transparent' }}>
                             <td style={{ padding: '8px 12px' }}>
                               <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
                                 <input
                                   type="checkbox"
                                   checked={isOrthogChecked}
                                   onChange={() => handleToggleOrthogVar(varName)}
+                                  style={{ accentColor: 'var(--primary)' }}
                                 />
-                                <span style={{ fontWeight: 600, color: isOrthogChecked ? '#166534' : '#475569' }}>
+                                <span style={{ fontWeight: 600, color: isOrthogChecked ? 'var(--primary)' : 'var(--text-muted)' }}>
                                   {isOrthogChecked ? 'Di-orthog' : 'Asli'}
                                 </span>
                               </label>
                             </td>
-                            <td style={{ padding: '8px 12px', fontWeight: 700 }}>{varName}</td>
-                            <td style={{ padding: '8px 12px', fontWeight: 700, color: v.vif > 10 ? '#dc2626' : '#1e293b' }}>
+                            <td style={{ padding: '8px 12px', fontWeight: 700, color: 'var(--text)' }}>{varName}</td>
+                            <td style={{ padding: '8px 12px', fontWeight: 700, color: v.vif > 10 ? 'var(--danger)' : 'var(--text)' }}>
                               {v.vif.toFixed(2)} {v.vif > 10 ? '(Multiko > 10)' : ''}
                             </td>
-                            <td style={{ padding: '8px 12px' }}>{v.tolerance.toFixed(4)}</td>
-                            <td style={{ padding: '8px 12px', fontWeight: 700, color: isOrthogChecked ? '#166534' : '#334155' }}>
+                            <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>{v.tolerance.toFixed(4)}</td>
+                            <td style={{ padding: '8px 12px', fontWeight: 700, color: isOrthogChecked ? 'var(--primary)' : 'var(--text)' }}>
                               <code>{finalName}</code>
                             </td>
-                            <td style={{ padding: '8px 12px', fontWeight: 700, color: '#166534' }}>
+                            <td style={{ padding: '8px 12px', fontWeight: 700, color: 'var(--success)' }}>
                               {postVifItem ? postVifItem.vif.toFixed(2) : v.vif.toFixed(2)}
                             </td>
                           </tr>
@@ -2634,7 +2609,7 @@ export const PanelTab: React.FC = () => {
 
                 {/* Tombol Cepat Transformasi Orthog Semua X / Reset */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
-                  <div style={{ fontSize: '12px', color: '#065f46', fontWeight: 600 }}>
+                  <div style={{ fontSize: '12px', color: 'var(--success)', fontWeight: 600 }}>
                     {fitResult.assumptions.orthogReport?.triggered
                       ? `Aktif: Variabel [${Object.entries(fitResult.assumptions.orthogReport.orthogMapping).map(([orig, orth]) => `${orig} -> ${orth}`).join(', ')}] telah diortogonalisasi (Gram-Schmidt) dan dipakai pada model ${fitResult.selection.selectedModel}.`
                       : `Mean VIF = ${fitResult.assumptions.vif.meanVif.toFixed(2)}. Tidak ada variabel dengan VIF > 10 (Anda tetap dapat mencentang variabel di atas jika ingin menerapkan orthog secara manual).`}
@@ -2646,9 +2621,9 @@ export const PanelTab: React.FC = () => {
                       style={{
                         padding: '6px 12px',
                         borderRadius: '6px',
-                        border: '1px solid var(--fern, #2e6922)',
-                        background: 'var(--dew, #eef7eb)',
-                        color: 'var(--moss, #1e3d14)',
+                        border: '1px solid var(--primary)',
+                        background: 'var(--primary-glow)',
+                        color: 'var(--primary)',
                         fontSize: '12px',
                         fontWeight: 700,
                         cursor: 'pointer'
@@ -2663,9 +2638,9 @@ export const PanelTab: React.FC = () => {
                         style={{
                           padding: '6px 12px',
                           borderRadius: '6px',
-                          border: '1px solid #cbd5e1',
-                          background: '#ffffff',
-                          color: '#475569',
+                          border: '1px solid var(--border)',
+                          background: 'var(--surface-sunken)',
+                          color: 'var(--text)',
                           fontSize: '12px',
                           fontWeight: 600,
                           cursor: 'pointer'
@@ -2720,24 +2695,24 @@ export const PanelTab: React.FC = () => {
                 <div
                   style={{
                     padding: '18px',
-                    background: '#ffffff',
+                    background: 'var(--surface)',
                     borderRadius: '12px',
-                    border: '1px solid var(--border, #d2e2ca)',
-                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)'
+                    border: '1px solid var(--border)',
+                    boxShadow: 'var(--shadow)'
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '12px' }}>
                     <div>
-                      <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: 'var(--bark, #2b221a)' }}>
+                      <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: 'var(--text)' }}>
                         4. Uji Normalitas Residual: <code>predict e, e</code> vs <code>predict resid, residuals</code>, Histogram, <code>sktest</code>, <code>swilk</code> &amp; <code>ksmirnov</code>
                       </h3>
-                      <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#047857', fontWeight: 600 }}>
+                      <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--success)', fontWeight: 600 }}>
                         {activeNormalityStats.predictExplanation}
                       </p>
                     </div>
 
                     {/* Toggle predict e, e vs predict resid, residuals */}
-                    <div style={{ display: 'flex', gap: '6px', background: '#f1f5f9', padding: '4px', borderRadius: '8px' }}>
+                    <div style={{ display: 'flex', gap: '6px', background: 'var(--surface-sunken)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border)' }}>
                       <button
                         type="button"
                         onClick={() => setActiveResidMode('e')}
@@ -2745,11 +2720,12 @@ export const PanelTab: React.FC = () => {
                           padding: '6px 12px',
                           borderRadius: '6px',
                           border: 'none',
-                          background: activeResidMode === 'e' ? 'var(--fern, #2e6922)' : 'transparent',
-                          color: activeResidMode === 'e' ? '#ffffff' : '#334155',
+                          background: activeResidMode === 'e' ? 'var(--primary)' : 'transparent',
+                          color: activeResidMode === 'e' ? 'var(--text-inverse, #050811)' : 'var(--text-muted)',
                           fontSize: '12px',
                           fontWeight: 700,
-                          cursor: 'pointer'
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
                         }}
                       >
                         predict e, e {fitResult.selection.selectedModel !== 'CEM' ? '(Terbaik untuk FEM/REM)' : ''}
@@ -2761,11 +2737,12 @@ export const PanelTab: React.FC = () => {
                           padding: '6px 12px',
                           borderRadius: '6px',
                           border: 'none',
-                          background: activeResidMode === 'resid' ? 'var(--fern, #2e6922)' : 'transparent',
-                          color: activeResidMode === 'resid' ? '#ffffff' : '#334155',
+                          background: activeResidMode === 'resid' ? 'var(--primary)' : 'transparent',
+                          color: activeResidMode === 'resid' ? 'var(--text-inverse, #050811)' : 'var(--text-muted)',
                           fontSize: '12px',
                           fontWeight: 700,
-                          cursor: 'pointer'
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
                         }}
                       >
                         predict resid, residuals {fitResult.selection.selectedModel === 'CEM' ? '(Terbaik untuk CEM)' : ''}
@@ -2976,20 +2953,20 @@ export const PanelTab: React.FC = () => {
                 <div
                   style={{
                     padding: '20px',
-                    background: '#ffffff',
+                    background: 'var(--surface)',
                     borderRadius: '14px',
-                    border: '1px solid #cbd5e1',
-                    boxShadow: '0 4px 16px rgba(15, 23, 42, 0.06)'
+                    border: '1px solid var(--border)',
+                    boxShadow: 'var(--shadow)'
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <CheckCircle size={20} color="#059669" />
-                      <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
+                      <CheckCircle size={20} color="var(--primary)" />
+                      <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: 'var(--text)' }}>
                         Verifikasi Efek vce(robust): Komparasi Standar Error Sebelum vs Sesudah Robust
                       </h4>
                     </div>
-                    <span style={{ fontSize: '11.5px', fontWeight: 700, padding: '4px 10px', borderRadius: '6px', background: '#e0f2fe', color: '#0369a1' }}>
+                    <span style={{ fontSize: '11.5px', fontWeight: 700, padding: '4px 10px', borderRadius: '6px', background: 'var(--primary-glow)', color: 'var(--primary)' }}>
                       Kaidah Stata xtreg: Koefisien (&beta;) Tetap, Standar Error Dikoreksi
                     </span>
                   </div>
@@ -2998,11 +2975,11 @@ export const PanelTab: React.FC = () => {
                     style={{
                       padding: '12px 14px',
                       borderRadius: '8px',
-                      background: '#f8fafc',
-                      border: '1px solid #e2e8f0',
+                      background: 'var(--surface-sunken)',
+                      border: '1px solid var(--border)',
                       fontSize: '12.5px',
                       lineHeight: 1.55,
-                      color: '#334155',
+                      color: 'var(--text)',
                       marginBottom: '14px'
                     }}
                   >
@@ -3014,7 +2991,7 @@ export const PanelTab: React.FC = () => {
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
                       <thead>
-                        <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1', color: '#334155' }}>
+                        <tr style={{ background: 'var(--surface-sunken)', borderBottom: '2px solid var(--border)', color: 'var(--text)' }}>
                           <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700 }}>Variabel</th>
                           <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>Koefisien (&beta;)</th>
                           <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>SE Standar (Sebelum)</th>
@@ -3037,17 +3014,17 @@ export const PanelTab: React.FC = () => {
                           const isSigRob = pRob < 0.05;
 
                           return (
-                            <tr key={varName} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                              <td style={{ padding: '8px 12px', fontWeight: 700, color: '#0f172a' }}>
+                            <tr key={varName} style={{ borderBottom: '1px solid var(--border)' }}>
+                              <td style={{ padding: '8px 12px', fontWeight: 700, color: 'var(--text)' }}>
                                 <code>{varName}</code>
                               </td>
-                              <td style={{ padding: '8px 12px', textAlign: 'right', color: '#0f172a' }}>
-                                {bVal.toFixed(6)} <span style={{ fontSize: '10.5px', color: '#64748b' }}>(Tetap)</span>
+                              <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--text)' }}>
+                                {bVal.toFixed(6)} <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>(Tetap)</span>
                               </td>
-                              <td style={{ padding: '8px 12px', textAlign: 'right', color: '#64748b' }}>
+                              <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--text-muted)' }}>
                                 {seStd.toFixed(6)}
                               </td>
-                              <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: '#0284c7' }}>
+                              <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--primary)' }}>
                                 {seRob.toFixed(6)}
                               </td>
                               <td style={{ padding: '8px 12px', textAlign: 'center' }}>
@@ -3057,17 +3034,18 @@ export const PanelTab: React.FC = () => {
                                     fontWeight: 700,
                                     padding: '2px 6px',
                                     borderRadius: '4px',
-                                    background: Math.abs(pctChange) < 0.05 ? '#f1f5f9' : pctChange > 0 ? '#fef2f2' : '#f0fdf4',
-                                    color: Math.abs(pctChange) < 0.05 ? '#64748b' : pctChange > 0 ? '#b91c1c' : '#15803d'
+                                    background: Math.abs(pctChange) < 0.05 ? 'var(--surface-sunken)' : pctChange > 0 ? 'var(--danger-bg)' : 'var(--success-bg)',
+                                    color: Math.abs(pctChange) < 0.05 ? 'var(--text-muted)' : pctChange > 0 ? 'var(--danger)' : 'var(--success)',
+                                    border: '1px solid var(--border)'
                                   }}
                                 >
                                   {pctChange > 0 ? `+${pctChange.toFixed(1)}%` : `${pctChange.toFixed(1)}%`}
                                 </span>
                               </td>
-                              <td style={{ padding: '8px 12px', textAlign: 'right', color: '#64748b' }}>
+                              <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--text-muted)' }}>
                                 {pStd < 0.0001 ? '<0.0001' : pStd.toFixed(4)}
                               </td>
-                              <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: isSigRob ? '#166534' : '#475569' }}>
+                              <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: isSigRob ? 'var(--success)' : 'var(--text-muted)' }}>
                                 {pRob < 0.0001 ? '<0.0001' : pRob.toFixed(4)}
                               </td>
                               <td style={{ padding: '8px 12px', textAlign: 'center' }}>
@@ -3077,8 +3055,9 @@ export const PanelTab: React.FC = () => {
                                     fontWeight: 700,
                                     padding: '2px 8px',
                                     borderRadius: '999px',
-                                    background: isSigRob ? '#dcfce7' : '#f1f5f9',
-                                    color: isSigRob ? '#166534' : '#64748b'
+                                    background: isSigRob ? 'var(--success-bg)' : 'var(--surface-sunken)',
+                                    color: isSigRob ? 'var(--success)' : 'var(--text-muted)',
+                                    border: '1px solid var(--border)'
                                   }}
                                 >
                                   {isSigRob ? 'Signifikan' : 'Tidak Signifikan'}
@@ -3097,20 +3076,20 @@ export const PanelTab: React.FC = () => {
                 <div
                   style={{
                     padding: '22px',
-                    background: 'linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%)',
+                    background: 'var(--surface)',
                     borderRadius: '14px',
-                    border: '2px solid #86efac',
-                    boxShadow: '0 4px 16px rgba(30, 61, 20, 0.08)'
+                    border: '1.5px solid var(--border)',
+                    boxShadow: 'var(--shadow)'
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-                    <Lightbulb size={22} color="#166534" />
-                    <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#14532d' }}>
+                    <Lightbulb size={22} color="var(--primary)" />
+                    <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: 'var(--text)' }}>
                       Interpretasi Hasil Akhir Regresi Data Panel (Bahasa Mudah &amp; Siap Masuk Pembahasan)
                     </h3>
                   </div>
 
-                  <p style={{ fontSize: '14px', lineHeight: 1.6, color: '#1e293b', margin: '0 0 12px 0' }}>
+                  <p style={{ fontSize: '14px', lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
                     {fitResult.easyInterpretation.modelSummaryLine}
                   </p>
 
@@ -3118,11 +3097,11 @@ export const PanelTab: React.FC = () => {
                     style={{
                       padding: '12px 16px',
                       borderRadius: '10px',
-                      background: '#ffffff',
-                      border: '1px solid #bbf7d0',
+                      background: 'var(--surface-sunken)',
+                      border: '1px solid var(--border)',
                       fontSize: '13.5px',
                       lineHeight: 1.6,
-                      color: '#166534',
+                      color: 'var(--text)',
                       marginBottom: '16px'
                     }}
                   >
@@ -3130,7 +3109,7 @@ export const PanelTab: React.FC = () => {
                     <div style={{ marginTop: '6px' }}><strong>2. Koefisien Determinasi (R²):</strong> {fitResult.easyInterpretation.rSquaredLine}</div>
                   </div>
 
-                  <div style={{ fontSize: '14px', fontWeight: 800, color: '#14532d', marginBottom: '10px' }}>
+                  <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text)', marginBottom: '10px' }}>
                     3. Penjelasan Pengaruh Tiap Variabel Independen (Uji Parsial Robust):
                   </div>
 
@@ -3141,15 +3120,15 @@ export const PanelTab: React.FC = () => {
                         style={{
                           padding: '12px 16px',
                           borderRadius: '10px',
-                          background: '#ffffff',
-                          border: `1px solid ${eff.isSignificant ? '#86efac' : '#cbd5e1'}`,
+                          background: 'var(--surface-sunken)',
+                          border: `1px solid ${eff.isSignificant ? 'var(--success)' : 'var(--border)'}`,
                           display: 'flex',
                           flexDirection: 'column',
                           gap: '4px'
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-                          <span style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b' }}>
+                          <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text)' }}>
                             Variabel <code>{eff.variable}</code>
                             {eff.originalVariable !== eff.variable ? ` (dari ${eff.originalVariable})` : ''}
                           </span>
@@ -3159,14 +3138,15 @@ export const PanelTab: React.FC = () => {
                               fontWeight: 700,
                               padding: '3px 10px',
                               borderRadius: '999px',
-                              background: eff.isSignificant ? '#dcfce7' : '#f1f5f9',
-                              color: eff.isSignificant ? '#166534' : '#475569'
+                              background: eff.isSignificant ? 'var(--success-bg)' : 'var(--surface)',
+                              color: eff.isSignificant ? 'var(--success)' : 'var(--text-muted)',
+                              border: '1px solid var(--border)'
                             }}
                           >
                             {eff.isSignificant ? `BERPENGARUH SIGNIFIKAN (${eff.direction.toUpperCase()})` : 'TIDAK BERPENGARUH SIGNIFIKAN'} | Coef = {eff.coef.toFixed(4)}, p = {eff.pValue < 0.0001 ? '0.0000' : eff.pValue.toFixed(4)}
                           </span>
                         </div>
-                        <div style={{ fontSize: '13px', color: '#334155', lineHeight: 1.5 }}>
+                        <div style={{ fontSize: '13px', color: 'var(--text)', lineHeight: 1.5 }}>
                           {eff.easyMeaning}
                         </div>
                       </div>
@@ -3177,10 +3157,10 @@ export const PanelTab: React.FC = () => {
                     style={{
                       padding: '12px 16px',
                       borderRadius: '10px',
-                      background: '#ecfdf5',
-                      border: '1px solid #6ee7b7',
+                      background: 'var(--success-bg)',
+                      border: '1px solid var(--success-border)',
                       fontSize: '13px',
-                      color: '#065f46',
+                      color: 'var(--success)',
                       lineHeight: 1.55
                     }}
                   >
@@ -3195,23 +3175,23 @@ export const PanelTab: React.FC = () => {
                 className="no-print"
                 style={{
                   padding: '20px',
-                  background: '#ffffff',
+                  background: 'var(--surface)',
                   borderRadius: '12px',
-                  border: '1px solid var(--border, #d2e2ca)'
+                  border: '1px solid var(--border)'
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '14px' }}>
                   <div>
-                    <div style={{ fontSize: '16px', fontWeight: 700, color: '#166534', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <FileText size={20} color="#166534" />
+                    <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <FileText size={20} color="var(--primary)" />
                       Ekspor &amp; Dokumentasi Laporan Panel Lengkap
                     </div>
-                    <div style={{ fontSize: '13px', color: '#374151', marginTop: '3px' }}>
+                    <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '3px' }}>
                       Unduh berkas Word (.docx) dengan tabel ekonometrika resmi APA/Stata, cetak langsung ke format PDF, atau salin ringkasan eksekutif untuk draft skripsi / tesis.
                     </div>
                   </div>
                   {docxExportError && (
-                    <div style={{ fontSize: '12px', color: '#dc2626', fontWeight: 600 }}>
+                    <div style={{ fontSize: '12px', color: 'var(--danger)', fontWeight: 600 }}>
                       {docxExportError}
                     </div>
                   )}
@@ -3229,13 +3209,13 @@ export const PanelTab: React.FC = () => {
                       minHeight: '44px',
                       borderRadius: '8px',
                       border: 'none',
-                      background: 'var(--fern, #2e6922)',
-                      color: '#ffffff',
+                      background: 'var(--primary)',
+                      color: 'var(--text-inverse, #050811)',
                       fontSize: '14px',
                       fontWeight: 700,
                       cursor: isExportingDocx ? 'wait' : 'pointer',
                       opacity: isExportingDocx ? 0.7 : 1,
-                      boxShadow: '0 2px 6px rgba(46, 105, 34, 0.25)'
+                      boxShadow: 'var(--shadow)'
                     }}
                   >
                     {isExportingDocx ? <RefreshCw size={16} className="animate-spin" /> : <Download size={16} />}
@@ -3251,15 +3231,15 @@ export const PanelTab: React.FC = () => {
                       padding: '10px 20px',
                       minHeight: '44px',
                       borderRadius: '8px',
-                      border: '1px solid var(--border, #d2e2ca)',
-                      background: '#ffffff',
-                      color: 'var(--bark, #2b221a)',
+                      border: '1px solid var(--border)',
+                      background: 'var(--surface-sunken)',
+                      color: 'var(--text)',
                       fontSize: '14px',
                       fontWeight: 600,
                       cursor: 'pointer'
                     }}
                   >
-                    <Printer size={16} color="var(--stone, #687962)" />
+                    <Printer size={16} color="var(--text)" />
                     <span>Cetak / Simpan PDF</span>
                   </button>
 
@@ -3272,16 +3252,16 @@ export const PanelTab: React.FC = () => {
                       padding: '10px 20px',
                       minHeight: '44px',
                       borderRadius: '8px',
-                      border: '1px solid var(--border, #d2e2ca)',
-                      background: isCopiedSummary ? '#ecfdf5' : '#ffffff',
-                      color: isCopiedSummary ? '#065f46' : 'var(--bark, #2b221a)',
+                      border: '1px solid var(--border)',
+                      background: isCopiedSummary ? 'var(--primary-glow)' : 'var(--surface-sunken)',
+                      color: isCopiedSummary ? 'var(--primary)' : 'var(--text)',
                       fontSize: '14px',
                       fontWeight: 600,
                       cursor: 'pointer'
                     }}
                   >
-                    {isCopiedSummary ? <Check size={16} color="#059669" /> : <Copy size={16} color="var(--stone, #687962)" />}
-                    <span>{isCopiedSummary ? 'Ringkasan Tersalin!' : 'Salin Ringkasan ke Clipboard'}</span>
+                    {isCopiedSummary ? <Check size={16} color="var(--primary)" /> : <Copy size={16} color="var(--text)" />}
+                    <span>{isCopiedSummary ? 'Tersalin ke Clipboard!' : 'Salin Ringkasan'}</span>
                   </button>
                 </div>
               </div>
@@ -3311,9 +3291,9 @@ export const PanelTab: React.FC = () => {
                     padding: '10px 18px',
                     minHeight: '44px',
                     borderRadius: '8px',
-                    border: '1px solid var(--border, #d2e2ca)',
-                    background: '#ffffff',
-                    color: 'var(--bark, #2b221a)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface-sunken)',
+                    color: 'var(--text)',
                     fontSize: '14px',
                     fontWeight: 600,
                     cursor: activeStep === 0 ? 'not-allowed' : 'pointer',
@@ -3335,8 +3315,8 @@ export const PanelTab: React.FC = () => {
                     minHeight: '44px',
                     borderRadius: '8px',
                     border: 'none',
-                    background: 'var(--fern, #2e6922)',
-                    color: '#ffffff',
+                    background: 'var(--primary)',
+                    color: 'var(--text-inverse, #050811)',
                     fontSize: '14px',
                     fontWeight: 700,
                     cursor: activeStep === 12 ? 'not-allowed' : 'pointer',
@@ -3351,12 +3331,12 @@ export const PanelTab: React.FC = () => {
           ) : (
             <div
               style={{
-                background: '#ffffff',
-                border: '1px solid var(--border, #d2e2ca)',
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
                 borderRadius: '16px',
                 padding: '40px',
                 textAlign: 'center',
-                color: 'var(--stone, #687962)'
+                color: 'var(--text-muted)'
               }}
             >
               Klik tombol &quot;Lanjut ke xtset &amp; Jalankan Regresi Panel Stata&quot; untuk memulai analisis.
