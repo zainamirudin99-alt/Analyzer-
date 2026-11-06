@@ -2818,6 +2818,128 @@ export const PanelTab: React.FC = () => {
           {/* Step 12 Easy Plain-Language Interpretation & Final vce(robust) Card */}
           {activeStep === 12 && fitResult && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '16px' }}>
+              {/* Card Komparasi Eksplisit: Sebelum vs Sesudah vce(robust) */}
+              {fitResult.selectedModel && fitResult.finalModel && (
+                <div
+                  style={{
+                    padding: '20px',
+                    background: '#ffffff',
+                    borderRadius: '14px',
+                    border: '1px solid #cbd5e1',
+                    boxShadow: '0 4px 16px rgba(15, 23, 42, 0.06)'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <CheckCircle size={20} color="#059669" />
+                      <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
+                        Verifikasi Efek vce(robust): Komparasi Standar Error Sebelum vs Sesudah Robust
+                      </h4>
+                    </div>
+                    <span style={{ fontSize: '11.5px', fontWeight: 700, padding: '4px 10px', borderRadius: '6px', background: '#e0f2fe', color: '#0369a1' }}>
+                      Kaidah Stata xtreg: Koefisien (&beta;) Tetap, Standar Error Dikoreksi
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: '8px',
+                      background: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      fontSize: '12.5px',
+                      lineHeight: 1.55,
+                      color: '#334155',
+                      marginBottom: '14px'
+                    }}
+                  >
+                    <strong>💡 Mengapa angka Koefisien (&beta;) dan R&sup2; terlihat sama persis?</strong><br />
+                    Sesuai metodologi ekonometrika resmi Stata (<code>xtreg, vce(robust)</code>), proses robust <strong>tidak pernah mengubah nilai koefisien (&beta;)</strong> maupun <strong>R&sup2;</strong> karena rumus estimasi titik GLS/OLS tetap sama.
+                    Yang dikoreksi oleh matriks sandwich <em>Arellano / Rogers</em> adalah <strong>Standar Error (SE)</strong>, <strong>nilai z/t</strong>, dan <strong>p-value</strong> agar kesimpulan uji hipotesis kebal terhadap masalah heteroskedastisitas dan autokorelasi.
+                  </div>
+
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
+                      <thead>
+                        <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #cbd5e1', color: '#334155' }}>
+                          <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700 }}>Variabel</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>Koefisien (&beta;)</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>SE Standar (Sebelum)</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>SE Robust (Sesudah)</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 700 }}>Perubahan SE</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>p-value Sebelum</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>p-value Robust</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 700 }}>Status Signifikansi (&alpha;=5%)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(fitResult.finalModel.coefficients).map(([varName, robCoeff]) => {
+                          const stdCoeff = fitResult.selectedModel?.coefficients[varName];
+                          const bVal = robCoeff.b;
+                          const seStd = stdCoeff?.stdError ?? robCoeff.stdError;
+                          const seRob = robCoeff.stdError;
+                          const pStd = stdCoeff?.sig ?? robCoeff.sig;
+                          const pRob = robCoeff.sig;
+                          const pctChange = seStd > 0 ? ((seRob - seStd) / seStd) * 100 : 0;
+                          const isSigRob = pRob < 0.05;
+
+                          return (
+                            <tr key={varName} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '8px 12px', fontWeight: 700, color: '#0f172a' }}>
+                                <code>{varName}</code>
+                              </td>
+                              <td style={{ padding: '8px 12px', textAlign: 'right', color: '#0f172a' }}>
+                                {bVal.toFixed(6)} <span style={{ fontSize: '10.5px', color: '#64748b' }}>(Tetap)</span>
+                              </td>
+                              <td style={{ padding: '8px 12px', textAlign: 'right', color: '#64748b' }}>
+                                {seStd.toFixed(6)}
+                              </td>
+                              <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: '#0284c7' }}>
+                                {seRob.toFixed(6)}
+                              </td>
+                              <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                <span
+                                  style={{
+                                    fontSize: '11px',
+                                    fontWeight: 700,
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    background: Math.abs(pctChange) < 0.05 ? '#f1f5f9' : pctChange > 0 ? '#fef2f2' : '#f0fdf4',
+                                    color: Math.abs(pctChange) < 0.05 ? '#64748b' : pctChange > 0 ? '#b91c1c' : '#15803d'
+                                  }}
+                                >
+                                  {pctChange > 0 ? `+${pctChange.toFixed(1)}%` : `${pctChange.toFixed(1)}%`}
+                                </span>
+                              </td>
+                              <td style={{ padding: '8px 12px', textAlign: 'right', color: '#64748b' }}>
+                                {pStd < 0.0001 ? '<0.0001' : pStd.toFixed(4)}
+                              </td>
+                              <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: isSigRob ? '#166534' : '#475569' }}>
+                                {pRob < 0.0001 ? '<0.0001' : pRob.toFixed(4)}
+                              </td>
+                              <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                <span
+                                  style={{
+                                    fontSize: '11px',
+                                    fontWeight: 700,
+                                    padding: '2px 8px',
+                                    borderRadius: '999px',
+                                    background: isSigRob ? '#dcfce7' : '#f1f5f9',
+                                    color: isSigRob ? '#166534' : '#64748b'
+                                  }}
+                                >
+                                  {isSigRob ? 'Signifikan' : 'Tidak Signifikan'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               {fitResult.easyInterpretation && (
                 <div
                   style={{

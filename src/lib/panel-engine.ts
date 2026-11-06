@@ -2732,6 +2732,45 @@ export function computeClusterRobustSE(
     };
   }
 
+  // Recalculate Wald chi2 (for REM) or F-stat (for FEM/CEM) using robust covariance matrix
+  let robustWaldChi2 = model.waldChi2;
+  let robustWaldP = model.waldPValue;
+  let robustFStat = model.fStat;
+  let robustFPValue = model.fPValue;
+
+  const slopeIndices: number[] = [];
+  for (let j = 0; j < numParams; j++) {
+    if (paramNames[j] !== '_cons') slopeIndices.push(j);
+  }
+  const kSlopes = slopeIndices.length;
+
+  if (kSlopes > 0) {
+    const betaSlopes = slopeIndices.map(j => model.coefficients[paramNames[j]].b);
+    const VSlopeRob: number[][] = [];
+    for (let i = 0; i < kSlopes; i++) {
+      VSlopeRob.push([]);
+      for (let j = 0; j < kSlopes; j++) {
+        VSlopeRob[i].push(V_robust[slopeIndices[i]][slopeIndices[j]]);
+      }
+    }
+    const invVSlopeRob = safeMatInverse(VSlopeRob);
+    let waldVal = 0;
+    for (let i = 0; i < kSlopes; i++) {
+      for (let j = 0; j < kSlopes; j++) {
+        waldVal += betaSlopes[i] * invVSlopeRob[i][j] * betaSlopes[j];
+      }
+    }
+
+    if (modelType === 'REM') {
+      robustWaldChi2 = Number(waldVal.toFixed(2));
+      robustWaldP = chiSquarePValue(waldVal, kSlopes);
+    } else {
+      const fVal = waldVal / kSlopes;
+      robustFStat = Number(fVal.toFixed(2));
+      robustFPValue = fPValue(fVal, kSlopes, dfCluster);
+    }
+  }
+
   // Small cluster warning
   let clusterBiasWarning: { isBiased: boolean; clusterCount: number; message: string } | undefined = undefined;
   if (G < 30) {
@@ -2745,6 +2784,10 @@ export function computeClusterRobustSE(
   return {
     ...model,
     isRobust: true,
+    waldChi2: robustWaldChi2,
+    waldPValue: robustWaldP,
+    fStat: robustFStat,
+    fPValue: robustFPValue,
     coefficients: newCoeffs,
     clusterBiasWarning
   };
