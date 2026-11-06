@@ -32,6 +32,13 @@ import {
   ensurePresetsTranslated
 } from '@/lib/i18n';
 import {
+  parseExcelBuffer,
+  parseDocxBuffer,
+  parseRawText,
+  generateExcelTemplate,
+  generateDocxTemplate
+} from '@/lib/indicator-importer';
+import {
   CheckCircle2,
   Plus,
   Copy,
@@ -42,7 +49,13 @@ import {
   ArrowRight,
   Globe,
   Sliders,
-  RefreshCw
+  RefreshCw,
+  Upload,
+  FileSpreadsheet,
+  FileText,
+  Download,
+  Link2,
+  Info
 } from 'lucide-react';
 
 export const GuideTab: React.FC = () => {
@@ -64,6 +77,20 @@ export const GuideTab: React.FC = () => {
   const [showRubricModal, setShowRubricModal] = useState(false);
   const [rubricModalType, setRubricModalType] = useState<RubricType>('weighted');
   const [rubricModalItems, setRubricModalItems] = useState<RubricItem[]>([]);
+
+  // Template & Panduan Modal State
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+
+  // Import Modal State
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importTab, setImportTab] = useState<'file' | 'link' | 'paste'>('file');
+  const [importLinkUrl, setImportLinkUrl] = useState('');
+  const [importPasteText, setImportPasteText] = useState('');
+  const [importMode, setImportMode] = useState<'append' | 'replace'>('append');
+  const [isProcessingImport, setIsProcessingImport] = useState(false);
+  const [parsedImportItems, setParsedImportItems] = useState<IndicatorItem[]>([]);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importStatusNote, setImportStatusNote] = useState<string | null>(null);
 
   const [showIndicatorModal, setShowIndicatorModal] = useState(false);
   const [isChainedFromPreset, setIsChainedFromPreset] = useState(false);
@@ -141,9 +168,9 @@ export const GuideTab: React.FC = () => {
     setTimeout(() => setNoticeMessage(null), 4000);
   };
 
-  // Langkah 1 -> Langkah 2: Buat Preset Baru lalu langsung lanjut ke Modal Input Indikator
-  const handleCreatePreset = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Buat Preset Baru (Dukungan alur fleksibel: atur rubrik, input indikator, atau simpan langsung)
+  const handleCreatePreset = async (e?: React.FormEvent, nextAction: 'rubric' | 'indicators' | 'none' = 'none') => {
+    if (e) e.preventDefault();
     if (!presetFormName.trim()) return;
 
     const rawName = presetFormName.trim();
@@ -174,32 +201,35 @@ export const GuideTab: React.FC = () => {
     setActivePresetId(newPreset.id);
     setActiveId(newPreset.id);
 
-    // Reset form preset & langsung bertransisi ke modal input indikator (Step 2)
+    // Reset form preset
     setShowPresetModal(false);
     setPresetFormName('');
     setPresetFormDesc('');
     setPresetFormRubricType('weighted');
 
-    setEditingIndicator(null);
-    setIndFormCode('');
-    setIndFormTitle('');
-    setIndFormDesc('');
-    setIndFormGroup(isEn ? 'General' : 'Umum');
-    setIsChainedFromPreset(true);
-    setShowIndicatorModal(true);
+    if (nextAction === 'rubric') {
+      // Langsung buka modal editor rubrik untuk preset baru ini
+      setRubricModalType(newPreset.rubricType || 'weighted');
+      setRubricModalItems((newPreset.rubric || SCORING_RUBRIC).map(item => ({ ...item })));
+      setShowRubricModal(true);
+    } else if (nextAction === 'indicators') {
+      // Lanjut ke modal input manual indikator
+      setEditingIndicator(null);
+      setIndFormCode('');
+      setIndFormTitle('');
+      setIndFormDesc('');
+      setIndFormGroup(isEn ? 'General' : 'Umum');
+      setIsChainedFromPreset(true);
+      setShowIndicatorModal(true);
+    }
 
-    // Terjemahkan nama & deskripsi preset di latar belakang
-    const targetLang = isEn ? 'id' : 'en';
-    translateTextsBatch([rawName, rawDesc], targetLang).then(([trName, trDesc]) => {
-      const latest = getStoredPresets().map(p => {
-        if (p.id !== newPreset.id) return p;
-        return isEn
-          ? { ...p, name_id: trName || rawName, description_id: trDesc || rawDesc }
-          : { ...p, name_en: trName || rawName, description_en: trDesc || rawDesc };
-      });
-      saveStoredPresets(latest);
-      setPresets(latest);
+    setNoticeMessage({
+      type: 'success',
+      text: isEn
+        ? `Preset "${rawName}" created and saved successfully!`
+        : `Preset "${rawName}" berhasil dibuat dan tersimpan aman!`
     });
+    setTimeout(() => setNoticeMessage(null), 4000);
   };
 
   // Duplikasi dari CED 18
@@ -235,9 +265,10 @@ export const GuideTab: React.FC = () => {
     setTimeout(() => setNoticeMessage(null), 4000);
   };
 
-  // Buka Modal Edit Rubrik
-  const openRubricModal = () => {
-    const target = presets.find(p => p.id === selectedPresetId) || presets[0] || createDefaultCEDPreset();
+  // Buka Modal Edit Rubrik (bisa spesifik untuk preset tertentu)
+  const openRubricModal = (customPreset?: IndicatorPreset) => {
+    const target = customPreset || presets.find(p => p.id === selectedPresetId) || selectedPreset;
+    setSelectedId(target.id);
     const currentRubric = getPresetRubric(target);
     const currentType = getPresetRubricType(target);
     setRubricModalType(currentType);
@@ -330,6 +361,157 @@ export const GuideTab: React.FC = () => {
       text: isEn
         ? `Rubric guidelines for "${getPresetName(selectedPreset, lang)}" updated successfully!`
         : `Ketentuan rubrik untuk "${getPresetName(selectedPreset, lang)}" berhasil diperbarui!`
+    });
+    setTimeout(() => setNoticeMessage(null), 4000);
+  };
+
+  // Handler Download Template Excel (.xlsx)
+  const handleDownloadExcelTemplate = () => {
+    try {
+      const buffer = generateExcelTemplate();
+      const blob = new Blob([buffer as any], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Template_Indikator_Analyzer.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      alert(isEn ? 'Failed to download Excel template: ' + e.message : 'Gagal mengunduh template Excel: ' + e.message);
+    }
+  };
+
+  // Handler Download Template Word (.docx)
+  const handleDownloadDocxTemplate = async () => {
+    try {
+      const blob = await generateDocxTemplate();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Template_Indikator_Analyzer.docx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      alert(isEn ? 'Failed to download Word template: ' + e.message : 'Gagal mengunduh template Word: ' + e.message);
+    }
+  };
+
+  // Handler Unggah Berkas Impor (Excel / Word / CSV)
+  const handleImportFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImportError(null);
+    setImportStatusNote(null);
+    setIsProcessingImport(true);
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const fileNameLower = file.name.toLowerCase();
+
+      if (fileNameLower.endsWith('.docx') || fileNameLower.endsWith('.doc')) {
+        const result = await parseDocxBuffer(arrayBuffer);
+        if (result.warning && result.indicators.length === 0) {
+          setImportError(result.warning);
+        } else {
+          setParsedImportItems(result.indicators);
+        }
+      } else {
+        const result = parseExcelBuffer(arrayBuffer);
+        if (result.warning && result.indicators.length === 0) {
+          setImportError(result.warning);
+        } else {
+          setParsedImportItems(result.indicators);
+        }
+      }
+    } catch (err: any) {
+      setImportError(isEn ? 'Failed to process file: ' + err.message : 'Gagal memproses berkas: ' + err.message);
+    } finally {
+      setIsProcessingImport(false);
+      e.target.value = '';
+    }
+  };
+
+  // Handler Impor dari Link (Google Sheets / Google Docs)
+  const handleImportLinkFetch = async () => {
+    if (!importLinkUrl.trim()) return;
+    setImportError(null);
+    setImportStatusNote(null);
+    setIsProcessingImport(true);
+
+    try {
+      const res = await fetch('/api/indicators/import-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: importLinkUrl.trim() })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setImportError(data.error || (isEn ? 'Failed to fetch indicators from link.' : 'Gagal mengambil indikator dari link.'));
+        if (data.statusNote) setImportStatusNote(data.statusNote);
+        return;
+      }
+      setParsedImportItems(data.indicators || []);
+    } catch (err: any) {
+      setImportError(isEn ? 'Network error: ' + err.message : 'Kendala jaringan: ' + err.message);
+    } finally {
+      setIsProcessingImport(false);
+    }
+  };
+
+  // Handler Impor dari Salin-Tempel Teks
+  const handleImportPasteProcess = () => {
+    if (!importPasteText.trim()) return;
+    setImportError(null);
+    const items = parseRawText(importPasteText);
+    if (items.length === 0) {
+      setImportError(isEn ? 'No valid indicators detected. Check the format or template.' : 'Tidak ada indikator valid yang terdeteksi. Periksa format atau gunakan template.');
+      return;
+    }
+    setParsedImportItems(items);
+  };
+
+  // Konfirmasi dan Simpan Hasil Impor ke Preset Terpilih
+  const handleConfirmImport = () => {
+    if (parsedImportItems.length === 0) return;
+
+    const targetPresetId = selectedPreset.id;
+    const updatedPresets = presets.map(p => {
+      if (p.id === targetPresetId) {
+        let combined: IndicatorItem[];
+        if (importMode === 'replace') {
+          combined = [...parsedImportItems];
+        } else {
+          // Append with deduplication by code
+          const existingCodes = new Set(p.indicators.map(i => i.code.toUpperCase()));
+          const newItems = parsedImportItems.filter(i => !existingCodes.has(i.code.toUpperCase()));
+          combined = [...p.indicators, ...newItems];
+        }
+        return {
+          ...p,
+          indicators: combined,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return p;
+    });
+
+    saveStoredPresets(updatedPresets);
+    setPresets(updatedPresets);
+    setShowImportModal(false);
+    setParsedImportItems([]);
+    setImportLinkUrl('');
+    setImportPasteText('');
+
+    setNoticeMessage({
+      type: 'success',
+      text: isEn
+        ? `Successfully imported ${parsedImportItems.length} indicators into "${getPresetName(selectedPreset, lang)}"!`
+        : `Berhasil mengimpor ${parsedImportItems.length} indikator ke preset "${getPresetName(selectedPreset, lang)}"!`
     });
     setTimeout(() => setNoticeMessage(null), 4000);
   };
@@ -602,7 +784,33 @@ export const GuideTab: React.FC = () => {
                     </div>
 
                     {!p.isDefault && (
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', marginTop: '10px' }} onClick={e => e.stopPropagation()}>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          style={{ padding: '3px 8px', fontSize: '11px', color: 'var(--fern)', borderColor: 'var(--border)' }}
+                          onClick={() => openRubricModal(p)}
+                          title={isEn ? 'Edit Scoring Rubric' : 'Edit Rubrik Penilaian'}
+                        >
+                          <Edit2 size={12} /> {isEn ? 'Rubric' : 'Rubrik'}
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          style={{ padding: '3px 8px', fontSize: '11px', color: 'var(--primary)', borderColor: 'var(--border)' }}
+                          onClick={() => {
+                            setSelectedId(p.id);
+                            setParsedImportItems([]);
+                            setImportError(null);
+                            setImportStatusNote(null);
+                            setShowImportModal(true);
+                          }}
+                          title={isEn ? 'Import indicators into this preset' : 'Impor indikator ke preset ini'}
+                        >
+                          <Upload size={12} /> {isEn ? 'Import' : 'Impor'}
+                        </button>
+
                         <button
                           type="button"
                           className="btn btn-outline btn-sm"
@@ -712,7 +920,7 @@ export const GuideTab: React.FC = () => {
                   <button
                     type="button"
                     className="btn btn-outline btn-sm"
-                    onClick={openRubricModal}
+                    onClick={() => openRubricModal()}
                     title={isEn ? 'Customize scoring rubric tiers or switch to binary presence count' : 'Sesuaikan tingkatan nilai rubrik atau ubah ke mode hitung pengungkapan tanpa nilai'}
                   >
                     <Edit2 size={13} />
@@ -727,6 +935,31 @@ export const GuideTab: React.FC = () => {
                 >
                   <Plus size={14} />
                   <span>{isEn ? 'Add Indicator' : 'Tambah Indikator'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => {
+                    setParsedImportItems([]);
+                    setImportError(null);
+                    setImportStatusNote(null);
+                    setShowImportModal(true);
+                  }}
+                  title={isEn ? 'Import indicators from Excel, Word, Google Sheets, or Google Docs' : 'Impor indikator dari Excel, Word, Google Sheets, atau Google Docs'}
+                >
+                  <Upload size={14} />
+                  <span>{isEn ? 'Import' : 'Impor'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => setShowTemplateModal(true)}
+                  title={isEn ? 'Download template files (Excel, Word) and format guides' : 'Unduh template berkas (Excel, Word) dan panduan format Google Sheets/Docs'}
+                >
+                  <FileSpreadsheet size={14} />
+                  <span>{isEn ? 'Template & Guide' : 'Panduan & Template'}</span>
                 </button>
               </div>
             </div>
@@ -751,7 +984,7 @@ export const GuideTab: React.FC = () => {
                   type="button"
                   className="btn btn-outline btn-sm"
                   style={{ fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                  onClick={openRubricModal}
+                  onClick={() => openRubricModal()}
                 >
                   <Edit2 size={13} />
                   <span>{isEn ? 'Edit Rubric Guidelines' : 'Edit Rubrik Penilaian'}</span>
@@ -1023,12 +1256,26 @@ export const GuideTab: React.FC = () => {
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
                 <button type="button" className="btn btn-outline btn-sm" onClick={() => setShowPresetModal(false)}>
                   {isEn ? 'Cancel' : 'Batal'}
                 </button>
-                <button type="submit" className="btn btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  <span>{isEn ? 'Save & Continue to Input Indicators' : 'Simpan & Lanjut Input Indikator'}</span>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  style={{ color: 'var(--fern)', borderColor: 'var(--border)' }}
+                  onClick={() => handleCreatePreset(undefined, 'rubric')}
+                >
+                  <Sliders size={13} />
+                  <span>{isEn ? 'Save & Edit Rubric' : 'Simpan & Atur Rubrik'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  onClick={() => handleCreatePreset(undefined, 'indicators')}
+                >
+                  <span>{isEn ? 'Save & Input Indicators' : 'Simpan & Lanjut Input Indikator'}</span>
                   <ArrowRight size={14} />
                 </button>
               </div>
@@ -1486,6 +1733,476 @@ export const GuideTab: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL POP-UP: PANDUAN FORMAT & TEMPLATE UNDUHAN
+          ======================================================== */}
+      {showTemplateModal && (
+        <div className="modal-backdrop" onClick={() => setShowTemplateModal(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '680px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div className="ct-icon" style={{ fontSize: '20px' }}>📄</div>
+                <div>
+                  <h3 style={{ fontSize: '16.5px', fontWeight: 800, color: 'var(--bark)' }}>
+                    {isEn ? 'Indicator Template & Formatting Guide' : 'Panduan Format & Template Indikator'}
+                  </h3>
+                  <div style={{ fontSize: '12px', color: 'var(--stone)' }}>
+                    {isEn
+                      ? 'Download ready-to-use template files or configure Google Sheets / Docs'
+                      : 'Unduh berkas template siap pakai atau sesuaikan Google Sheets / Docs Anda'}
+                  </div>
+                </div>
+              </div>
+              <button type="button" className="drawer-close-btn" onClick={() => setShowTemplateModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Template Download Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+              {/* Card 1: Excel */}
+              <div
+                style={{
+                  background: 'var(--dew)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '12px',
+                  padding: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between'
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                    <FileSpreadsheet size={20} style={{ color: 'var(--fern)' }} />
+                    <strong style={{ fontSize: '13.5px', color: 'var(--text)' }}>
+                      {isEn ? 'Microsoft Excel Template' : 'Template Microsoft Excel'}
+                    </strong>
+                  </div>
+                  <p style={{ fontSize: '11.5px', color: 'var(--stone)', lineHeight: '1.4', margin: '0 0 12px 0' }}>
+                    {isEn
+                      ? 'Pre-configured .xlsx spreadsheet with column headers, sample rows, and guidelines.'
+                      : 'Format tabel .xlsx siap pakai dengan tajuk kolom, contoh baris indikator, dan lembar panduan.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontWeight: 700 }}
+                  onClick={handleDownloadExcelTemplate}
+                >
+                  <Download size={14} />
+                  <span>{isEn ? 'Download .xlsx Template' : 'Unduh Template .xlsx'}</span>
+                </button>
+              </div>
+
+              {/* Card 2: Word */}
+              <div
+                style={{
+                  background: 'var(--dew)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '12px',
+                  padding: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between'
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                    <FileText size={20} style={{ color: 'var(--fern)' }} />
+                    <strong style={{ fontSize: '13.5px', color: 'var(--text)' }}>
+                      {isEn ? 'Microsoft Word Template' : 'Template Microsoft Word'}
+                    </strong>
+                  </div>
+                  <p style={{ fontSize: '11.5px', color: 'var(--stone)', lineHeight: '1.4', margin: '0 0 12px 0' }}>
+                    {isEn
+                      ? 'Pre-formatted .docx document containing a clean 4-column structured table.'
+                      : 'Format berkas .docx dengan tabel rapi 4 kolom (Kode, Judul, Kategori, Deskripsi).'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontWeight: 700 }}
+                  onClick={handleDownloadDocxTemplate}
+                >
+                  <Download size={14} />
+                  <span>{isEn ? 'Download .docx Template' : 'Unduh Template .docx'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Panduan Struktur Kolom */}
+            <div
+              style={{
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+                borderRadius: '10px',
+                padding: '12px 14px',
+                marginBottom: '16px',
+                fontSize: '12px',
+                lineHeight: '1.5'
+              }}
+            >
+              <div style={{ fontWeight: 700, color: 'var(--bark)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Info size={15} style={{ color: 'var(--fern)' }} />
+                <span>{isEn ? 'Standard Column Structure Requirements:' : 'Ketentuan Struktur Kolom Standar:'}</span>
+              </div>
+              <ul style={{ margin: '0 0 10px 0', paddingLeft: '18px', color: 'var(--text-secondary)' }}>
+                <li>
+                  <strong>{isEn ? 'Column 1 (Code):' : 'Kolom 1 (Kode):'}</strong> {isEn ? 'Unique indicator code (e.g. CC1, GHG2, IND_01). Required.' : 'Kode unik indikator (misal CC1, GHG2, IND_01). Wajib diisi.'}
+                </li>
+                <li>
+                  <strong>{isEn ? 'Column 2 (Title):' : 'Kolom 2 (Judul):'}</strong> {isEn ? 'Full indicator title / parameter name. Required.' : 'Nama lengkap atau judul parameter indikator. Wajib diisi.'}
+                </li>
+                <li>
+                  <strong>{isEn ? 'Column 3 (Group / Category):' : 'Kolom 3 (Kategori):'}</strong> {isEn ? 'Category or group name (e.g. Environmental, Social). Optional (default "General").' : 'Kelompok pengungkapan (misal Lingkungan, Tata Kelola). Opsional (default "Umum").'}
+                </li>
+                <li>
+                  <strong>{isEn ? 'Column 4 (Description):' : 'Kolom 4 (Deskripsi):'}</strong> {isEn ? 'Detailed scoring guidance and evaluation context for Gemini AI. Recommended.' : 'Pedoman penilaian dan konteks yang dicari AI di laporan PDF. Sangat dianjurkan.'}
+                </li>
+              </ul>
+
+              <div style={{ fontSize: '11.5px', color: 'var(--stone)', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
+                🔗 <strong>{isEn ? 'Using Google Sheets / Google Docs Links:' : 'Menggunakan Link Google Sheets / Docs:'}</strong>{' '}
+                {isEn
+                  ? 'Set share access to "Anyone with the link can view". Paste the spreadsheet or document URL in the Import tab.'
+                  : 'Pastikan akses berbagi disetel ke "Siapa saja yang memiliki link dapat melihat". Tempel link spreadsheet atau dokumen pada tab Impor.'}
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => setShowTemplateModal(false)}>
+                {isEn ? 'Close' : 'Tutup'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                onClick={() => {
+                  setShowTemplateModal(false);
+                  setParsedImportItems([]);
+                  setImportError(null);
+                  setImportStatusNote(null);
+                  setShowImportModal(true);
+                }}
+              >
+                <Upload size={14} />
+                <span>{isEn ? 'Open Import Tool' : 'Buka Menu Impor'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL POP-UP: IMPOR INDIKATOR (FILE / LINK / PASTE)
+          ======================================================== */}
+      {showImportModal && (
+        <div className="modal-backdrop" onClick={() => setShowImportModal(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '740px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div className="ct-icon" style={{ fontSize: '20px' }}>📥</div>
+                <div>
+                  <h3 style={{ fontSize: '16.5px', fontWeight: 800, color: 'var(--bark)' }}>
+                    {isEn ? 'Import Indicators' : 'Impor Pilihan Indikator'}
+                  </h3>
+                  <div style={{ fontSize: '12px', color: 'var(--stone)' }}>
+                    {isEn ? 'Target Preset:' : 'Preset Tujuan:'} <strong style={{ color: 'var(--fern)' }}>{getPresetName(selectedPreset, lang)}</strong>
+                  </div>
+                </div>
+              </div>
+              <button type="button" className="drawer-close-btn" onClick={() => setShowImportModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Tab Selector */}
+            <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border)', paddingBottom: '10px', marginBottom: '16px' }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${importTab === 'file' ? 'btn-primary' : 'btn-outline'}`}
+                onClick={() => setImportTab('file')}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Upload size={13} />
+                <span>{isEn ? 'Upload File (Excel / Word / CSV)' : 'Unggah File (Excel / Word / CSV)'}</span>
+              </button>
+
+              <button
+                type="button"
+                className={`btn btn-sm ${importTab === 'link' ? 'btn-primary' : 'btn-outline'}`}
+                onClick={() => setImportTab('link')}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Link2 size={13} />
+                <span>{isEn ? 'Google Sheets / Docs Link' : 'Link Google Sheets / Docs'}</span>
+              </button>
+
+              <button
+                type="button"
+                className={`btn btn-sm ${importTab === 'paste' ? 'btn-primary' : 'btn-outline'}`}
+                onClick={() => setImportTab('paste')}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              >
+                <FileText size={13} />
+                <span>{isEn ? 'Paste Text' : 'Salin & Tempel'}</span>
+              </button>
+            </div>
+
+            {/* Error & Warning Note */}
+            {importError && (
+              <div className="alert alert-danger" style={{ marginBottom: '14px', fontSize: '12px' }}>
+                <span>⚠️</span>
+                <span>{importError}</span>
+              </div>
+            )}
+            {importStatusNote && (
+              <div className="alert alert-info" style={{ marginBottom: '14px', fontSize: '12px' }}>
+                <span>ℹ️</span>
+                <span>{importStatusNote}</span>
+              </div>
+            )}
+
+            {/* Tab 1: File Upload */}
+            {importTab === 'file' && (
+              <div style={{ marginBottom: '16px' }}>
+                <div
+                  style={{
+                    border: '2px dashed var(--border)',
+                    borderRadius: '12px',
+                    padding: '24px 16px',
+                    textAlign: 'center',
+                    background: 'var(--dew)',
+                    transition: 'border-color 0.2s',
+                    position: 'relative'
+                  }}
+                >
+                  <FileSpreadsheet size={36} style={{ color: 'var(--fern)', margin: '0 auto 10px', display: 'block' }} />
+                  <p style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)', marginBottom: '4px' }}>
+                    {isEn ? 'Choose or drop your indicator spreadsheet or document' : 'Pilih atau letakkan berkas spreadsheet / dokumen indikator'}
+                  </p>
+                  <p style={{ fontSize: '11.5px', color: 'var(--stone)', marginBottom: '14px' }}>
+                    {isEn ? 'Supported formats: .xlsx, .xls, .csv, .docx, .doc' : 'Format didukung: .xlsx, .xls, .csv, .docx, .doc'}
+                  </p>
+
+                  <label
+                    className="btn btn-primary btn-sm"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+                  >
+                    <Upload size={14} />
+                    <span>{isProcessingImport ? (isEn ? 'Reading File...' : 'Membaca Berkas...') : (isEn ? 'Select File' : 'Pilih Berkas')}</span>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,.csv,.docx,.doc,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
+                      onChange={handleImportFileUpload}
+                      disabled={isProcessingImport}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+                </div>
+
+                <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11.5px' }}>
+                  <span style={{ color: 'var(--stone)' }}>
+                    {isEn ? 'Need the official format structure?' : 'Belum memiliki format yang sesuai?'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowTemplateModal(true)}
+                    style={{ background: 'none', border: 'none', color: 'var(--fern)', cursor: 'pointer', fontWeight: 700, padding: 0 }}
+                  >
+                    📄 {isEn ? 'Download Templates & Guidelines' : 'Unduh Template & Panduan'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 2: Online Link Fetch */}
+            {importTab === 'link' && (
+              <div style={{ marginBottom: '16px' }}>
+                <label className="form-label" style={{ fontWeight: 700, fontSize: '12.5px', marginBottom: '6px' }}>
+                  {isEn ? 'GOOGLE SHEETS OR GOOGLE DOCS LINK' : 'LINK GOOGLE SHEETS ATAU GOOGLE DOCS'}
+                </label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="url"
+                    className="form-input"
+                    placeholder="https://docs.google.com/spreadsheets/d/... atau https://docs.google.com/document/d/..."
+                    value={importLinkUrl}
+                    onChange={e => setImportLinkUrl(e.target.value)}
+                    style={{ flex: 1, fontSize: '12.5px' }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={handleImportLinkFetch}
+                    disabled={isProcessingImport || !importLinkUrl.trim()}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    {isProcessingImport ? (
+                      <span>⟳ {isEn ? 'Fetching...' : 'Mengambil...'}</span>
+                    ) : (
+                      <>
+                        <Download size={14} />
+                        <span>{isEn ? 'Fetch Data' : 'Ambil Data'}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--stone)', marginTop: '6px', lineHeight: '1.4' }}>
+                  💡 {isEn
+                    ? 'Ensure link sharing permission is set to "Anyone with the link can view". Google Docs must contain a 4-column table.'
+                    : 'Pastikan akses tautan disetel "Siapa saja yang memiliki link dapat melihat". Google Docs harus memuat tabel 4 kolom.'}
+                </div>
+              </div>
+            )}
+
+            {/* Tab 3: Paste Raw Text */}
+            {importTab === 'paste' && (
+              <div style={{ marginBottom: '16px' }}>
+                <label className="form-label" style={{ fontWeight: 700, fontSize: '12.5px', marginBottom: '6px' }}>
+                  {isEn ? 'PASTE TEXT / TAB-SEPARATED ROWS' : 'SALIN & TEMPEL TEKS / BARIS PEMISAH TAB ATAU PIPA'}
+                </label>
+                <textarea
+                  className="form-textarea font-mono"
+                  rows={5}
+                  placeholder={
+                    isEn
+                      ? "CC1\tClimate Change Commitment\tEnvironmental\tCompany disclosure of emissions...\nGHG1\tScope 1 Emissions\tGHG\tDirect emissions from operations..."
+                      : "CC1\tKomitmen Perubahan Iklim\tLingkungan\tPengungkapan komitmen reduksi emisi...\nGHG1\tEmisi Cakupan 1\tGRK\tRincian data emisi langsung..."
+                  }
+                  value={importPasteText}
+                  onChange={e => setImportPasteText(e.target.value)}
+                  style={{ fontSize: '12px', marginBottom: '8px' }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={handleImportPasteProcess}
+                  disabled={!importPasteText.trim()}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Check size={14} />
+                  <span>{isEn ? 'Extract Indicators' : 'Ekstrak Indikator'}</span>
+                </button>
+              </div>
+            )}
+
+            {/* Preview & Import Options (If items are parsed) */}
+            {parsedImportItems.length > 0 && (
+              <div
+                style={{
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '10px',
+                  padding: '12px',
+                  marginBottom: '16px'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '14px' }}>✅</span>
+                    <strong style={{ fontSize: '13px', color: 'var(--fern)' }}>
+                      {parsedImportItems.length} {isEn ? 'Indicators Successfully Detected' : 'Indikator Berhasil Terbaca'}
+                    </strong>
+                  </div>
+
+                  {/* Mode Impor: Append vs Replace */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11.5px' }}>
+                    <span style={{ color: 'var(--stone)', fontWeight: 600 }}>
+                      {isEn ? 'Import Mode:' : 'Mode Penggabungan:'}
+                    </span>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name="importMode"
+                        value="append"
+                        checked={importMode === 'append'}
+                        onChange={() => setImportMode('append')}
+                      />
+                      <span>{isEn ? 'Append' : 'Tambahkan'}</span>
+                    </label>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name="importMode"
+                        value="replace"
+                        checked={importMode === 'replace'}
+                        onChange={() => setImportMode('replace')}
+                      />
+                      <span>{isEn ? 'Replace All' : 'Gantikan Seluruhnya'}</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Table Preview */}
+                <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '8px' }}>
+                  <table className="results-table" style={{ fontSize: '11px', margin: 0 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '40px' }}>#</th>
+                        <th style={{ width: '80px' }}>{isEn ? 'Code' : 'Kode'}</th>
+                        <th style={{ width: '110px' }}>{isEn ? 'Category' : 'Kategori'}</th>
+                        <th>{isEn ? 'Indicator Title' : 'Judul Indikator'}</th>
+                        <th>{isEn ? 'Description' : 'Deskripsi'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {parsedImportItems.map((item, idx) => (
+                        <tr key={idx}>
+                          <td style={{ textAlign: 'center', color: 'var(--stone)' }}>{idx + 1}</td>
+                          <td>
+                            <strong className="font-mono" style={{ color: 'var(--fern)' }}>{item.code}</strong>
+                          </td>
+                          <td style={{ color: 'var(--stone)' }}>{item.group}</td>
+                          <td style={{ fontWeight: 600 }}>{item.title}</td>
+                          <td style={{ color: 'var(--text-muted)', maxWidth: '240px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {item.fullDesc || '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => {
+                  setShowImportModal(false);
+                  setParsedImportItems([]);
+                  setImportError(null);
+                  setImportStatusNote(null);
+                }}
+              >
+                {isEn ? 'Cancel' : 'Batal'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleConfirmImport}
+                disabled={parsedImportItems.length === 0 || isProcessingImport}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Check size={14} />
+                <span>
+                  {isEn
+                    ? `Save & Apply (${parsedImportItems.length} Indicators)`
+                    : `Simpan & Terapkan (${parsedImportItems.length} Indikator)`}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -9,6 +9,13 @@ import {
 } from '../../src/lib/types';
 import { createDefaultCEDPreset } from '../../src/lib/indicators-storage';
 import { buildAnalysisPrompt } from '../../src/lib/gemini';
+import {
+  generateExcelTemplate,
+  parseExcelBuffer,
+  generateDocxTemplate,
+  parseDocxBuffer,
+  parseRawText
+} from '../../src/lib/indicator-importer';
 
 describe('Custom Indicator Rubric & Dynamic Scoring Engine', () => {
   it('preserves Invariant I7: default CED 18 preset has 0-5 weighted rubric (max score 90)', () => {
@@ -109,5 +116,47 @@ describe('Custom Indicator Rubric & Dynamic Scoring Engine', () => {
     expect(prompt).toContain('Skala 0 sampai 100');
     expect(prompt).toContain('100: Sempurna — Data lengkap 100 persen');
     expect(prompt).toContain('nilai skor 0 sampai 100');
+  });
+
+  it('generates Excel template and parses it back accurately', () => {
+    const buffer = generateExcelTemplate();
+    expect(buffer).toBeDefined();
+    expect(buffer.length).toBeGreaterThan(0);
+
+    const parsed = parseExcelBuffer(buffer);
+    expect(parsed.indicators.length).toBeGreaterThanOrEqual(5);
+    expect(parsed.indicators.some((i: any) => i.code === 'CC1')).toBe(true);
+    expect(parsed.indicators.some((i: any) => i.code === 'GHG1')).toBe(true);
+  });
+
+  it('generates Word docx template and parses it back accurately', async () => {
+    const blob = await generateDocxTemplate();
+    expect(blob).toBeDefined();
+    const arrayBuffer = await blob.arrayBuffer();
+
+    const parsed = await parseDocxBuffer(arrayBuffer);
+    expect(parsed.indicators.length).toBeGreaterThanOrEqual(3);
+    expect(parsed.indicators.some((i: any) => i.code === 'CC1')).toBe(true);
+  });
+
+  it('parses raw text in TSV, pipe, and colon formats', () => {
+    const tsvText = "IND1\tKonservasi Hutan\tLingkungan\tMenanam 1000 pohon\nIND2\tEfisiensi Energi\tEnergi\tPengurangan konsumsi listrik";
+    const tsvParsed = parseRawText(tsvText);
+    expect(tsvParsed.length).toBe(2);
+    expect(tsvParsed[0].code).toBe('IND1');
+    expect(tsvParsed[0].title).toBe('Konservasi Hutan');
+    expect(tsvParsed[0].group).toBe('Lingkungan');
+
+    const pipeText = "IND3 | Keselamatan Kerja | Sosial | Program zero accident";
+    const pipeParsed = parseRawText(pipeText);
+    expect(pipeParsed.length).toBe(1);
+    expect(pipeParsed[0].code).toBe('IND3');
+    expect(pipeParsed[0].title).toBe('Keselamatan Kerja');
+
+    const colonText = "IND4: Audit Keuangan: Tata Kelola: Pemeriksaan KAP independen";
+    const colonParsed = parseRawText(colonText);
+    expect(colonParsed.length).toBe(1);
+    expect(colonParsed[0].code).toBe('IND4');
+    expect(colonParsed[0].title).toBe('Audit Keuangan');
   });
 });

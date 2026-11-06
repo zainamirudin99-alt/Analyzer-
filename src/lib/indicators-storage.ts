@@ -93,11 +93,23 @@ export function getStoredPresets(): IndicatorPreset[] {
   }
 }
 
+export function syncPresetsToCloud(): void {
+  if (typeof window === 'undefined') return;
+  const token = localStorage.getItem('analyzer_auth_token');
+  if (!token) return;
+  import('./account-sync').then(({ pushAccountSettings, readLocalSnapshot }) => {
+    pushAccountSettings(readLocalSnapshot()).catch(err => {
+      console.warn('[syncPresetsToCloud] Gagal sync ke Supabase:', err);
+    });
+  });
+}
+
 export function saveStoredPresets(presets: IndicatorPreset[]): void {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem('analyzer_indicator_presets', JSON.stringify(presets));
     window.dispatchEvent(new Event('analyzer_presets_changed'));
+    syncPresetsToCloud();
   } catch (e) {
     console.warn('Gagal menyimpan indicator presets ke localStorage:', e);
   }
@@ -112,6 +124,7 @@ export function setActivePresetId(id: string): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem('analyzer_active_preset_id', id);
   window.dispatchEvent(new Event('analyzer_active_preset_changed'));
+  syncPresetsToCloud();
 }
 
 export function getActivePreset(): IndicatorPreset {

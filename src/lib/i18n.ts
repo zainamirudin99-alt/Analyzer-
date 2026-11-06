@@ -275,10 +275,18 @@ export async function ensurePresetsTranslated(
 
   const translatedList = await translateTextsBatch(textsToTranslate, targetLang);
 
+  // Ambil state terkini dari storage untuk mencegah race condition menimpa indikator/preset yang baru ditambah
+  const { getStoredPresets } = await import('./indicators-storage');
+  const livePresets = getStoredPresets();
+
   tasks.forEach((task, idx) => {
     const result = translatedList[idx];
     if (!result) return;
-    const preset = cloned[task.pIdx];
+    const oldP = cloned[task.pIdx];
+    if (!oldP) return;
+    const preset = livePresets.find(p => p.id === oldP.id);
+    if (!preset) return;
+
     if (task.type === 'preset_name') {
       if (targetLang === 'en') preset.name_en = result;
       else preset.name_id = result;
@@ -286,7 +294,11 @@ export async function ensurePresetsTranslated(
       if (targetLang === 'en') preset.description_en = result;
       else preset.description_id = result;
     } else if (typeof task.iIdx === 'number') {
-      const ind = preset.indicators[task.iIdx];
+      const oldInd = oldP.indicators[task.iIdx];
+      if (!oldInd) return;
+      const ind = preset.indicators.find(i => i.code === oldInd.code || i.id === oldInd.id);
+      if (!ind) return;
+
       if (task.type === 'ind_title') {
         if (targetLang === 'en') ind.title_en = result;
         else ind.title_id = result;
@@ -300,6 +312,6 @@ export async function ensurePresetsTranslated(
     }
   });
 
-  return { updatedPresets: cloned, changed: true };
+  return { updatedPresets: livePresets, changed: true };
 }
 

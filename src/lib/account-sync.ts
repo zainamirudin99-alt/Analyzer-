@@ -53,11 +53,58 @@ export function readLocalSnapshot(): Record<string, string> {
   return snapshot;
 }
 
+function mergePresetsSnapshot(localRaw: string | null, remoteRaw: string): string {
+  try {
+    const remote = JSON.parse(remoteRaw);
+    if (!localRaw) return remoteRaw;
+    const local = JSON.parse(localRaw);
+    if (!Array.isArray(local) || local.length === 0) return remoteRaw;
+    if (!Array.isArray(remote) || remote.length === 0) return localRaw;
+
+    const mergedMap = new Map<string, any>();
+    // 1. Masukkan remote presets terlebih dahulu
+    for (const p of remote) {
+      if (p?.id) mergedMap.set(p.id, p);
+    }
+    // 2. Pertahankan atau timpa dengan local preset jika local memiliki data yang lebih baru / tidak ada di remote
+    for (const p of local) {
+      if (!p?.id) continue;
+      const existing = mergedMap.get(p.id);
+      if (!existing) {
+        // Preset baru di local yang belum tersinkron ke cloud -> WAJIB PERTAHANKAN
+        mergedMap.set(p.id, p);
+      } else {
+        const localTime = new Date(p.updatedAt || p.createdAt || 0).getTime();
+        const remoteTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+        const localIndCount = Array.isArray(p.indicators) ? p.indicators.length : 0;
+        const remoteIndCount = Array.isArray(existing.indicators) ? existing.indicators.length : 0;
+
+        if (localTime >= remoteTime || localIndCount > remoteIndCount || (p.rubric && !existing.rubric)) {
+          mergedMap.set(p.id, { ...existing, ...p });
+        }
+      }
+    }
+    return JSON.stringify(Array.from(mergedMap.values()));
+  } catch {
+    return remoteRaw;
+  }
+}
+
 export function applySnapshotToLocal(settings: Record<string, string>): void {
   if (typeof window === 'undefined') return;
+  let hasLocalNewer = false;
   for (const key of ACCOUNT_SYNC_KEYS) {
     if (typeof settings[key] === 'string') {
-      localStorage.setItem(key, settings[key]);
+      if (key === 'analyzer_indicator_presets') {
+        const localRaw = localStorage.getItem(key);
+        const merged = mergePresetsSnapshot(localRaw, settings[key]);
+        if (localRaw && merged !== settings[key]) {
+          hasLocalNewer = true;
+        }
+        localStorage.setItem(key, merged);
+      } else {
+        localStorage.setItem(key, settings[key]);
+      }
     }
   }
   window.dispatchEvent(new Event('storage'));
@@ -66,6 +113,15 @@ export function applySnapshotToLocal(settings: Record<string, string>): void {
   window.dispatchEvent(new Event('analyzer_skills_changed'));
   window.dispatchEvent(new Event('analyzer-settings-changed'));
   window.dispatchEvent(new Event('analyzer_account_settings_dirty'));
+
+  if (hasLocalNewer) {
+    const token = getStoredAuthToken();
+    if (token) {
+      pushAccountSettings(readLocalSnapshot()).catch(err => {
+        console.warn('[applySnapshotToLocal] Auto-sync merged presets to Supabase:', err);
+      });
+    }
+  }
 }
 
 export function clearLocalSnapshot(): void {
