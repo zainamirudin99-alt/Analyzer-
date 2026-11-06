@@ -164,20 +164,36 @@ export async function POST(req: NextRequest) {
     // Hitung total skor & level secara dinamis atau standar
     let totalScore = 0;
     let disclosureLevel = 'Sangat Rendah';
+    const isQuantitative = rubricType === 'quantitative_count' || rubricType === 'binary_count';
 
     if (parsedIndicators && parsedIndicators.length > 0) {
       const indicatorCount = parsedIndicators.length;
-      const maxScore = indicatorCount * 5;
-      totalScore = Object.values(aiResult.scores as Record<string, number>).reduce(
-        (acc, val) => acc + (typeof val === 'number' && !isNaN(val) ? val : 0),
-        0
-      );
-      const ratio = maxScore > 0 ? totalScore / maxScore : 0;
-      if (ratio >= 0.8) disclosureLevel = 'Sangat Tinggi';
-      else if (ratio >= 0.6) disclosureLevel = 'Tinggi';
-      else if (ratio >= 0.4) disclosureLevel = 'Sedang';
-      else if (ratio >= 0.2) disclosureLevel = 'Rendah';
-      else disclosureLevel = 'Sangat Rendah';
+      if (isQuantitative) {
+        const disclosedCount = Object.values(aiResult.scores as Record<string, any>).filter(val => {
+          if (val === undefined || val === null) return false;
+          const s = String(val).trim().toLowerCase();
+          return s !== '0' && s !== '0 liter' && s !== '0 unit' && s !== '0 ton' && s !== '';
+        }).length;
+        totalScore = disclosedCount;
+        const ratio = indicatorCount > 0 ? totalScore / indicatorCount : 0;
+        if (ratio >= 0.8) disclosureLevel = 'Sangat Tinggi (Kuantitatif Lengkap)';
+        else if (ratio >= 0.6) disclosureLevel = 'Tinggi (Kuantitatif Memadai)';
+        else if (ratio >= 0.4) disclosureLevel = 'Sedang (Kuantitatif Cukup)';
+        else if (ratio >= 0.2) disclosureLevel = 'Rendah (Kuantitatif Sedikit)';
+        else disclosureLevel = 'Sangat Rendah (Kuantitatif Minimal)';
+      } else {
+        const maxScore = parsedRubric && parsedRubric.length > 0 ? indicatorCount * Math.max(...parsedRubric.map(r => Number(r.score) || 0)) : indicatorCount * 5;
+        totalScore = Object.values(aiResult.scores as Record<string, number>).reduce(
+          (acc, val) => acc + (typeof val === 'number' && !isNaN(val) ? val : 0),
+          0
+        );
+        const ratio = maxScore > 0 ? totalScore / maxScore : 0;
+        if (ratio >= 0.8) disclosureLevel = 'Sangat Tinggi';
+        else if (ratio >= 0.6) disclosureLevel = 'Tinggi';
+        else if (ratio >= 0.4) disclosureLevel = 'Sedang';
+        else if (ratio >= 0.2) disclosureLevel = 'Rendah';
+        else disclosureLevel = 'Sangat Rendah';
+      }
     } else {
       totalScore = calculateTotalScore(aiResult.scores);
       disclosureLevel = calculateDisclosureLevel(totalScore);
@@ -194,7 +210,15 @@ export async function POST(req: NextRequest) {
         // Ambil hanya kolom-kolom yang ada di tabel standar ced_results agar tidak error pada kolom kustom
         const standardScoreCols: Record<string, number> = {};
         INDICATOR_KEYS.forEach(k => {
-          standardScoreCols[k] = typeof aiResult.scores[k] === 'number' ? aiResult.scores[k] : 0;
+          const rawVal = aiResult.scores[k];
+          if (typeof rawVal === 'number') {
+            standardScoreCols[k] = rawVal;
+          } else if (typeof rawVal === 'string') {
+            const num = parseFloat(rawVal.replace(/[^0-9.-]/g, ''));
+            standardScoreCols[k] = isNaN(num) ? 0 : num;
+          } else {
+            standardScoreCols[k] = 0;
+          }
         });
 
         const recordData = {

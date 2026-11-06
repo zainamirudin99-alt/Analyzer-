@@ -45,14 +45,14 @@ export interface IndicatorItem {
 }
 
 export interface RubricItem {
-  score: number;       // nilai numerik (misal 0, 1, 2, ..., 100)
+  score: number | string; // nilai numerik (misal 0, 1, 2, ..., 100) atau label nilai riil ('Riil')
   label: string;       // nama tingkatan (ID)
   desc: string;        // rincian kriteria penilaian (ID)
   label_en?: string;   // dwibahasa EN
   desc_en?: string;
 }
 
-export type RubricType = 'weighted' | 'binary_count';
+export type RubricType = 'weighted' | 'binary_count' | 'quantitative_count';
 
 export interface IndicatorPreset {
   id: string;          // 'default_ced_18' atau string unik
@@ -63,8 +63,8 @@ export interface IndicatorPreset {
   description_id?: string;
   description_en?: string;
   isDefault: boolean;  // true untuk bawaan 18 CED
-  rubricType?: RubricType; // 'weighted' (default skala skor) | 'binary_count' (hitung jumlah pengungkapan)
-  rubric?: RubricItem[];   // kriteria rubrik kustom (jika tidak ada, fallback ke SCORING_RUBRIC)
+  rubricType?: RubricType; // 'weighted' (skala skor) | 'quantitative_count' (ekstraksi nilai riil kuantitatif / volume nominal)
+  rubric?: RubricItem[];   // kriteria rubrik kustom (jika tidak ada, fallback ke SCORING_RUBRIC atau DEFAULT_QUANTITATIVE_RUBRIC)
   indicators: IndicatorItem[];
   createdAt?: string;
   updatedAt?: string;
@@ -92,7 +92,7 @@ export interface CEDResultRecord extends Partial<CEDScores> {
   model_used?: string;
   preset_id?: string;
   preset_name?: string;
-  dynamic_scores?: Record<string, number>;
+  dynamic_scores?: Record<string, number | string>;
   created_at?: string;
   updated_at?: string;
 }
@@ -316,10 +316,29 @@ export const DEFAULT_BINARY_RUBRIC: RubricItem[] = [
   }
 ];
 
+export const DEFAULT_QUANTITATIVE_RUBRIC: RubricItem[] = [
+  {
+    score: '0',
+    label: '0: 0 Liter / 0 (Tidak Ada Pengungkapan)',
+    desc: 'Jika tidak ditemukan pengungkapan kuantitatif atau tidak ada data dalam laporan, ditulis 0 liter (atau 0).',
+    label_en: '0: 0 Liters / 0 (No Disclosure)',
+    desc_en: 'If no quantitative disclosure or data found in report, recorded as 0 liters (or 0).'
+  },
+  {
+    score: 'Riil',
+    label: 'Riil: Nilai Nominal Kuantitatif (Angka + Satuan)',
+    desc: 'Tuliskan kuantitas / volume / angka nominal tertera dalam dokumen (misal: 1000000 liter, 25000 ton CO2e, Rp 50 Miliar, dll).',
+    label_en: 'Actual: Quantitative Metric Value (Number + Unit)',
+    desc_en: 'Extracts actual quantitative / metric volume disclosed in report file (e.g. 1000000 liters, 25000 ton CO2e).'
+  }
+];
+
 export function getPresetRubric(preset?: IndicatorPreset | null): RubricItem[] {
   if (!preset) return SCORING_RUBRIC;
   if (preset.rubric && preset.rubric.length > 0) return preset.rubric;
-  if (preset.rubricType === 'binary_count') return DEFAULT_BINARY_RUBRIC;
+  if (preset.rubricType === 'binary_count' || preset.rubricType === 'quantitative_count') {
+    return DEFAULT_QUANTITATIVE_RUBRIC;
+  }
   return SCORING_RUBRIC;
 }
 
@@ -331,7 +350,7 @@ export function getPresetMaxScore(preset?: IndicatorPreset | null): number {
   if (!preset) return 90;
   const indCount = preset.indicators?.length || 0;
   const rubricType = getPresetRubricType(preset);
-  if (rubricType === 'binary_count') {
+  if (rubricType === 'binary_count' || rubricType === 'quantitative_count') {
     return indCount;
   }
   const rubric = getPresetRubric(preset);

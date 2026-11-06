@@ -301,7 +301,7 @@ export async function analyzeWithClaude(options: ClaudeAnalysisOptions): Promise
   }
 
   const parsedRaw = extractAndParseJSON(rawText, customKeys);
-  const scores = normalizeScores(parsedRaw, customKeys);
+  const scores = normalizeScores(parsedRaw, customKeys, options.rubric, options.rubricType);
 
   return {
     success: true,

@@ -8,7 +8,7 @@ import {
   getPresetMaxScore
 } from '../../src/lib/types';
 import { createDefaultCEDPreset } from '../../src/lib/indicators-storage';
-import { buildAnalysisPrompt } from '../../src/lib/gemini';
+import { buildAnalysisPrompt, normalizeScores } from '../../src/lib/gemini';
 import {
   generateExcelTemplate,
   parseExcelBuffer,
@@ -60,42 +60,43 @@ describe('Custom Indicator Rubric & Dynamic Scoring Engine', () => {
     expect(maxScore).toBe(200); // 2 indicators × 100 points
   });
 
-  it('supports binary presence count mode without weighted points', () => {
-    const binaryPreset: IndicatorPreset = {
-      id: 'binary_disclosure_preset',
-      name: 'ESG Checklist Mode',
+  it('supports quantitative extraction mode with real values (e.g. 1000000 liter / 0 liter)', () => {
+    const quantPreset: IndicatorPreset = {
+      id: 'quant_disclosure_preset',
+      name: 'Waste & Water Metric Mode',
       isDefault: false,
-      rubricType: 'binary_count',
+      rubricType: 'quantitative_count',
       indicators: [
-        { id: 'i1', code: 'IND1', title: 'Indikator 1', fullDesc: 'Deskripsi 1', group: 'General' },
-        { id: 'i2', code: 'IND2', title: 'Indikator 2', fullDesc: 'Deskripsi 2', group: 'General' },
-        { id: 'i3', code: 'IND3', title: 'Indikator 3', fullDesc: 'Deskripsi 3', group: 'General' }
+        { id: 'w1', code: 'WATER1', title: 'Limbah Air Diolah', fullDesc: 'Jumlah limbah air yang diolah perusahaan', group: 'Limbah' },
+        { id: 'e1', code: 'EMIS1', title: 'Total Emisi GRK', fullDesc: 'Jumlah emisi karbon', group: 'Emisi' }
       ]
     };
 
-    expect(getPresetRubricType(binaryPreset)).toBe('binary_count');
-    const rubric = getPresetRubric(binaryPreset);
+    expect(getPresetRubricType(quantPreset)).toBe('quantitative_count');
+    const rubric = getPresetRubric(quantPreset);
     expect(rubric.length).toBe(2);
-    expect(rubric[0].score).toBe(0);
-    expect(rubric[1].score).toBe(1);
+    expect(rubric[0].score).toBe('0');
+    expect(rubric[1].score).toBe('Riil');
 
-    const maxScore = getPresetMaxScore(binaryPreset);
-    expect(maxScore).toBe(3); // 3 indicators disclosed max
+    const maxCount = getPresetMaxScore(quantPreset);
+    expect(maxCount).toBe(2); // 2 indicators max
   });
 
-  it('buildAnalysisPrompt generates binary checklist prompt when rubricType is binary_count', () => {
+  it('buildAnalysisPrompt generates quantitative extraction prompt with real values instead of 0/1 binary', () => {
     const prompt = buildAnalysisPrompt({
       companyCode: 'ASII',
       fiscalYear: 'FY 2024',
       indicators: [
-        { id: 'i1', code: 'IND1', title: 'Indikator 1', fullDesc: 'Deskripsi 1', group: 'General' }
+        { id: 'w1', code: 'WATER1', title: 'Limbah Air', fullDesc: 'Volume air diolah', group: 'Limbah' }
       ],
-      rubricType: 'binary_count'
+      rubricType: 'quantitative_count'
     });
 
-    expect(prompt).toContain('Checklist / Binary Count');
-    expect(prompt).toContain('0 (jika tidak diungkapkan) atau 1 (jika diungkapkan)');
-    expect(prompt).toContain('"IND1":0');
+    expect(prompt).toContain('Quantitative Disclosure Extraction');
+    expect(prompt).toContain('JANGAN mengembalikan skor biner 0 atau 1');
+    expect(prompt).toContain('1000000 liter');
+    expect(prompt).toContain('0 liter');
+    expect(prompt).toContain('"WATER1":"1000000 liter"');
   });
 
   it('buildAnalysisPrompt formats dynamic rubric tiers up to 100 for weighted mode', () => {
@@ -158,5 +159,20 @@ describe('Custom Indicator Rubric & Dynamic Scoring Engine', () => {
     expect(colonParsed.length).toBe(1);
     expect(colonParsed[0].code).toBe('IND4');
     expect(colonParsed[0].title).toBe('Audit Keuangan');
+  });
+
+  it('normalizes quantitative scores preserving metric strings like 1000000 liter and 0 liter', () => {
+    const rawAiOutput = {
+      WATER1: '1000000 liter',
+      EMIS1: '25000 ton CO2e',
+      WASTE1: '0 liter',
+      ENERGY1: ''
+    };
+
+    const normalized = normalizeScores(rawAiOutput, ['WATER1', 'EMIS1', 'WASTE1', 'ENERGY1'], undefined, 'quantitative_count');
+    expect(normalized.water1).toBe('1000000 liter');
+    expect(normalized.emis1).toBe('25000 ton CO2e');
+    expect(normalized.waste1).toBe('0 liter');
+    expect(normalized.energy1).toBe('0 liter');
   });
 });

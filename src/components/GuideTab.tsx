@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import {
   SCORING_RUBRIC,
   DEFAULT_BINARY_RUBRIC,
+  DEFAULT_QUANTITATIVE_RUBRIC,
   IndicatorItem,
   IndicatorPreset,
   RubricItem,
@@ -175,8 +176,8 @@ export const GuideTab: React.FC = () => {
 
     const rawName = presetFormName.trim();
     const rawDesc = presetFormDesc.trim() || (isEn ? 'Custom indicator collection.' : 'Kumpulan indikator kustom.');
-    const initialRubric = presetFormRubricType === 'binary_count'
-      ? DEFAULT_BINARY_RUBRIC.map(item => ({ ...item }))
+    const initialRubric = (presetFormRubricType === 'quantitative_count' || presetFormRubricType === 'binary_count')
+      ? DEFAULT_QUANTITATIVE_RUBRIC.map(item => ({ ...item }))
       : SCORING_RUBRIC.map(item => ({ ...item }));
 
     const newPreset: IndicatorPreset = {
@@ -322,8 +323,8 @@ export const GuideTab: React.FC = () => {
   // Beralih Mode Rubrik (Weighted vs Binary Count)
   const handleSwitchRubricMode = (newType: RubricType) => {
     setRubricModalType(newType);
-    if (newType === 'binary_count') {
-      setRubricModalItems(DEFAULT_BINARY_RUBRIC.map(item => ({ ...item })));
+    if (newType === 'quantitative_count' || newType === 'binary_count') {
+      setRubricModalItems(DEFAULT_QUANTITATIVE_RUBRIC.map(item => ({ ...item })));
     } else if (rubricModalItems.length <= 2) {
       setRubricModalItems(SCORING_RUBRIC.map(item => ({ ...item })));
     }
@@ -884,11 +885,11 @@ export const GuideTab: React.FC = () => {
                   {getPresetDescription(selectedPreset, lang)}
                 </p>
                 <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--stone)' }}>
-                  {getPresetRubricType(selectedPreset) === 'binary_count' ? (
+                  {getPresetRubricType(selectedPreset) === 'binary_count' || getPresetRubricType(selectedPreset) === 'quantitative_count' ? (
                     <>
                       {isEn ? 'Evaluation Mode:' : 'Metode Penilaian:'}{' '}
                       <strong style={{ color: 'var(--fern)' }}>
-                        {isEn ? 'Disclosure Presence Count (No Weighted Points)' : 'Hitung Jumlah Pengungkapan (Tanpa Bobot Nilai)'}
+                        {isEn ? 'Quantitative Real Values (e.g. 1000000 liters / 0 liters)' : 'Nilai Riil Kuantitatif (misal 1000000 liter / 0 liter)'}
                       </strong>{' '}
                       • {isEn ? 'Total Indicators:' : 'Total Indikator:'} <strong>{selectedPreset.indicators.length}</strong>
                     </>
@@ -971,8 +972,8 @@ export const GuideTab: React.FC = () => {
               <div className="card-title" style={{ margin: 0 }}>
                 <div className="ct-icon">🎯</div>
                 <span>
-                  {getPresetRubricType(selectedPreset) === 'binary_count'
-                    ? (isEn ? 'Rubric: Disclosure Presence Count (Binary)' : 'Ketentuan Rubrik: Hitung Jumlah Pengungkapan (Tanpa Nilai Bobot)')
+                  {getPresetRubricType(selectedPreset) === 'binary_count' || getPresetRubricType(selectedPreset) === 'quantitative_count'
+                    ? (isEn ? 'Rubric: Quantitative Real Metric Disclosure' : 'Ketentuan Rubrik: Nilai Riil Kuantitatif Pengungkapan')
                     : (isEn
                         ? `Scoring Rubric Guidelines (${getPresetRubric(selectedPreset).length > 0 ? Math.min(...getPresetRubric(selectedPreset).map(r => Number(r.score) || 0)) : 0} – ${getPresetRubric(selectedPreset).length > 0 ? Math.max(...getPresetRubric(selectedPreset).map(r => Number(r.score) || 0)) : 5})`
                         : `Ketentuan Rubrik Penilaian Skor (${getPresetRubric(selectedPreset).length > 0 ? Math.min(...getPresetRubric(selectedPreset).map(r => Number(r.score) || 0)) : 0} – ${getPresetRubric(selectedPreset).length > 0 ? Math.max(...getPresetRubric(selectedPreset).map(r => Number(r.score) || 0)) : 5})`)}
@@ -993,14 +994,14 @@ export const GuideTab: React.FC = () => {
             </div>
 
             <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '14px' }}>
-              {getPresetRubricType(selectedPreset) === 'binary_count' ? (
+              {getPresetRubricType(selectedPreset) === 'binary_count' || getPresetRubricType(selectedPreset) === 'quantitative_count' ? (
                 isEn ? (
                   <>
-                    Indicators are evaluated for <strong>presence or absence</strong> of disclosure in the company's report:
+                    Indicators are evaluated by <strong>extracting actual quantitative metrics</strong> disclosed in the report (e.g. 1000000 liters, 25000 tons). If not disclosed, recorded as <strong>0 liters</strong> (or 0):
                   </>
                 ) : (
                   <>
-                    Setiap indikator dievaluasi berdasarkan <strong>keberadaan pengungkapan</strong> pada laporan perusahaan:
+                    Setiap indikator dievaluasi dengan <strong>mengekstrak nilai riil / volume nominal</strong> yang tertera dalam laporan file (misal: 1000000 liter). Jika tidak diungkapkan, bernilai <strong>0 liter</strong> (atau 0):
                   </>
                 )
               ) : (
@@ -1213,12 +1214,12 @@ export const GuideTab: React.FC = () => {
 
                   <button
                     type="button"
-                    onClick={() => setPresetFormRubricType('binary_count')}
+                    onClick={() => setPresetFormRubricType('quantitative_count')}
                     style={{
                       padding: '10px 12px',
                       borderRadius: '10px',
-                      border: `1.5px solid ${presetFormRubricType === 'binary_count' ? 'var(--fern)' : 'var(--border)'}`,
-                      background: presetFormRubricType === 'binary_count' ? 'var(--dew)' : 'var(--surface)',
+                      border: `1.5px solid ${presetFormRubricType === 'quantitative_count' || presetFormRubricType === 'binary_count' ? 'var(--fern)' : 'var(--border)'}`,
+                      background: presetFormRubricType === 'quantitative_count' || presetFormRubricType === 'binary_count' ? 'var(--dew)' : 'var(--surface)',
                       textAlign: 'left',
                       cursor: 'pointer',
                       transition: 'all 0.2s'
@@ -1227,13 +1228,13 @@ export const GuideTab: React.FC = () => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
                       <span style={{ fontSize: '14px' }}>📋</span>
                       <strong style={{ fontSize: '12.5px', color: 'var(--text)' }}>
-                        {isEn ? 'Disclosure Count (Binary)' : 'Hitung Pengungkapan'}
+                        {isEn ? 'Quantitative Disclosure (Real Values)' : 'Hitung Pengungkapan (Nilai Riil)'}
                       </strong>
                     </div>
                     <div style={{ fontSize: '11px', color: 'var(--stone)', lineHeight: '1.3' }}>
                       {isEn
-                        ? 'Count total disclosed indicators without points (0 = none, 1 = disclosed).'
-                        : 'Menghitung jumlah indikator yang diungkapkan tanpa skor nilai (0 = tidak, 1 = ada).'}
+                        ? 'Extracts actual quantitative metric from report (e.g. 1000000 liters). If not disclosed, records 0 liters.'
+                        : 'Mengekstrak nilai riil / volume nominal dari file laporan (misal 1000000 liter). Jika tidak ada pengungkapan, bernilai 0 liter.'}
                     </div>
                   </button>
                 </div>
@@ -1529,12 +1530,12 @@ export const GuideTab: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={() => handleSwitchRubricMode('binary_count')}
+                  onClick={() => handleSwitchRubricMode('quantitative_count')}
                   style={{
                     padding: '12px',
                     borderRadius: '10px',
-                    border: `2px solid ${rubricModalType === 'binary_count' ? 'var(--fern)' : 'var(--border)'}`,
-                    background: rubricModalType === 'binary_count' ? 'var(--dew)' : 'var(--surface)',
+                    border: `2px solid ${rubricModalType === 'quantitative_count' || rubricModalType === 'binary_count' ? 'var(--fern)' : 'var(--border)'}`,
+                    background: rubricModalType === 'quantitative_count' || rubricModalType === 'binary_count' ? 'var(--dew)' : 'var(--surface)',
                     textAlign: 'left',
                     cursor: 'pointer',
                     transition: 'all 0.2s'
@@ -1543,13 +1544,13 @@ export const GuideTab: React.FC = () => {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
                     <span>📋</span>
                     <strong style={{ fontSize: '13px', color: 'var(--text)' }}>
-                      {isEn ? 'Disclosure Count (No Points)' : 'Hitung Jumlah Pengungkapan'}
+                      {isEn ? 'Quantitative Disclosure (Real Values)' : 'Hitung Pengungkapan (Nilai Riil)'}
                     </strong>
                   </div>
                   <div style={{ fontSize: '11px', color: 'var(--stone)', lineHeight: '1.4' }}>
                     {isEn
-                      ? 'Dichotomous presence check (0/1). Results show count of disclosed indicators.'
-                      : 'Hanya mendeteksi ada/tidaknya pengungkapan di file. Tidak ada nilai bobot.'}
+                      ? 'Extracts actual volume / metric from report (e.g. 1000000 liters). If no disclosure, records 0 liters.'
+                      : 'Mengekstrak nilai riil / volume nominal dari file laporan (misal 1000000 liter). Jika tidak ada pengungkapan, bernilai 0 liter.'}
                   </div>
                 </button>
               </div>
@@ -1590,8 +1591,8 @@ export const GuideTab: React.FC = () => {
                 </div>
               </div>
 
-              {/* Banner Info jika Binary Count */}
-              {rubricModalType === 'binary_count' && (
+              {/* Banner Info jika Quantitative / Disclosure Count */}
+              {(rubricModalType === 'quantitative_count' || rubricModalType === 'binary_count') && (
                 <div
                   style={{
                     background: 'var(--dew)',
@@ -1603,10 +1604,10 @@ export const GuideTab: React.FC = () => {
                     color: 'var(--text-secondary)'
                   }}
                 >
-                  💡 <strong>{isEn ? 'Binary / Checklist Mode:' : 'Mode Hitung Pengungkapan (Tanpa Nilai):'}</strong>{' '}
+                  💡 <strong>{isEn ? 'Quantitative Disclosure Mode (Real Values):' : 'Mode Nilai Riil Pengungkapan (Kuantitatif):'}</strong>{' '}
                   {isEn
-                    ? 'Evaluates whether each indicator is disclosed in the report (1) or not disclosed (0). The total score is the number of disclosed indicators (e.g. 15 of 18 indicators).'
-                    : 'Mengevaluasi apakah indikator terungkap di laporan (1) atau tidak (0). Skor akhir adalah jumlah total indikator yang berhasil diungkapkan oleh perusahaan.'}
+                    ? 'AI extracts the exact quantitative number and unit stated in the report file (e.g. 1000000 liters). If the company does not disclose data for this indicator, it records 0 liters.'
+                    : 'AI membaca dokumen dan mengekstrak angka nominal kuantitatif riil beserta satuannya dari laporan file (misal: 1000000 liter). Jika tidak ada pengungkapan, bernilai 0 liter.'}
                 </div>
               )}
 
@@ -1628,8 +1629,7 @@ export const GuideTab: React.FC = () => {
                           {isEn ? 'SCORE VALUE' : 'NILAI SKOR'}
                         </label>
                         <input
-                          type="number"
-                          step="any"
+                          type="text"
                           className="form-input font-mono"
                           style={{
                             padding: '4px 8px',
@@ -1640,7 +1640,7 @@ export const GuideTab: React.FC = () => {
                             color: 'var(--text)'
                           }}
                           value={item.score}
-                          onChange={e => handleRubricItemChange(index, 'score', Number(e.target.value))}
+                          onChange={e => handleRubricItemChange(index, 'score', e.target.value)}
                           required
                         />
                       </div>
@@ -1716,8 +1716,8 @@ export const GuideTab: React.FC = () => {
                   {isEn ? 'Total Preset Calculation:' : 'Kalkulasi Total Preset:'}
                 </span>
                 <strong style={{ color: 'var(--fern)' }}>
-                  {rubricModalType === 'binary_count'
-                    ? `${selectedPreset.indicators.length} ${isEn ? 'Max Disclosed Indicators' : 'Indikator Terungkap Maksimal'}`
+                  {rubricModalType === 'quantitative_count' || rubricModalType === 'binary_count'
+                    ? `${selectedPreset.indicators.length} ${isEn ? 'Quantitative Disclosed Indicators Max' : 'Indikator Nilai Riil Maksimal'}`
                     : `${selectedPreset.indicators.length * (rubricModalItems.length > 0 ? Math.max(...rubricModalItems.map(r => Number(r.score) || 0)) : 5)} ${isEn ? 'Points Max' : 'Poin Maksimal'} (${selectedPreset.indicators.length} × ${rubricModalItems.length > 0 ? Math.max(...rubricModalItems.map(r => Number(r.score) || 0)) : 5})`}
                 </strong>
               </div>

@@ -89,14 +89,15 @@ export function buildAnalysisPrompt(params: {
   const { companyCode, fiscalYear, indicators, rubric, rubricType = 'weighted', skillContent } = params;
 
   let indicatorsText = '';
-  let sampleJsonObj: Record<string, number> = {};
+  let sampleJsonObj: Record<string, any> = {};
+  const isQuantitative = rubricType === 'quantitative_count' || rubricType === 'binary_count';
 
   if (indicators && indicators.length > 0) {
     indicatorsText = indicators
       .map((ind, idx) => `${idx + 1}. ${ind.code} – ${ind.title}: ${ind.fullDesc}`)
       .join('\n');
     indicators.forEach(ind => {
-      sampleJsonObj[ind.code] = 0;
+      sampleJsonObj[ind.code] = isQuantitative ? '1000000 liter' : 0;
     });
   } else {
     indicatorsText = `1. CC1 – Penilaian/deskripsi dari risiko (peraturan/regulasi baik khusus maupun umum) yang berhubungan dengan perubahan iklim dan aksi yang dilakukan atau aksi yang dilakukan untuk mengatasi risiko tersebut.
@@ -117,13 +118,15 @@ export function buildAnalysisPrompt(params: {
 16. RC4 – Biaya dari biaya emisi masa depan yang diperhitungkan dalam perencanaan belanja modal (capital expenditure planning).
 17. ACC1 – Indikasi dari dewan komite (atau badan eksekutif lainnya) yang memiliki tanggungjawab atas tindakan yang berhubungan dengan perubahan iklim.
 18. ACC2 – Deskripsi dari mekanisme dimana dewan (atau suatu badan eksekutif lain) melakukan peninjauan kemajuan perusahaan mengenai perubahan iklim.`;
-    sampleJsonObj = {
-      CC1: 0, CC2: 0,
-      GHG1: 0, GHG2: 0, GHG3: 0, GHG4: 0, GHG5: 0, GHG6: 0, GHG7: 0,
-      EC1: 0, EC2: 0, EC3: 0,
-      RC1: 0, RC2: 0, RC3: 0, RC4: 0,
-      ACC1: 0, ACC2: 0
-    };
+    sampleJsonObj = isQuantitative
+      ? { CC1: '0 liter', GHG1: '1500000 ton CO2e', EC1: '1000000 liter' }
+      : {
+          CC1: 0, CC2: 0,
+          GHG1: 0, GHG2: 0, GHG3: 0, GHG4: 0, GHG5: 0, GHG6: 0, GHG7: 0,
+          EC1: 0, EC2: 0, EC3: 0,
+          RC1: 0, RC2: 0, RC3: 0, RC4: 0,
+          ACC1: 0, ACC2: 0
+        };
   }
 
   const skillPromptBlock = skillContent && skillContent.trim()
@@ -133,12 +136,16 @@ export function buildAnalysisPrompt(params: {
   let rubricSection = '';
   let scoringGoalText = '';
 
-  if (rubricType === 'binary_count') {
-    rubricSection = `Indikator di atas dievaluasi berdasarkan keberadaan pengungkapan (Checklist / Binary Count):
-Scoring Rubric (Status Pengungkapan):
-0: Tidak Ada Pengungkapan (Tidak ditemukan informasi, data, atau bukti pengungkapan indikator terkait dalam dokumen laporan).
-1: Diungkapkan dalam Laporan (Indikator ini diidentifikasi dan diungkapkan dalam dokumen laporan perusahaan).`;
-    scoringGoalText = 'Bantulah untuk memeriksa keberadaan pengungkapan setiap indikator di atas secara objektif dan apa adanya. Berikan nilai 0 (jika tidak diungkapkan) atau 1 (jika diungkapkan).';
+  if (isQuantitative) {
+    rubricSection = `Indikator di atas dievaluasi berdasarkan nilai riil / kuantitatif pengungkapan (Quantitative Disclosure Extraction):
+Scoring Rubric (Nilai Riil Pengungkapan):
+- Jika indikator diungkapkan dalam dokumen laporan (misal: jumlah limbah air yang diolah perusahaan adalah 1jt liter, total emisi 25000 ton CO2e, atau konsumsi energi 50000 kWh), ekstrak dan tuliskan angka nominal / volume riil tersebut beserta satuannya (misal: "1000000 liter", "25000 ton CO2e", "50000 kWh", "120 karyawan", "Rp 50 Miliar").
+- Jika indikator TIDAK diungkapkan atau tidak ada data yang ditemukan dalam dokumen laporan, berikan nilai "0 liter" (atau "0 [satuan]", atau "0" jika tanpa satuan spesifik).
+
+ATURAN PENTING:
+1. JANGAN mengembalikan skor biner 0 atau 1. Kembalikan angka kuantitas riil yang tertulis di laporan file beserta satuannya (contoh: "1000000 liter"), atau "0 liter" jika tidak ada pengungkapan.
+2. Format angka gunakan angka penuh tanpa singkatan (misal: 1000000 liter).`;
+    scoringGoalText = 'Bantulah untuk mengekstrak angka riil kuantitatif pengungkapan setiap indikator di atas secara objektif dan apa adanya dari dokumen laporan. Tuliskan nilai riil beserta satuannya (misal "1000000 liter") atau "0 liter" jika tidak ada pengungkapan.';
   } else if (rubric && rubric.length > 0) {
     const minScore = Math.min(...rubric.map(r => Number(r.score) || 0));
     const maxScore = Math.max(...rubric.map(r => Number(r.score) || 0));
@@ -243,7 +250,7 @@ export function preprocessTextForCED(rawText: string, maxChars = 220000): string
 /**
  * Ekstraktor JSON yang tangguh (robust JSON parser)
  */
-export function extractAndParseJSON(rawText: string, expectedKeys?: string[]): Record<string, number> {
+export function extractAndParseJSON(rawText: string, expectedKeys?: string[]): Record<string, any> {
   const cleaned = rawText
     .replace(/```json\s*/gi, '')
     .replace(/```\s*/gi, '')
@@ -275,51 +282,74 @@ export function extractAndParseJSON(rawText: string, expectedKeys?: string[]): R
     }
   }
 
-  const fallbackScores: Record<string, number> = {};
+  const fallbackScores: Record<string, any> = {};
   if (expectedKeys && expectedKeys.length > 0) {
     const escaped = expectedKeys.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-    const regex = new RegExp(`"?(${escaped})"?\\s*:\\s*([0-5])`, 'gi');
+    const regex = new RegExp(`"?(${escaped})"?\\s*:\\s*(?:"([^"]*)"|([0-9.]+))`, 'gi');
     let match: RegExpExecArray | null;
     while ((match = regex.exec(rawText)) !== null) {
       const key = match[1].toUpperCase();
-      const val = parseInt(match[2], 10);
-      fallbackScores[key] = isNaN(val) ? 0 : Math.max(0, Math.min(5, val));
+      fallbackScores[key] = match[2] !== undefined ? match[2].trim() : (isNaN(parseFloat(match[3])) ? 0 : parseFloat(match[3]));
     }
   } else {
-    const regex = /"?(CC[12]|GHG[1-7]|EC[123]|RC[1-4]|ACC[12])"?\s*:\s*([0-5])/gi;
+    const regex = /"?(CC[12]|GHG[1-7]|EC[123]|RC[1-4]|ACC[12])"?\s*:\s*(?:"([^"]*)"|([0-9.]+))/gi;
     let match: RegExpExecArray | null;
     while ((match = regex.exec(rawText)) !== null) {
       const key = match[1].toUpperCase();
-      const val = parseInt(match[2], 10);
-      fallbackScores[key] = isNaN(val) ? 0 : Math.max(0, Math.min(5, val));
+      fallbackScores[key] = match[2] !== undefined ? match[2].trim() : (isNaN(parseFloat(match[3])) ? 0 : parseFloat(match[3]));
     }
   }
 
   return fallbackScores;
 }
 
-export function normalizeScores(rawObj: Record<string, any>, customKeys?: string[]): Record<string, number> {
-  const result: Record<string, number> = {};
+export function normalizeScores(
+  rawObj: Record<string, any>,
+  customKeys?: string[],
+  rubric?: RubricItem[],
+  rubricType?: RubricType
+): Record<string, any> {
+  const result: Record<string, any> = {};
+  const isQuantitative = rubricType === 'quantitative_count' || rubricType === 'binary_count';
 
   if (customKeys && customKeys.length > 0) {
     customKeys.forEach(k => {
       const lower = k.toLowerCase();
       const upper = k.toUpperCase();
-      const val = rawObj[upper] ?? rawObj[lower] ?? rawObj[k] ?? 0;
-      const num = parseInt(String(val), 10);
-      result[lower] = isNaN(num) ? 0 : Math.max(0, Math.min(5, num));
+      const val = rawObj[upper] ?? rawObj[lower] ?? rawObj[k];
+
+      if (isQuantitative) {
+        if (val === undefined || val === null || val === '') {
+          result[lower] = '0 liter';
+        } else {
+          result[lower] = String(val).trim();
+        }
+      } else {
+        const num = parseInt(String(val ?? 0), 10);
+        const maxScore = rubric && rubric.length > 0 ? Math.max(...rubric.map(r => Number(r.score) || 0)) : 5;
+        result[lower] = isNaN(num) ? 0 : Math.max(0, Math.min(maxScore, num));
+      }
     });
     return result;
   }
 
   INDICATOR_KEYS.forEach((k) => {
     const upper = k.toUpperCase();
-    const val = rawObj[upper] ?? rawObj[k] ?? 0;
-    const num = parseInt(String(val), 10);
-    result[k] = isNaN(num) ? 0 : Math.max(0, Math.min(5, num));
+    const val = rawObj[upper] ?? rawObj[k];
+
+    if (isQuantitative) {
+      if (val === undefined || val === null || val === '') {
+        result[k] = '0 liter';
+      } else {
+        result[k] = String(val).trim();
+      }
+    } else {
+      const num = parseInt(String(val ?? 0), 10);
+      result[k] = isNaN(num) ? 0 : Math.max(0, Math.min(5, num));
+    }
   });
 
-  return result as CEDScores;
+  return result;
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 20000): Promise<Response> {
@@ -712,7 +742,7 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
 
         if (rawText && rawText.trim().length > 0) {
           const parsedRaw = extractAndParseJSON(rawText, customKeys);
-          const scores = normalizeScores(parsedRaw, customKeys);
+          const scores = normalizeScores(parsedRaw, customKeys, options.rubric, options.rubricType);
           const reportedModel =
             model === chosenModel || chosenModel.includes('3.') || chosenModel.includes('argon')
               ? chosenModel

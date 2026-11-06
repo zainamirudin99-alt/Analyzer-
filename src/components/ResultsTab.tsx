@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, Download, Search, Trash2, Printer, Copy, Check, Table } from 'lucide-react';
-import { CEDResultRecord, INDICATOR_KEYS, IndicatorPreset } from '@/lib/types';
+import { CEDResultRecord, INDICATOR_KEYS, IndicatorPreset, getPresetRubricType } from '@/lib/types';
 import {
   getStoredPresets,
   saveStoredPresets,
@@ -180,21 +180,39 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
       ? currentPresetForColumns.indicators.map(i => ({ code: i.code, title: getIndicatorTitle(i, lang) }))
       : INDICATOR_KEYS.map(k => ({ code: k.toUpperCase(), title: k.toUpperCase() }));
 
-  const maxPossibleScore = displayIndicatorItems.length * 5;
+  const isQuantitativeMode =
+    getPresetRubricType(currentPresetForColumns) === 'quantitative_count' ||
+    getPresetRubricType(currentPresetForColumns) === 'binary_count';
 
-  const getScoreForIndicator = (row: CEDResultRecord, code: string): number => {
+  const maxPossibleScore = isQuantitativeMode ? displayIndicatorItems.length : displayIndicatorItems.length * 5;
+
+  const getScoreForIndicator = (row: CEDResultRecord, code: string): string | number => {
     const lower = code.toLowerCase();
     const upper = code.toUpperCase();
     const raw =
       (row as any)[lower] ??
       (row as any)[upper] ??
-      (row.dynamic_scores ? row.dynamic_scores[lower] ?? row.dynamic_scores[upper] : undefined) ??
-      0;
-    return typeof raw === 'number' && !isNaN(raw) ? raw : 0;
+      (row.dynamic_scores ? row.dynamic_scores[lower] ?? row.dynamic_scores[upper] : undefined);
+    if (raw !== undefined && raw !== null && raw !== '') {
+      if (typeof raw === 'string') return raw;
+      if (typeof raw === 'number' && !isNaN(raw)) return raw;
+    }
+    return isQuantitativeMode ? '0 liter' : 0;
   };
 
-  const getRowTotalForActivePreset = (row: CEDResultRecord): number => {
-    const sum = displayIndicatorItems.reduce((acc, ind) => acc + getScoreForIndicator(row, ind.code), 0);
+  const getRowTotalForActivePreset = (row: CEDResultRecord): number | string => {
+    if (isQuantitativeMode) {
+      const disclosedCount = displayIndicatorItems.filter(ind => {
+        const val = getScoreForIndicator(row, ind.code);
+        const s = String(val).trim().toLowerCase();
+        return s !== '0' && s !== '0 liter' && s !== '0 unit' && s !== '0 ton' && s !== '';
+      }).length;
+      return `${disclosedCount}/${displayIndicatorItems.length}`;
+    }
+    const sum = displayIndicatorItems.reduce((acc, ind) => {
+      const s = getScoreForIndicator(row, ind.code);
+      return acc + (typeof s === 'number' ? s : parseFloat(String(s)) || 0);
+    }, 0);
     return sum > 0 ? sum : row.total_score ?? 0;
   };
 
@@ -306,12 +324,20 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
   });
 
   const totalCount = filteredResults.length;
-  const totalScoresArray = filteredResults.map(r => getRowTotalForActivePreset(r));
-  const avgScore = totalCount > 0 ? (totalScoresArray.reduce((a, b) => a + b, 0) / totalCount).toFixed(1) : '0.0';
-  const maxScore = totalCount > 0 ? Math.max(...totalScoresArray) : 0;
-  const minScore = totalCount > 0 ? Math.min(...totalScoresArray) : 0;
-  const topCompany = filteredResults.find(r => getRowTotalForActivePreset(r) === maxScore);
-  const lowestCompany = filteredResults.find(r => getRowTotalForActivePreset(r) === minScore);
+  const numericScoresArray = filteredResults.map(r => {
+    const raw = getRowTotalForActivePreset(r);
+    if (typeof raw === 'number') return raw;
+    if (typeof raw === 'string' && raw.includes('/')) {
+      const parts = raw.split('/');
+      return parseFloat(parts[0]) || 0;
+    }
+    return parseFloat(String(raw)) || 0;
+  });
+  const avgScore = totalCount > 0 ? (numericScoresArray.reduce((a, b) => a + b, 0) / totalCount).toFixed(1) : '0.0';
+  const maxScore = totalCount > 0 ? Math.max(...numericScoresArray) : 0;
+  const minScore = totalCount > 0 ? Math.min(...numericScoresArray) : 0;
+  const topCompany = filteredResults.find((_, idx) => numericScoresArray[idx] === maxScore);
+  const lowestCompany = filteredResults.find((_, idx) => numericScoresArray[idx] === minScore);
 
   return (
     <div>
@@ -552,9 +578,28 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
 
                       {displayIndicatorItems.map(ind => {
                         const score = getScoreForIndicator(row, ind.code);
+                        const isString = typeof score === 'string';
+                        const isZero = score === 0 || score === '0' || score === '0 liter' || score === '0 unit' || score === '0 ton';
                         return (
-                          <td key={ind.code} title={`${ind.code} — ${ind.title}: ${score}/5`}>
-                            <span className={`score-badge score-${score}`}>{score}</span>
+                          <td key={ind.code} title={`${ind.code} — ${ind.title}: ${score}`} style={{ whiteSpace: 'nowrap' }}>
+                            <span
+                              className={`score-badge ${!isString ? `score-${score}` : ''}`}
+                              style={
+                                isString
+                                  ? {
+                                      background: isZero ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.15)',
+                                      color: isZero ? '#f87171' : '#34d399',
+                                      border: `1px solid ${isZero ? 'rgba(239, 68, 68, 0.28)' : 'rgba(16, 185, 129, 0.3)'}`,
+                                      padding: '2px 8px',
+                                      borderRadius: '6px',
+                                      fontSize: '11px',
+                                      fontWeight: 700
+                                    }
+                                  : undefined
+                              }
+                            >
+                              {score}
+                            </span>
                           </td>
                         );
                       })}

@@ -567,10 +567,10 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
       }
 
       const activeCount = activePreset.indicators.length || 18;
-      const isBinary = getPresetRubricType(activePreset) === 'binary_count';
+      const isQuantitative = getPresetRubricType(activePreset) === 'binary_count' || getPresetRubricType(activePreset) === 'quantitative_count';
       const maxPts = getPresetMaxScore(activePreset);
-      const scoreLabel = isBinary
-        ? `${data.total_score}/${activeCount} ${isEn ? 'disclosed' : 'indikator terungkap'}`
+      const scoreLabel = isQuantitative
+        ? `${data.total_score}/${activeCount} ${isEn ? 'indicators disclosed (Quantitative Value)' : 'indikator terungkap (Nilai Kuantitatif Riil)'}`
         : `${data.total_score}/${maxPts} ${isEn ? 'pts' : 'poin'}`;
 
       setAlertInfo({
