@@ -1,7 +1,17 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { SCORING_RUBRIC, IndicatorItem, IndicatorPreset } from '@/lib/types';
+import {
+  SCORING_RUBRIC,
+  DEFAULT_BINARY_RUBRIC,
+  IndicatorItem,
+  IndicatorPreset,
+  RubricItem,
+  RubricType,
+  getPresetRubric,
+  getPresetRubricType,
+  getPresetMaxScore
+} from '@/lib/types';
 import {
   getStoredPresets,
   saveStoredPresets,
@@ -30,7 +40,9 @@ import {
   Check,
   X,
   ArrowRight,
-  Globe
+  Globe,
+  Sliders,
+  RefreshCw
 } from 'lucide-react';
 
 export const GuideTab: React.FC = () => {
@@ -46,6 +58,12 @@ export const GuideTab: React.FC = () => {
   const [showPresetModal, setShowPresetModal] = useState(false);
   const [presetFormName, setPresetFormName] = useState('');
   const [presetFormDesc, setPresetFormDesc] = useState('');
+  const [presetFormRubricType, setPresetFormRubricType] = useState<RubricType>('weighted');
+
+  // Rubric Modal State
+  const [showRubricModal, setShowRubricModal] = useState(false);
+  const [rubricModalType, setRubricModalType] = useState<RubricType>('weighted');
+  const [rubricModalItems, setRubricModalItems] = useState<RubricItem[]>([]);
 
   const [showIndicatorModal, setShowIndicatorModal] = useState(false);
   const [isChainedFromPreset, setIsChainedFromPreset] = useState(false);
@@ -130,6 +148,9 @@ export const GuideTab: React.FC = () => {
 
     const rawName = presetFormName.trim();
     const rawDesc = presetFormDesc.trim() || (isEn ? 'Custom indicator collection.' : 'Kumpulan indikator kustom.');
+    const initialRubric = presetFormRubricType === 'binary_count'
+      ? DEFAULT_BINARY_RUBRIC.map(item => ({ ...item }))
+      : SCORING_RUBRIC.map(item => ({ ...item }));
 
     const newPreset: IndicatorPreset = {
       id: `preset_${Date.now()}`,
@@ -140,6 +161,8 @@ export const GuideTab: React.FC = () => {
       description_id: isEn ? undefined : rawDesc,
       description_en: isEn ? rawDesc : undefined,
       isDefault: false,
+      rubricType: presetFormRubricType,
+      rubric: initialRubric,
       indicators: [],
       createdAt: new Date().toISOString()
     };
@@ -155,6 +178,7 @@ export const GuideTab: React.FC = () => {
     setShowPresetModal(false);
     setPresetFormName('');
     setPresetFormDesc('');
+    setPresetFormRubricType('weighted');
 
     setEditingIndicator(null);
     setIndFormCode('');
@@ -192,6 +216,8 @@ export const GuideTab: React.FC = () => {
       description_id: 'Salinan indikator CED standar yang dapat Anda tambah, ubah, atau kurangi.',
       description_en: 'Editable copy of the standard 18 CED indicators.',
       isDefault: false,
+      rubricType: defaultPreset.rubricType || 'weighted',
+      rubric: getPresetRubric(defaultPreset).map(item => ({ ...item })),
       indicators: JSON.parse(JSON.stringify(defaultPreset.indicators)),
       createdAt: new Date().toISOString()
     };
@@ -205,6 +231,105 @@ export const GuideTab: React.FC = () => {
       text: isEn
         ? `Duplicated 18 CED indicators into "${getPresetName(copyPreset, lang)}".`
         : `Berhasil menduplikasi 18 indikator CED ke preset "${getPresetName(copyPreset, lang)}".`
+    });
+    setTimeout(() => setNoticeMessage(null), 4000);
+  };
+
+  // Buka Modal Edit Rubrik
+  const openRubricModal = () => {
+    const target = presets.find(p => p.id === selectedPresetId) || presets[0] || createDefaultCEDPreset();
+    const currentRubric = getPresetRubric(target);
+    const currentType = getPresetRubricType(target);
+    setRubricModalType(currentType);
+    setRubricModalItems(currentRubric.map(item => ({ ...item })));
+    setShowRubricModal(true);
+  };
+
+  // Tambah Tingkat Rubrik (Tak Terbatas)
+  const handleAddRubricTier = () => {
+    setRubricModalItems(prev => {
+      const highestScore = prev.length > 0 ? Math.max(...prev.map(p => Number(p.score) || 0)) : 0;
+      const nextScore = highestScore + 1;
+      return [
+        ...prev,
+        {
+          score: nextScore,
+          label: `${nextScore}: ${isEn ? 'Tier ' + nextScore : 'Tingkat ' + nextScore}`,
+          desc: isEn ? 'Describe criteria for this rubric tier...' : 'Jelaskan kriteria untuk tingkatan rubrik ini...',
+          label_en: `${nextScore}: Tier ${nextScore}`,
+          desc_en: 'Describe criteria for this rubric tier...'
+        }
+      ];
+    });
+  };
+
+  // Hapus Tingkat Rubrik
+  const handleRemoveRubricTier = (index: number) => {
+    if (rubricModalItems.length <= 2) {
+      alert(isEn ? 'Rubric must have at least 2 tiers.' : 'Rubrik harus memiliki minimal 2 tingkatan.');
+      return;
+    }
+    setRubricModalItems(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  // Edit Field Rubrik
+  const handleRubricItemChange = (index: number, field: keyof RubricItem, value: any) => {
+    setRubricModalItems(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+
+  // Reset ke Standar CED 0-5
+  const handleResetRubricToCED = () => {
+    if (!confirm(isEn ? 'Reset rubric tiers to CED Standard (0–5)?' : 'Kembalikan susunan rubrik ke Standar CED (0–5)?')) return;
+    setRubricModalType('weighted');
+    setRubricModalItems(SCORING_RUBRIC.map(item => ({ ...item })));
+  };
+
+  // Beralih Mode Rubrik (Weighted vs Binary Count)
+  const handleSwitchRubricMode = (newType: RubricType) => {
+    setRubricModalType(newType);
+    if (newType === 'binary_count') {
+      setRubricModalItems(DEFAULT_BINARY_RUBRIC.map(item => ({ ...item })));
+    } else if (rubricModalItems.length <= 2) {
+      setRubricModalItems(SCORING_RUBRIC.map(item => ({ ...item })));
+    }
+  };
+
+  // Simpan Perubahan Rubrik
+  const handleSaveRubric = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (rubricModalItems.length < 2) {
+      alert(isEn ? 'Rubric must have at least 2 tiers.' : 'Rubrik harus memiliki minimal 2 tingkatan.');
+      return;
+    }
+
+    // Urutkan tingkatan rubrik berdasarkan nilai skor secara ascending
+    const sortedItems = [...rubricModalItems].sort((a, b) => Number(a.score) - Number(b.score));
+
+    const updatedPresets = presets.map(p => {
+      if (p.id === selectedPreset.id) {
+        return {
+          ...p,
+          rubricType: rubricModalType,
+          rubric: sortedItems,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return p;
+    });
+
+    saveStoredPresets(updatedPresets);
+    setPresets(updatedPresets);
+    setShowRubricModal(false);
+
+    setNoticeMessage({
+      type: 'success',
+      text: isEn
+        ? `Rubric guidelines for "${getPresetName(selectedPreset, lang)}" updated successfully!`
+        : `Ketentuan rubrik untuk "${getPresetName(selectedPreset, lang)}" berhasil diperbarui!`
     });
     setTimeout(() => setNoticeMessage(null), 4000);
   };
@@ -551,11 +676,23 @@ export const GuideTab: React.FC = () => {
                   {getPresetDescription(selectedPreset, lang)}
                 </p>
                 <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--stone)' }}>
-                  {isEn ? 'Maximum Total Score:' : 'Total Skor Maksimal:'}{' '}
-                  <strong>
-                    {selectedPreset.indicators.length * 5} {isEn ? 'Points' : 'Poin'}
-                  </strong>{' '}
-                  ({selectedPreset.indicators.length} {isEn ? 'Indicators' : 'Indikator'} × 5).
+                  {getPresetRubricType(selectedPreset) === 'binary_count' ? (
+                    <>
+                      {isEn ? 'Evaluation Mode:' : 'Metode Penilaian:'}{' '}
+                      <strong style={{ color: 'var(--fern)' }}>
+                        {isEn ? 'Disclosure Presence Count (No Weighted Points)' : 'Hitung Jumlah Pengungkapan (Tanpa Bobot Nilai)'}
+                      </strong>{' '}
+                      • {isEn ? 'Total Indicators:' : 'Total Indikator:'} <strong>{selectedPreset.indicators.length}</strong>
+                    </>
+                  ) : (
+                    <>
+                      {isEn ? 'Maximum Total Score:' : 'Total Skor Maksimal:'}{' '}
+                      <strong>
+                        {getPresetMaxScore(selectedPreset)} {isEn ? 'Points' : 'Poin'}
+                      </strong>{' '}
+                      ({selectedPreset.indicators.length} {isEn ? 'Indicators' : 'Indikator'} × {getPresetRubric(selectedPreset).length > 0 ? Math.max(...getPresetRubric(selectedPreset).map(r => Number(r.score) || 0)) : 5}).
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -571,6 +708,18 @@ export const GuideTab: React.FC = () => {
                   </button>
                 )}
 
+                {!selectedPreset.isDefault && (
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={openRubricModal}
+                    title={isEn ? 'Customize scoring rubric tiers or switch to binary presence count' : 'Sesuaikan tingkatan nilai rubrik atau ubah ke mode hitung pengungkapan tanpa nilai'}
+                  >
+                    <Edit2 size={13} />
+                    <span>{isEn ? 'Edit Rubric' : 'Edit Rubrik'}</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   className="btn btn-outline btn-sm"
@@ -583,36 +732,73 @@ export const GuideTab: React.FC = () => {
             </div>
           </div>
 
-          {/* Rubrik Penilaian Skor 0 - 5 */}
+          {/* Rubrik Penilaian Skor Dinamis */}
           <div className="card" style={{ marginBottom: '20px' }}>
-            <div className="card-title">
-              <div className="ct-icon">🎯</div>
-              <span>{isEn ? 'Scoring Rubric Guidelines (0 – 5)' : 'Ketentuan Rubrik Penilaian Skor (0 – 5)'}</span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+              <div className="card-title" style={{ margin: 0 }}>
+                <div className="ct-icon">🎯</div>
+                <span>
+                  {getPresetRubricType(selectedPreset) === 'binary_count'
+                    ? (isEn ? 'Rubric: Disclosure Presence Count (Binary)' : 'Ketentuan Rubrik: Hitung Jumlah Pengungkapan (Tanpa Nilai Bobot)')
+                    : (isEn
+                        ? `Scoring Rubric Guidelines (${getPresetRubric(selectedPreset).length > 0 ? Math.min(...getPresetRubric(selectedPreset).map(r => Number(r.score) || 0)) : 0} – ${getPresetRubric(selectedPreset).length > 0 ? Math.max(...getPresetRubric(selectedPreset).map(r => Number(r.score) || 0)) : 5})`
+                        : `Ketentuan Rubrik Penilaian Skor (${getPresetRubric(selectedPreset).length > 0 ? Math.min(...getPresetRubric(selectedPreset).map(r => Number(r.score) || 0)) : 0} – ${getPresetRubric(selectedPreset).length > 0 ? Math.max(...getPresetRubric(selectedPreset).map(r => Number(r.score) || 0)) : 5})`)}
+                </span>
+              </div>
+
+              {!selectedPreset.isDefault && (
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  style={{ fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  onClick={openRubricModal}
+                >
+                  <Edit2 size={13} />
+                  <span>{isEn ? 'Edit Rubric Guidelines' : 'Edit Rubrik Penilaian'}</span>
+                </button>
+              )}
             </div>
 
             <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '14px' }}>
-              {isEn ? (
-                <>
-                  Each indicator is evaluated on a scale of <strong>0 to 5</strong> based on the breadth and depth of disclosure evidence:
-                </>
+              {getPresetRubricType(selectedPreset) === 'binary_count' ? (
+                isEn ? (
+                  <>
+                    Indicators are evaluated for <strong>presence or absence</strong> of disclosure in the company's report:
+                  </>
+                ) : (
+                  <>
+                    Setiap indikator dievaluasi berdasarkan <strong>keberadaan pengungkapan</strong> pada laporan perusahaan:
+                  </>
+                )
               ) : (
-                <>
-                  Setiap indikator dievaluasi dalam rentang <strong>0 hingga 5</strong> berdasarkan keluasan bukti pengungkapan:
-                </>
+                isEn ? (
+                  <>
+                    Each indicator is evaluated on a scale of <strong>{getPresetRubric(selectedPreset).length > 0 ? Math.min(...getPresetRubric(selectedPreset).map(r => Number(r.score) || 0)) : 0} to {getPresetRubric(selectedPreset).length > 0 ? Math.max(...getPresetRubric(selectedPreset).map(r => Number(r.score) || 0)) : 5}</strong> based on the breadth and depth of disclosure evidence:
+                  </>
+                ) : (
+                  <>
+                    Setiap indikator dievaluasi dalam rentang <strong>{getPresetRubric(selectedPreset).length > 0 ? Math.min(...getPresetRubric(selectedPreset).map(r => Number(r.score) || 0)) : 0} hingga {getPresetRubric(selectedPreset).length > 0 ? Math.max(...getPresetRubric(selectedPreset).map(r => Number(r.score) || 0)) : 5}</strong> berdasarkan keluasan bukti pengungkapan:
+                  </>
+                )
               )}
             </p>
 
-            <div className="grid-3">
-              {SCORING_RUBRIC.map(item => (
+            <div className="grid-3" style={{ gridTemplateColumns: getPresetRubric(selectedPreset).length <= 2 ? 'repeat(auto-fit, minmax(280px, 1fr))' : undefined }}>
+              {getPresetRubric(selectedPreset).map(item => (
                 <div key={item.score} style={{ background: 'var(--dew)', border: '1px solid var(--border)', borderRadius: '12px', padding: '14px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                    <span className={`score-badge score-${item.score}`}>{item.score}</span>
+                    <span
+                      className={`score-badge score-${Math.min(Number(item.score) || 0, 5)}`}
+                      style={{ minWidth: '28px', textAlign: 'center', padding: '2px 8px', borderRadius: '6px' }}
+                    >
+                      {item.score}
+                    </span>
                     <span style={{ fontWeight: 800, fontSize: '13px', color: 'var(--text)' }}>
-                      {isEn ? item.label_en : item.label}
+                      {isEn ? (item.label_en || item.label) : item.label}
                     </span>
                   </div>
                   <p style={{ fontSize: '12px', color: 'var(--stone)', lineHeight: '1.4' }}>
-                    {isEn ? item.desc_en : item.desc}
+                    {isEn ? (item.desc_en || item.desc) : item.desc}
                   </p>
                 </div>
               ))}
@@ -759,6 +945,65 @@ export const GuideTab: React.FC = () => {
                   autoFocus
                   required
                 />
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label className="form-label" style={{ fontWeight: 700, fontSize: '13px' }}>
+                  {isEn ? 'INITIAL SCORING RUBRIC TYPE' : 'TIPE RUBRIK PENILAIAN AWAL'}
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setPresetFormRubricType('weighted')}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      border: `1.5px solid ${presetFormRubricType === 'weighted' ? 'var(--fern)' : 'var(--border)'}`,
+                      background: presetFormRubricType === 'weighted' ? 'var(--dew)' : 'var(--surface)',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '14px' }}>⭐</span>
+                      <strong style={{ fontSize: '12.5px', color: 'var(--text)' }}>
+                        {isEn ? 'Weighted Score (0–5)' : 'Skala Skor Berbobot'}
+                      </strong>
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--stone)', lineHeight: '1.3' }}>
+                      {isEn
+                        ? 'Standard 0–5 CED scale, can be customized up to 100 with unlimited tiers.'
+                        : 'Default skala 0–5 CED, dapat diedit hingga 100 dengan tingkatan tak terbatas.'}
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPresetFormRubricType('binary_count')}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      border: `1.5px solid ${presetFormRubricType === 'binary_count' ? 'var(--fern)' : 'var(--border)'}`,
+                      background: presetFormRubricType === 'binary_count' ? 'var(--dew)' : 'var(--surface)',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '14px' }}>📋</span>
+                      <strong style={{ fontSize: '12.5px', color: 'var(--text)' }}>
+                        {isEn ? 'Disclosure Count (Binary)' : 'Hitung Pengungkapan'}
+                      </strong>
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--stone)', lineHeight: '1.3' }}>
+                      {isEn
+                        ? 'Count total disclosed indicators without points (0 = none, 1 = disclosed).'
+                        : 'Menghitung jumlah indikator yang diungkapkan tanpa skor nilai (0 = tidak, 1 = ada).'}
+                    </div>
+                  </button>
+                </div>
               </div>
 
               <div style={{ marginBottom: '20px' }}>
@@ -975,6 +1220,270 @@ export const GuideTab: React.FC = () => {
                     )}
                   </button>
                 </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* ========================================================
+          MODAL POP-UP: EDIT RUBRIK PENILAIAN INDIKATOR
+          ======================================================== */}
+      {showRubricModal && (
+        <div className="modal-backdrop" onClick={() => setShowRubricModal(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '680px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div className="ct-icon" style={{ fontSize: '20px' }}>🎯</div>
+                <div>
+                  <h3 style={{ fontSize: '16.5px', fontWeight: 800, color: 'var(--bark)' }}>
+                    {isEn ? 'Edit Scoring Rubric' : 'Edit Rubrik Penilaian'}
+                  </h3>
+                  <div style={{ fontSize: '12px', color: 'var(--stone)' }}>
+                    {getPresetName(selectedPreset, lang)}
+                  </div>
+                </div>
+              </div>
+              <button type="button" className="drawer-close-btn" onClick={() => setShowRubricModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Pilihan Mode Rubrik */}
+            <div style={{ marginBottom: '16px' }}>
+              <label className="form-label" style={{ fontWeight: 700, fontSize: '12.5px', marginBottom: '6px' }}>
+                {isEn ? 'SCORING METHOD & RUBRIC MODE' : 'METODE PENILAIAN & MODE RUBRIK'}
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => handleSwitchRubricMode('weighted')}
+                  style={{
+                    padding: '12px',
+                    borderRadius: '10px',
+                    border: `2px solid ${rubricModalType === 'weighted' ? 'var(--fern)' : 'var(--border)'}`,
+                    background: rubricModalType === 'weighted' ? 'var(--dew)' : 'var(--surface)',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <span>⭐</span>
+                    <strong style={{ fontSize: '13px', color: 'var(--text)' }}>
+                      {isEn ? 'Weighted Score Scale' : 'Skala Skor Berbobot'}
+                    </strong>
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--stone)', lineHeight: '1.4' }}>
+                    {isEn
+                      ? 'Custom point levels (e.g. 0–5, 0–10, up to 100) with unlimited tiers.'
+                      : 'Tingkatan poin berbobot (misal 0–5, 0–10, hingga nilai 100), tingkatan tak terbatas.'}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSwitchRubricMode('binary_count')}
+                  style={{
+                    padding: '12px',
+                    borderRadius: '10px',
+                    border: `2px solid ${rubricModalType === 'binary_count' ? 'var(--fern)' : 'var(--border)'}`,
+                    background: rubricModalType === 'binary_count' ? 'var(--dew)' : 'var(--surface)',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <span>📋</span>
+                    <strong style={{ fontSize: '13px', color: 'var(--text)' }}>
+                      {isEn ? 'Disclosure Count (No Points)' : 'Hitung Jumlah Pengungkapan'}
+                    </strong>
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--stone)', lineHeight: '1.4' }}>
+                    {isEn
+                      ? 'Dichotomous presence check (0/1). Results show count of disclosed indicators.'
+                      : 'Hanya mendeteksi ada/tidaknya pengungkapan di file. Tidak ada nilai bobot.'}
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveRubric}>
+              {/* Petunjuk / Action Bar Rubrik */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--stone)' }}>
+                  {isEn
+                    ? `Rubric Tiers (${rubricModalItems.length} Levels):`
+                    : `Tingkatan Rubrik (${rubricModalItems.length} Level):`}
+                </span>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  {rubricModalType === 'weighted' && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        style={{ fontSize: '11px', padding: '3px 8px' }}
+                        onClick={handleResetRubricToCED}
+                        title={isEn ? 'Reset to CED Standard (0–5)' : 'Kembalikan ke Standar CED (0–5)'}
+                      >
+                        <RefreshCw size={12} />
+                        <span>{isEn ? 'Reset to CED (0–5)' : 'Reset ke CED (0–5)'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        style={{ fontSize: '11px', padding: '3px 8px' }}
+                        onClick={handleAddRubricTier}
+                      >
+                        <Plus size={12} />
+                        <span>{isEn ? 'Add Tier' : 'Tambah Tingkat'}</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Banner Info jika Binary Count */}
+              {rubricModalType === 'binary_count' && (
+                <div
+                  style={{
+                    background: 'var(--dew)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    marginBottom: '12px',
+                    fontSize: '12px',
+                    color: 'var(--text-secondary)'
+                  }}
+                >
+                  💡 <strong>{isEn ? 'Binary / Checklist Mode:' : 'Mode Hitung Pengungkapan (Tanpa Nilai):'}</strong>{' '}
+                  {isEn
+                    ? 'Evaluates whether each indicator is disclosed in the report (1) or not disclosed (0). The total score is the number of disclosed indicators (e.g. 15 of 18 indicators).'
+                    : 'Mengevaluasi apakah indikator terungkap di laporan (1) atau tidak (0). Skor akhir adalah jumlah total indikator yang berhasil diungkapkan oleh perusahaan.'}
+                </div>
+              )}
+
+              {/* Daftar Tingkatan Rubrik */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px', marginBottom: '16px' }}>
+                {rubricModalItems.map((item, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      background: 'var(--dew)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '10px',
+                      padding: '12px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                      <div style={{ minWidth: '85px' }}>
+                        <label style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--stone)', display: 'block', marginBottom: '2px' }}>
+                          {isEn ? 'SCORE VALUE' : 'NILAI SKOR'}
+                        </label>
+                        <input
+                          type="number"
+                          step="any"
+                          className="form-input font-mono"
+                          style={{
+                            padding: '4px 8px',
+                            fontWeight: 800,
+                            fontSize: '13px',
+                            textAlign: 'center',
+                            background: 'var(--surface)',
+                            color: 'var(--text)'
+                          }}
+                          value={item.score}
+                          onChange={e => handleRubricItemChange(index, 'score', Number(e.target.value))}
+                          required
+                        />
+                      </div>
+
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--stone)', display: 'block', marginBottom: '2px' }}>
+                          {isEn ? 'TIER LABEL' : 'LABEL TINGKATAN'}
+                        </label>
+                        <input
+                          type="text"
+                          className="form-input"
+                          style={{ padding: '4px 8px', fontSize: '12.5px', background: 'var(--surface)', color: 'var(--text)' }}
+                          placeholder={isEn ? 'e.g. 5: > 1 Full A4 Page' : 'Misal: 5: > 1 Halaman A4'}
+                          value={isEn ? (item.label_en || item.label) : item.label}
+                          onChange={e => handleRubricItemChange(index, isEn ? 'label_en' : 'label', e.target.value)}
+                          required
+                        />
+                      </div>
+
+                      {rubricModalType === 'weighted' && (
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          style={{
+                            padding: '6px 8px',
+                            color: 'var(--danger)',
+                            borderColor: 'var(--border)',
+                            alignSelf: 'flex-end',
+                            marginBottom: '2px'
+                          }}
+                          onClick={() => handleRemoveRubricTier(index)}
+                          disabled={rubricModalItems.length <= 2}
+                          title={isEn ? 'Delete Tier' : 'Hapus Tingkat'}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--stone)', display: 'block', marginBottom: '2px' }}>
+                        {isEn ? 'EVALUATION CRITERIA & EVIDENCE DESCRIPTION' : 'KRITERIA PENILAIAN & KELUASAN BUKTI'}
+                      </label>
+                      <textarea
+                        className="form-textarea"
+                        rows={2}
+                        style={{ padding: '6px 8px', fontSize: '12px', background: 'var(--surface)', color: 'var(--text)' }}
+                        placeholder={isEn ? 'Describe the criteria for awarding this score...' : 'Jelaskan kriteria dan bukti untuk memperoleh skor ini...'}
+                        value={isEn ? (item.desc_en || item.desc) : item.desc}
+                        onChange={e => handleRubricItemChange(index, isEn ? 'desc_en' : 'desc', e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Ringkasan Skor Maksimal */}
+              <div
+                style={{
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '10px',
+                  padding: '10px 14px',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  fontSize: '12px'
+                }}
+              >
+                <span style={{ color: 'var(--stone)' }}>
+                  {isEn ? 'Total Preset Calculation:' : 'Kalkulasi Total Preset:'}
+                </span>
+                <strong style={{ color: 'var(--fern)' }}>
+                  {rubricModalType === 'binary_count'
+                    ? `${selectedPreset.indicators.length} ${isEn ? 'Max Disclosed Indicators' : 'Indikator Terungkap Maksimal'}`
+                    : `${selectedPreset.indicators.length * (rubricModalItems.length > 0 ? Math.max(...rubricModalItems.map(r => Number(r.score) || 0)) : 5)} ${isEn ? 'Points Max' : 'Poin Maksimal'} (${selectedPreset.indicators.length} × ${rubricModalItems.length > 0 ? Math.max(...rubricModalItems.map(r => Number(r.score) || 0)) : 5})`}
+                </strong>
+              </div>
+
+              {/* Tombol Aksi */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => setShowRubricModal(false)}>
+                  {isEn ? 'Cancel' : 'Batal'}
+                </button>
+                <button type="submit" className="btn btn-primary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <Check size={14} />
+                  <span>{isEn ? 'Save Rubric Guidelines' : 'Simpan Rubrik Penilaian'}</span>
+                </button>
               </div>
             </form>
           </div>

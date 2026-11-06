@@ -4,7 +4,7 @@
  * Extended Thinking workload levels (Low, Medium, Hard, Extra), and custom Base URL endpoints.
  */
 
-import { CEDScores, IndicatorItem } from './types';
+import { CEDScores, IndicatorItem, RubricItem, RubricType } from './types';
 import { buildAnalysisPrompt, buildCEDPrompt, extractAndParseJSON, normalizeScores, preprocessTextForCED } from './gemini';
 
 export type ClaudeEffortLevel = 'low' | 'medium' | 'hard' | 'extra';
@@ -99,6 +99,8 @@ export interface ClaudeAnalysisOptions {
   baseUrl?: string;
   effort?: ClaudeEffortLevel;
   indicators?: IndicatorItem[];
+  rubric?: RubricItem[];
+  rubricType?: RubricType;
   skillContent?: string;
 }
 
@@ -223,6 +225,8 @@ export async function analyzeWithClaude(options: ClaudeAnalysisOptions): Promise
     companyCode: options.companyCode,
     fiscalYear: options.fiscalYear,
     indicators: options.indicators,
+    rubric: options.rubric,
+    rubricType: options.rubricType,
     skillContent: options.skillContent
   });
   const customKeys = options.indicators?.map(i => i.code);

@@ -3,7 +3,7 @@ import { extractTextFromPdf } from '@/lib/pdf-parser';
 import { analyzeWithGemini, evaluateDocumentHeuristically } from '@/lib/gemini';
 import { analyzeWithOpenAI } from '@/lib/openai';
 import { analyzeWithClaude, ClaudeEffortLevel } from '@/lib/claude';
-import { calculateDisclosureLevel, calculateTotalScore, IndicatorItem, INDICATOR_KEYS } from '@/lib/types';
+import { calculateDisclosureLevel, calculateTotalScore, IndicatorItem, INDICATOR_KEYS, RubricItem, RubricType } from '@/lib/types';
 import { getSupabaseServerClient } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
@@ -43,6 +43,8 @@ export async function POST(req: NextRequest) {
     const presetName = ((formData.get('presetName') as string) || '').trim();
     const skillContent = ((formData.get('skillContent') as string) || '').trim();
     const indicatorsJson = (formData.get('indicatorsJson') as string) || '';
+    const rubricJson = (formData.get('rubricJson') as string) || '';
+    const rubricType = (((formData.get('rubricType') as string) || 'weighted').trim()) as RubricType;
 
     let parsedIndicators: IndicatorItem[] | undefined;
     if (indicatorsJson) {
@@ -50,6 +52,15 @@ export async function POST(req: NextRequest) {
         parsedIndicators = JSON.parse(indicatorsJson);
       } catch (parseErr) {
         console.warn('[Analyze] Gagal parse indicatorsJson:', parseErr);
+      }
+    }
+
+    let parsedRubric: RubricItem[] | undefined;
+    if (rubricJson) {
+      try {
+        parsedRubric = JSON.parse(rubricJson);
+      } catch (parseErr) {
+        console.warn('[Analyze] Gagal parse rubricJson:', parseErr);
       }
     }
 
@@ -104,6 +115,8 @@ export async function POST(req: NextRequest) {
           baseUrl: customBaseUrl || undefined,
           effort: customEffort,
           indicators: parsedIndicators,
+          rubric: parsedRubric,
+          rubricType,
           skillContent: skillContent || undefined
         });
       } else if (provider === 'openai') {
@@ -116,6 +129,8 @@ export async function POST(req: NextRequest) {
           model: customModel || undefined,
           baseUrl: customBaseUrl || undefined,
           indicators: parsedIndicators,
+          rubric: parsedRubric,
+          rubricType,
           skillContent: skillContent || undefined
         });
       } else {
@@ -128,6 +143,8 @@ export async function POST(req: NextRequest) {
           apiKey: customApiKey || undefined,
           preferredModel: customModel || undefined,
           indicators: parsedIndicators,
+          rubric: parsedRubric,
+          rubricType,
           skillContent: skillContent || undefined
         });
       }

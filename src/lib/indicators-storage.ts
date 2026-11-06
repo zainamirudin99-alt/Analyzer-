@@ -3,7 +3,8 @@ import {
   INDICATOR_DESCRIPTIONS,
   IndicatorItem,
   IndicatorPreset,
-  CustomAISkill
+  CustomAISkill,
+  SCORING_RUBRIC
 } from './types';
 
 export const DEFAULT_PRESET_ID = 'default_ced_18';
@@ -40,6 +41,8 @@ export function createDefaultCEDPreset(): IndicatorPreset {
     description_id: 'Standar baku 18 indikator CED (CC1–CC2, GHG1–GHG7, EC1–EC3, RC1–RC4, ACC1–ACC2) skala skor 0–5.',
     description_en: 'Standard 18 CED indicators (CC1–CC2, GHG1–GHG7, EC1–EC3, RC1–RC4, ACC1–ACC2) with 0–5 scoring scale.',
     isDefault: true,
+    rubricType: 'weighted',
+    rubric: SCORING_RUBRIC.map(item => ({ ...item })),
     indicators: items,
     createdAt: '2026-01-01T00:00:00.000Z'
   };
@@ -65,15 +68,23 @@ export function getStoredPresets(): IndicatorPreset[] {
     if (defaultIndex === -1) {
       parsed.unshift(defaultFresh);
       localStorage.setItem('analyzer_indicator_presets', JSON.stringify(parsed));
-    } else if (!parsed[defaultIndex].name_en) {
-      // Pastikan preset default memiliki atribut dwibahasa terbaru
-      parsed[defaultIndex] = {
-        ...parsed[defaultIndex],
-        name_id: defaultFresh.name_id,
-        name_en: defaultFresh.name_en,
-        description_id: defaultFresh.description_id,
-        description_en: defaultFresh.description_en
-      };
+    } else {
+      let updated = false;
+      if (!parsed[defaultIndex].name_en) {
+        parsed[defaultIndex].name_id = defaultFresh.name_id;
+        parsed[defaultIndex].name_en = defaultFresh.name_en;
+        parsed[defaultIndex].description_id = defaultFresh.description_id;
+        parsed[defaultIndex].description_en = defaultFresh.description_en;
+        updated = true;
+      }
+      if (!parsed[defaultIndex].rubric || !parsed[defaultIndex].rubricType) {
+        parsed[defaultIndex].rubricType = 'weighted';
+        parsed[defaultIndex].rubric = defaultFresh.rubric;
+        updated = true;
+      }
+      if (updated) {
+        localStorage.setItem('analyzer_indicator_presets', JSON.stringify(parsed));
+      }
     }
     return parsed;
   } catch (e) {

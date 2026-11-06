@@ -3,7 +3,7 @@
  * Supports custom models (e.g. GPT Luna, GPT Pro, gpt-4o, etc.) and custom Base URL endpoints.
  */
 
-import { CEDScores, IndicatorItem } from './types';
+import { CEDScores, IndicatorItem, RubricItem, RubricType } from './types';
 import { buildAnalysisPrompt, buildCEDPrompt, extractAndParseJSON, normalizeScores, preprocessTextForCED } from './gemini';
 
 export interface OpenAIAnalysisOptions {
@@ -14,6 +14,8 @@ export interface OpenAIAnalysisOptions {
   model?: string;
   baseUrl?: string;
   indicators?: IndicatorItem[];
+  rubric?: RubricItem[];
+  rubricType?: RubricType;
   skillContent?: string;
 }
 
@@ -103,6 +105,8 @@ export async function analyzeWithOpenAI(options: OpenAIAnalysisOptions): Promise
     companyCode: options.companyCode,
     fiscalYear: options.fiscalYear,
     indicators: options.indicators,
+    rubric: options.rubric,
+    rubricType: options.rubricType,
     skillContent: options.skillContent
   });
   const customKeys = options.indicators?.map(i => i.code);

@@ -4,7 +4,7 @@
 
 import { useState, useRef, useEffect, FC, DragEvent } from 'react';
 import { UploadCloud, FileText, CheckCircle2, Sparkles, RefreshCw, ArrowRight, Copy, Check, Eye, Download, X, Settings2, Sliders, Cpu } from 'lucide-react';
-import { CEDScores, INDICATOR_KEYS, CEDResultRecord, IndicatorPreset, CustomAISkill } from '@/lib/types';
+import { CEDScores, INDICATOR_KEYS, CEDResultRecord, IndicatorPreset, CustomAISkill, getPresetMaxScore, getPresetRubricType } from '@/lib/types';
 import {
   getStoredPresets,
   saveStoredPresets,
@@ -469,6 +469,10 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
     formData.append('presetId', activePreset.id);
     formData.append('presetName', activePreset.name);
     formData.append('indicatorsJson', JSON.stringify(activePreset.indicators));
+    if (activePreset.rubric) {
+      formData.append('rubricJson', JSON.stringify(activePreset.rubric));
+    }
+    formData.append('rubricType', activePreset.rubricType || 'weighted');
 
     const combinedSkillContent = getCombinedActiveSkillContent();
     if (combinedSkillContent) {
@@ -563,12 +567,17 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
       }
 
       const activeCount = activePreset.indicators.length || 18;
-      const maxPts = activeCount * 5;
+      const isBinary = getPresetRubricType(activePreset) === 'binary_count';
+      const maxPts = getPresetMaxScore(activePreset);
+      const scoreLabel = isBinary
+        ? `${data.total_score}/${activeCount} ${isEn ? 'disclosed' : 'indikator terungkap'}`
+        : `${data.total_score}/${maxPts} ${isEn ? 'pts' : 'poin'}`;
+
       setAlertInfo({
         type: 'success',
         message: isEn
-          ? `Analysis for ${code} (${fiscalYear}) completed! Total score: ${data.total_score}/${maxPts}. Click the green button on the right to copy the ${activeCount} indicator scores.`
-          : `Analisis untuk ${code} (${fiscalYear}) selesai! Total skor: ${data.total_score}/${maxPts}. Klik tombol hijau di kanan untuk menyalin ${activeCount} angka skor.`
+          ? `Analysis for ${code} (${fiscalYear}) completed! Total score: ${scoreLabel}. Click the green button on the right to copy the ${activeCount} indicator scores.`
+          : `Analisis untuk ${code} (${fiscalYear}) selesai! Total skor: ${scoreLabel}. Klik tombol hijau di kanan untuk menyalin ${activeCount} angka skor.`
       });
 
       onSuccessAnalysis();

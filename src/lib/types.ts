@@ -44,6 +44,16 @@ export interface IndicatorItem {
   group_en?: string;
 }
 
+export interface RubricItem {
+  score: number;       // nilai numerik (misal 0, 1, 2, ..., 100)
+  label: string;       // nama tingkatan (ID)
+  desc: string;        // rincian kriteria penilaian (ID)
+  label_en?: string;   // dwibahasa EN
+  desc_en?: string;
+}
+
+export type RubricType = 'weighted' | 'binary_count';
+
 export interface IndicatorPreset {
   id: string;          // 'default_ced_18' atau string unik
   name: string;        // nama preset
@@ -53,6 +63,8 @@ export interface IndicatorPreset {
   description_id?: string;
   description_en?: string;
   isDefault: boolean;  // true untuk bawaan 18 CED
+  rubricType?: RubricType; // 'weighted' (default skala skor) | 'binary_count' (hitung jumlah pengungkapan)
+  rubric?: RubricItem[];   // kriteria rubrik kustom (jika tidak ada, fallback ke SCORING_RUBRIC)
   indicators: IndicatorItem[];
   createdAt?: string;
   updatedAt?: string;
@@ -286,6 +298,46 @@ export const SCORING_RUBRIC = [
     desc_en: 'Comprehensively disclosed across more than one full A4 page.'
   }
 ];
+
+export const DEFAULT_BINARY_RUBRIC: RubricItem[] = [
+  {
+    score: 0,
+    label: '0: Tidak Diungkapkan',
+    desc: 'Tidak ada informasi, data, atau pengungkapan sama sekali mengenai indikator terkait pada file laporan.',
+    label_en: '0: Not Disclosed',
+    desc_en: 'No information, data, or disclosure found in the report for this indicator.'
+  },
+  {
+    score: 1,
+    label: '1: Diungkapkan dalam Laporan',
+    desc: 'Indikator ini diidentifikasi dan diungkapkan dalam dokumen laporan (disebutkan, dijelaskan, atau disajikan datanya).',
+    label_en: '1: Disclosed in Report',
+    desc_en: 'Indicator is identified and disclosed in the report (mentioned, discussed, or supported by data).'
+  }
+];
+
+export function getPresetRubric(preset?: IndicatorPreset | null): RubricItem[] {
+  if (!preset) return SCORING_RUBRIC;
+  if (preset.rubric && preset.rubric.length > 0) return preset.rubric;
+  if (preset.rubricType === 'binary_count') return DEFAULT_BINARY_RUBRIC;
+  return SCORING_RUBRIC;
+}
+
+export function getPresetRubricType(preset?: IndicatorPreset | null): RubricType {
+  return preset?.rubricType || 'weighted';
+}
+
+export function getPresetMaxScore(preset?: IndicatorPreset | null): number {
+  if (!preset) return 90;
+  const indCount = preset.indicators?.length || 0;
+  const rubricType = getPresetRubricType(preset);
+  if (rubricType === 'binary_count') {
+    return indCount;
+  }
+  const rubric = getPresetRubric(preset);
+  const maxTier = rubric.length > 0 ? Math.max(...rubric.map(r => Number(r.score) || 0)) : 5;
+  return indCount * maxTier;
+}
 
 export function calculateTotalScore(scores: Partial<CEDScores>): number {
   return INDICATOR_KEYS.reduce((sum, key) => sum + (scores[key] || 0), 0);

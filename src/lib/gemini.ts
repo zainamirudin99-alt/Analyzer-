@@ -4,7 +4,7 @@
 // Dilengkapi Smart Alias Routing, AbortController Timeout, & Multi-HTTP Error Shield
 // ============================================================
 
-import { CEDScores, INDICATOR_KEYS, IndicatorItem } from './types';
+import { CEDScores, INDICATOR_KEYS, IndicatorItem, RubricItem, RubricType } from './types';
 
 export interface ModelCategory {
   category: string;
@@ -55,6 +55,8 @@ export interface GeminiAnalysisOptions {
   apiKey?: string;
   preferredModel?: string;
   indicators?: IndicatorItem[];
+  rubric?: RubricItem[];
+  rubricType?: RubricType;
   skillContent?: string;
 }
 
@@ -80,9 +82,11 @@ export function buildAnalysisPrompt(params: {
   companyCode: string;
   fiscalYear: string;
   indicators?: IndicatorItem[];
+  rubric?: RubricItem[];
+  rubricType?: RubricType;
   skillContent?: string;
 }): string {
-  const { companyCode, fiscalYear, indicators, skillContent } = params;
+  const { companyCode, fiscalYear, indicators, rubric, rubricType = 'weighted', skillContent } = params;
 
   let indicatorsText = '';
   let sampleJsonObj: Record<string, number> = {};
@@ -126,22 +130,44 @@ export function buildAnalysisPrompt(params: {
     ? `\n\n=== PANDUAN & KEAHLIAN AUDIT TAMBAHAN (CUSTOM AI SKILL) ===\n${skillContent.trim()}\nPetunjuk: Gunakan panduan keahlian di atas sebagai acuan penilaian mendalam saat mengevaluasi dokumen.`
     : '';
 
-  return `Saya adalah peneliti yang ingin mengidentifikasi dan menilai pengungkapan indikator pada dokumen laporan perusahaan di Indonesia.
-Saya ingin mengidentifikasi tingkat pengungkapan menggunakan daftar indikator berikut:
+  let rubricSection = '';
+  let scoringGoalText = '';
 
-${indicatorsText}
-
-Indikator di atas dinilai dengan berdasarkan ketentuan poin 0-5, yang berisikan kriteria berikut:
+  if (rubricType === 'binary_count') {
+    rubricSection = `Indikator di atas dievaluasi berdasarkan keberadaan pengungkapan (Checklist / Binary Count):
+Scoring Rubric (Status Pengungkapan):
+0: Tidak Ada Pengungkapan (Tidak ditemukan informasi, data, atau bukti pengungkapan indikator terkait dalam dokumen laporan).
+1: Diungkapkan dalam Laporan (Indikator ini diidentifikasi dan diungkapkan dalam dokumen laporan perusahaan).`;
+    scoringGoalText = 'Bantulah untuk memeriksa keberadaan pengungkapan setiap indikator di atas secara objektif dan apa adanya. Berikan nilai 0 (jika tidak diungkapkan) atau 1 (jika diungkapkan).';
+  } else if (rubric && rubric.length > 0) {
+    const minScore = Math.min(...rubric.map(r => Number(r.score) || 0));
+    const maxScore = Math.max(...rubric.map(r => Number(r.score) || 0));
+    const rubricLines = rubric.map(r => `${r.score}: ${r.label ? r.label + ' — ' : ''}${r.desc}`).join('\n');
+    rubricSection = `Indikator di atas dinilai dengan berdasarkan ketentuan poin ${minScore} sampai ${maxScore}, yang berisikan kriteria berikut:
+Scoring Rubric (Skala ${minScore} sampai ${maxScore}):
+${rubricLines}`;
+    scoringGoalText = `Bantulah untuk mengidentifikasi dan memberi nilai skor ${minScore} sampai ${maxScore} untuk setiap indikator di atas secara objektif, ketat, dan apa adanya.`;
+  } else {
+    rubricSection = `Indikator di atas dinilai dengan berdasarkan ketentuan poin 0-5, yang berisikan kriteria berikut:
 Scoring Rubric (Skala 0 sampai 5):
 0: No disclosure (Tidak ada pengungkapan sama sekali).
 1: Disclosed in fewer than three sentences (Diungkapkan dalam kurang dari 3 kalimat).
 2: Disclosed in three sentences or one paragraph, no more than half a page (Diungkapkan dalam 3 kalimat atau 1 paragraf, tidak lebih dari 1/2 halaman).
 3: Disclosed in at least half a page but less than one A4 page (Diungkapkan minimal 1/2 halaman tetapi kurang dari 1 halaman A4).
 4: Disclosed on a full A4 page (Diungkapkan pada 1 halaman A4 penuh).
-5: Disclosed on more than one A4 page (Diungkapkan lebih dari 1 halaman A4).${skillPromptBlock}
+5: Disclosed on more than one A4 page (Diungkapkan lebih dari 1 halaman A4).`;
+    scoringGoalText = 'Bantulah untuk mengidentifikasi dan memberi nilai skor 0 sampai 5 untuk setiap indikator di atas secara objektif, ketat, dan apa adanya.';
+  }
+
+  return `Saya adalah peneliti yang ingin mengidentifikasi dan menilai pengungkapan indikator pada dokumen laporan perusahaan di Indonesia.
+Saya ingin mengidentifikasi tingkat pengungkapan menggunakan daftar indikator berikut:
+
+${indicatorsText}
+
+${rubricSection}${skillPromptBlock}
 
 Berikut terlampir dokumen laporan tahunan / keberlanjutan perusahaan "${companyCode}" untuk tahun fiskal "${fiscalYear}".
-Bantulah untuk mengidentifikasi dan memberi nilai skor 0 sampai 5 untuk setiap indikator di atas secara objektif, ketat, dan apa adanya.
+${scoringGoalText}
 
 INSTRUKSI OUTPUT WAJIB:
 Kembalikan HANYA objek JSON murni tanpa markdown, tanpa teks pembuka atau penutup:
@@ -627,6 +653,8 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
     companyCode: options.companyCode,
     fiscalYear: options.fiscalYear,
     indicators: options.indicators,
+    rubric: options.rubric,
+    rubricType: options.rubricType,
     skillContent: options.skillContent
   });
 
