@@ -38,6 +38,7 @@ import {
 import { SUPPORTED_MODEL_CATEGORIES, ALL_SUPPORTED_MODELS } from '@/lib/gemini';
 import { DEFAULT_OPENAI_MODELS } from '@/lib/openai';
 import { CLAUDE_MODEL_CATEGORIES, ALL_CLAUDE_MODELS } from '@/lib/claude';
+import { getAuthHeaders, getCurrentAccountOwner, syncCurrentSnapshotToCloud } from '@/lib/account-sync';
 
 interface UploadTabProps {
   onSuccessAnalysis: () => void;
@@ -489,6 +490,10 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
 
     formData.append('presetId', activePreset.id);
     formData.append('presetName', activePreset.name);
+    const activeOwner = getCurrentAccountOwner();
+    if (activeOwner) {
+      formData.append('ownerUsername', activeOwner);
+    }
     formData.append('indicatorsJson', JSON.stringify(activePreset.indicators));
     if (activePreset.rubric) {
       formData.append('rubricJson', JSON.stringify(activePreset.rubric));
@@ -505,6 +510,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
         try {
           const response = await fetch('/api/analyze', {
             method: 'POST',
+            headers: getAuthHeaders(),
             body: formData
           });
           const textBody = await response.text();
@@ -572,6 +578,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
             status: 'completed',
             preset_id: targetPresetId,
             preset_name: data.preset_name || activePreset.name,
+            owner_username: data.owner_username || activeOwner || undefined,
             dynamic_scores: data.scores,
             ...(isDefaultPreset ? data.scores : {}),
             total_score: data.total_score,
@@ -585,6 +592,9 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
           const updatedList = [
             newRecord,
             ...existingList.filter(r => {
+              if (activeOwner && r.owner_username && r.owner_username.toLowerCase() !== activeOwner) {
+                return false;
+              }
               const rPresetId = resolveRecordPresetId(r, latestPresets);
               return !(
                 r.company_code === newRecord.company_code &&
@@ -594,6 +604,8 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
             })
           ];
           localStorage.setItem('analyzer_records', JSON.stringify(updatedList));
+          window.dispatchEvent(new Event('analyzer_records_changed'));
+          syncCurrentSnapshotToCloud();
         } catch (storageErr) {
           console.warn('Gagal menyimpan cache lokal:', storageErr);
         }

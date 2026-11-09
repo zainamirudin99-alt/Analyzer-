@@ -47,9 +47,10 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
         });
         const json = await res.json().catch(() => ({}));
         if (active && res.ok && json.success && json.user) {
+          setStoredAuthSession(json.user);
           setUser(json.user);
           try {
-            const snap = await hydrateFromAccount();
+            const snap = await hydrateFromAccount({ ownerUsername: json.user.username });
             lastSyncedJsonRef.current = snap;
           } catch (syncErr) {
             console.warn('[AuthGate] Gagal sinkronisasi awal pengaturan akun:', syncErr);
@@ -87,8 +88,21 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
   }, [user]);
 
   useEffect(() => {
-    if (!user || typeof window !== 'undefined') return;
-  }, [user]);
+    if (!user || typeof window === 'undefined') return;
+    const events = [
+      'analyzer-settings-changed',
+      'analyzer_presets_changed',
+      'analyzer_active_preset_changed',
+      'analyzer_skills_changed',
+      'analyzer_active_skill_changed',
+      'analyzer_records_changed',
+      'analyzer_account_settings_dirty'
+    ];
+    events.forEach(ev => window.addEventListener(ev, schedulePushToAccount));
+    return () => {
+      events.forEach(ev => window.removeEventListener(ev, schedulePushToAccount));
+    };
+  }, [user, schedulePushToAccount]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,9 +134,14 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
         return;
       }
 
+      // Bersihkan seluruh state lokal sebelumnya agar akun yang baru login / daftar terisolasi 100%
+      clearLocalSnapshot();
       setStoredAuthSession(json.user, json.token);
       try {
-        const snap = await hydrateFromAccount();
+        const snap = await hydrateFromAccount({
+          replaceAll: true,
+          ownerUsername: json.user.username
+        });
         lastSyncedJsonRef.current = snap;
       } catch (syncErr) {
         console.warn('[AuthGate] Gagal sinkronisasi setelah login:', syncErr);
@@ -137,6 +156,17 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
   };
 
   const handleLogout = async () => {
+    if (syncTimerRef.current) {
+      clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = null;
+    }
+    try {
+      // Pastikan perubahan terakhir akun ini tersimpan ke Cloud sebelum sesi dihapus
+      const currentSnapshot = readLocalSnapshot();
+      if (Object.keys(currentSnapshot).length > 0) {
+        await pushAccountSettings(currentSnapshot).catch(() => {});
+      }
+    } catch {}
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
     } catch {
@@ -144,6 +174,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
     } finally {
       clearStoredAuthSession();
       clearLocalSnapshot();
+      lastSyncedJsonRef.current = '';
       setUser(null);
       setUsername('');
       setPassword('');

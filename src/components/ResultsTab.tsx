@@ -23,6 +23,12 @@ import {
   createDefaultCEDPreset
 } from '@/lib/indicators-storage';
 import { useLanguage, getPresetName, getIndicatorTitle, ensurePresetsTranslated } from '@/lib/i18n';
+import {
+  getAuthHeaders,
+  getCurrentAccountOwner,
+  normalizeAccountUsername,
+  syncCurrentSnapshotToCloud
+} from '@/lib/account-sync';
 
 interface ResultsTabProps {
   refreshTrigger: number;
@@ -48,40 +54,59 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
 
     let supabaseData: CEDResultRecord[] = [];
     let localData: CEDResultRecord[] = [];
+    const activeOwner = getCurrentAccountOwner();
 
-    // 1. Ambil data dari LocalStorage
+    // 1. Ambil data dari LocalStorage (hanya milik akun aktif)
     if (typeof window !== 'undefined') {
       try {
         const rawLocal = localStorage.getItem('analyzer_records');
         if (rawLocal) {
-          localData = JSON.parse(rawLocal);
+          const parsedLocal = JSON.parse(rawLocal);
+          if (Array.isArray(parsedLocal)) {
+            localData = parsedLocal.filter(item => {
+              if (!item || typeof item !== 'object') return false;
+              const itemOwner = normalizeAccountUsername(item.owner_username);
+              if (activeOwner && itemOwner && itemOwner !== activeOwner) return false;
+              return true;
+            });
+          }
         }
       } catch (err) {
         console.warn('Error reading local cache:', err);
       }
     }
 
-    // 2. Ambil data dari Backend / Supabase
+    // 2. Ambil data dari Backend / Supabase (terisolasi per akun)
     try {
-      const res = await fetch('/api/results');
+      const ownerQuery = activeOwner ? `?owner=${encodeURIComponent(activeOwner)}` : '';
+      const res = await fetch(`/api/results${ownerQuery}`, {
+        headers: getAuthHeaders()
+      });
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
-        supabaseData = json.data;
+        supabaseData = json.data.filter((item: CEDResultRecord) => {
+          if (!activeOwner) return true;
+          const itemOwner = normalizeAccountUsername(item?.owner_username);
+          return itemOwner === activeOwner;
+        });
       }
     } catch (err: any) {
       console.warn('Backend fetch notice:', err);
     }
 
-    // 3. Gabungkan data secara terisolasi per Preset Indikator (company_code + fiscal_year + effectivePresetId)
-    // agar hasil analisis dari satu pilihan indikator tidak pernah tercampur dengan pilihan indikator lain.
+    // 3. Gabungkan data secara terisolasi per Akun & Preset Indikator (company_code + fiscal_year + effectivePresetId)
+    // agar hasil analisis dari satu akun atau pilihan indikator tidak pernah tercampur.
     const currentPresets = getStoredPresets();
     const combinedMap = new Map<string, CEDResultRecord>();
 
     localData.forEach(rawItem => {
       const item = decodeRecordAnalyzerMeta(rawItem);
+      const itemOwner = normalizeAccountUsername(item.owner_username);
+      if (activeOwner && itemOwner && itemOwner !== activeOwner) return;
       const effectivePresetId = resolveRecordPresetId(item, currentPresets);
       const normalizedItem: CEDResultRecord = {
         ...item,
+        owner_username: activeOwner || itemOwner || undefined,
         preset_id: effectivePresetId,
         preset_name: effectivePresetId === DEFAULT_PRESET_ID ? undefined : item.preset_name
       };
@@ -94,9 +119,12 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
 
     supabaseData.forEach(rawSbItem => {
       const sbItem = decodeRecordAnalyzerMeta(rawSbItem);
+      const sbOwner = normalizeAccountUsername(sbItem.owner_username);
+      if (activeOwner && sbOwner !== activeOwner) return;
       const effectivePresetId = resolveRecordPresetId(sbItem, currentPresets);
       const normalizedSb: CEDResultRecord = {
         ...sbItem,
+        owner_username: activeOwner || sbOwner || undefined,
         preset_id: effectivePresetId,
         preset_name: effectivePresetId === DEFAULT_PRESET_ID ? undefined : sbItem.preset_name
       };
@@ -133,7 +161,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
 
     setResults(mergedList);
 
-    if (typeof window !== 'undefined' && mergedList.length > 0) {
+    if (typeof window !== 'undefined') {
       localStorage.setItem('analyzer_records', JSON.stringify(mergedList));
     }
 
@@ -151,11 +179,19 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     fetchResults();
     syncPresetsAndActive();
     if (typeof window !== 'undefined') {
+      const handleRecordsSync = () => {
+        syncPresetsAndActive();
+        fetchResults();
+      };
       window.addEventListener('analyzer_presets_changed', syncPresetsAndActive);
       window.addEventListener('analyzer_active_preset_changed', syncPresetsAndActive);
+      window.addEventListener('analyzer_records_changed', handleRecordsSync);
+      window.addEventListener('analyzer-settings-changed', handleRecordsSync);
       return () => {
         window.removeEventListener('analyzer_presets_changed', syncPresetsAndActive);
         window.removeEventListener('analyzer_active_preset_changed', syncPresetsAndActive);
+        window.removeEventListener('analyzer_records_changed', handleRecordsSync);
+        window.removeEventListener('analyzer-settings-changed', handleRecordsSync);
       };
     }
   }, [refreshTrigger]);
@@ -193,14 +229,18 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     setResults(updatedLocal);
     if (typeof window !== 'undefined') {
       localStorage.setItem('analyzer_records', JSON.stringify(updatedLocal));
+      window.dispatchEvent(new Event('analyzer_records_changed'));
+      syncCurrentSnapshotToCloud();
     }
 
     try {
+      const activeOwner = getCurrentAccountOwner();
+      const ownerParam = activeOwner ? `&owner=${encodeURIComponent(activeOwner)}` : '';
       const url = record.id
-        ? `/api/results?id=${record.id}`
-        : `/api/results?code=${record.company_code}&year=${record.fiscal_year}`;
+        ? `/api/results?id=${record.id}${ownerParam}`
+        : `/api/results?code=${record.company_code}&year=${record.fiscal_year}${ownerParam}`;
 
-      await fetch(url, { method: 'DELETE' });
+      await fetch(url, { method: 'DELETE', headers: getAuthHeaders() });
     } catch (err) {
       console.warn('Backend delete sync:', err);
     }

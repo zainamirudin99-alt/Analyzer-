@@ -174,6 +174,7 @@ export function saveStoredSkills(skills: CustomAISkill[]): void {
   try {
     localStorage.setItem('analyzer_custom_skills', JSON.stringify(skills));
     window.dispatchEvent(new Event('analyzer_skills_changed'));
+    syncPresetsToCloud();
   } catch (e) {
     console.warn('Gagal menyimpan custom AI skills ke localStorage:', e);
   }
@@ -193,6 +194,7 @@ export function setActiveSkillId(id: string): void {
     localStorage.setItem('analyzer_active_skill_ids', JSON.stringify([id]));
   }
   window.dispatchEvent(new Event('analyzer_active_skill_changed'));
+  syncPresetsToCloud();
 }
 
 export function getActiveSkillIds(): string[] {
@@ -223,6 +225,7 @@ export function setActiveSkillIds(ids: string[]): void {
   localStorage.setItem('analyzer_active_skill_ids', JSON.stringify(uniqueIds));
   localStorage.setItem('analyzer_active_skill_id', uniqueIds[0] || 'none');
   window.dispatchEvent(new Event('analyzer_active_skill_changed'));
+  syncPresetsToCloud();
 }
 
 export function getActiveSkills(): CustomAISkill[] {

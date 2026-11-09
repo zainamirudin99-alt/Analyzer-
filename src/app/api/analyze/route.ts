@@ -14,6 +14,7 @@ import {
   RubricType
 } from '@/lib/types';
 import { getSupabaseServerClient } from '@/lib/supabase';
+import { getSessionFromRequest, normalizeUsername } from '@/lib/auth-server';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // 60s timeout for Vercel Serverless Function
@@ -50,6 +51,9 @@ export async function POST(req: NextRequest) {
     const customEffort = (((formData.get('effort') as string) || 'medium').trim()) as ClaudeEffortLevel;
     const presetId = ((formData.get('presetId') as string) || 'default_ced_18').trim();
     const presetName = ((formData.get('presetName') as string) || '').trim();
+    const session = await getSessionFromRequest(req);
+    const ownerUsername =
+      normalizeUsername(session?.username || (formData.get('ownerUsername') as string) || '') || undefined;
     const skillContent = ((formData.get('skillContent') as string) || '').trim();
     const indicatorsJson = (formData.get('indicatorsJson') as string) || '';
     const rubricJson = (formData.get('rubricJson') as string) || '';
@@ -238,6 +242,7 @@ export async function POST(req: NextRequest) {
         const enrichedNotes = encodeNotesWithAnalyzerMeta(notes, {
           preset_id: presetId,
           preset_name: presetName,
+          owner_username: ownerUsername,
           dynamic_scores: aiResult.scores,
           total_score: totalScore
         });
@@ -288,6 +293,7 @@ export async function POST(req: NextRequest) {
         model_used: aiResult.modelUsed,
         preset_id: presetId,
         preset_name: presetName,
+        owner_username: ownerUsername,
         created_at: new Date().toISOString(),
         extraction_summary: {
           page_count: pageCount,

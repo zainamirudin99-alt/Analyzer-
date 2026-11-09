@@ -136,6 +136,7 @@ export const PanelTab: React.FC = () => {
 
   // Export & Action State (P6)
   const [isExportingDocx, setIsExportingDocx] = useState<boolean>(false);
+  const [isExportingXlsx, setIsExportingXlsx] = useState<boolean>(false);
   const [docxExportError, setDocxExportError] = useState<string | null>(null);
   const [isCopiedSummary, setIsCopiedSummary] = useState<boolean>(false);
 
@@ -670,6 +671,44 @@ export const PanelTab: React.FC = () => {
       setDocxExportError(err.message || 'Gagal mengunduh dokumen Word.');
     } finally {
       setIsExportingDocx(false);
+    }
+  };
+
+  // Handler Export XLSX (Multi-Sheet Excel)
+  const handleExportXlsx = async () => {
+    if (!fitResult) return;
+    try {
+      setIsExportingXlsx(true);
+      setDocxExportError(null);
+
+      const res = await fetch('/api/panel/export-xlsx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fitResult,
+          datasetName: fileName || 'Dataset_Panel.xlsx'
+        })
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `HTTP error ${res.status}`);
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Laporan_Regresi_Panel_Stata_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      console.error('[Export XLSX Error]:', err);
+      setDocxExportError(err.message || 'Gagal mengunduh dokumen Excel.');
+    } finally {
+      setIsExportingXlsx(false);
     }
   };
 
@@ -3187,7 +3226,7 @@ export const PanelTab: React.FC = () => {
                       Ekspor &amp; Dokumentasi Laporan Panel Lengkap
                     </div>
                     <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '3px' }}>
-                      Unduh berkas Word (.docx) dengan tabel ekonometrika resmi APA/Stata, cetak langsung ke format PDF, atau salin ringkasan eksekutif untuk draft skripsi / tesis.
+                      Unduh berkas Word (.docx) atau Excel (.xlsx) dengan tabel ekonometrika resmi APA/Stata, cetak langsung ke format PDF, atau salin ringkasan eksekutif untuk draft skripsi / tesis.
                     </div>
                   </div>
                   {docxExportError && (
@@ -3220,6 +3259,29 @@ export const PanelTab: React.FC = () => {
                   >
                     {isExportingDocx ? <RefreshCw size={16} className="animate-spin" /> : <Download size={16} />}
                     <span>{isExportingDocx ? 'Membuat Dokumen Word...' : 'Unduh Laporan Word (.docx)'}</span>
+                  </button>
+
+                  <button
+                    onClick={handleExportXlsx}
+                    disabled={isExportingXlsx}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '10px 20px',
+                      minHeight: '44px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--success-border, rgba(16, 185, 129, 0.4))',
+                      background: 'var(--success-bg, rgba(16, 185, 129, 0.14))',
+                      color: 'var(--success, #10b981)',
+                      fontSize: '14px',
+                      fontWeight: 700,
+                      cursor: isExportingXlsx ? 'wait' : 'pointer',
+                      opacity: isExportingXlsx ? 0.7 : 1
+                    }}
+                  >
+                    {isExportingXlsx ? <RefreshCw size={16} className="animate-spin" /> : <FileSpreadsheet size={16} />}
+                    <span>{isExportingXlsx ? 'Membuat Excel...' : 'Unduh Excel (.xlsx)'}</span>
                   </button>
 
                   <button
