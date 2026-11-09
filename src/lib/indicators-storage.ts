@@ -318,38 +318,101 @@ export function getActiveSkill(): CustomAISkill | null {
   return activeList[0] || null;
 }
 
-// Ekstraksi YAML Frontmatter dari konten SKILL.md / .skill
+// Ekstraksi YAML Frontmatter dari konten SKILL.md / .skill / JSON
 function parseSkillMarkdownMetadata(rawText: string, fallbackName: string): {
   name: string;
   description?: string;
   content: string;
 } {
   const trimmed = rawText.trim();
+
+  // 1. Coba parse jika format file berupa JSON
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === 'object') {
+        const name = parsed.name || cleanSkillName(fallbackName);
+        const description = parsed.description || undefined;
+        const content = parsed.content || parsed.instructions || parsed.prompt || trimmed;
+        return { name, description, content };
+      }
+    } catch {}
+  }
+
+  // 2. Coba parse format Markdown Frontmatter (---)
   const fmMatch = trimmed.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
   if (!fmMatch) {
-    return { name: fallbackName, content: trimmed };
+    return { name: cleanSkillName(fallbackName), content: trimmed };
   }
 
   const frontmatter = fmMatch[1];
   const body = fmMatch[2].trim();
 
   const nameMatch = frontmatter.match(/^name:\s*["']?([^"'\r\n]+)["']?/m);
-  const descMatch = frontmatter.match(/^description:\s*["']?([^"'\r\n]+)["']?/m);
+  let description: string | undefined = undefined;
+
+  const descMultilineMatch = frontmatter.match(/^description:\s*[>|]?\s*\r?\n((?:[ \t]+[^\r\n]*\r?\n?)+)/m);
+  if (descMultilineMatch) {
+    description = descMultilineMatch[1]
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(Boolean)
+      .join(' ');
+  } else {
+    const descMatch = frontmatter.match(/^description:\s*["']?([^"'\r\n]+)["']?/m);
+    description = descMatch?.[1]?.trim();
+  }
 
   return {
-    name: nameMatch?.[1]?.trim() || fallbackName,
-    description: descMatch?.[1]?.trim(),
+    name: cleanSkillName(nameMatch?.[1]?.trim() || fallbackName),
+    description,
     content: body || trimmed
   };
 }
 
-// Ekstraksi SKILL.md dari arsip ZIP (.skill package) menggunakan Web API bawaan
+function cleanSkillName(raw: string): string {
+  return raw
+    .replace(/\.(skill|md|txt|json|yaml|yml|zip)$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .trim() || 'Skill Bantuan';
+}
+
+async function decompressSlice(compressedSlice: Uint8Array, method: number): Promise<string | null> {
+  const decoder = new TextDecoder('utf-8');
+  if (method === 0) {
+    return decoder.decode(compressedSlice);
+  }
+  if (method === 8 && typeof DecompressionStream !== 'undefined') {
+    // 1. Coba deflate-raw (ZIP standard RFC 1951)
+    try {
+      const stream = new Blob([compressedSlice as any]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      const res = new Response(stream);
+      const ab = await res.arrayBuffer();
+      return decoder.decode(ab);
+    } catch {
+      // 2. Coba deflate (zlib header RFC 1950)
+      try {
+        const stream = new Blob([compressedSlice as any]).stream().pipeThrough(new DecompressionStream('deflate'));
+        const res = new Response(stream);
+        const ab = await res.arrayBuffer();
+        return decoder.decode(ab);
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+// Ekstraksi SKILL.md dari arsip ZIP (.skill package) menggunakan Web Streams API bawaan
 async function extractSkillFromZipBuffer(buffer: ArrayBuffer): Promise<string | null> {
   const bytes = new Uint8Array(buffer);
   const view = new DataView(buffer);
   const decoder = new TextDecoder('utf-8');
 
-  // Cari End of Central Directory (0x06054b50) dari belakang
+  const candidateFiles: Array<{ name: string; method: number; compSize: number; localOffset: number }> = [];
+
+  // 1. Scan Central Directory
   let eocdOffset = -1;
   for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
     if (view.getUint32(i, true) === 0x06054b50) {
@@ -357,8 +420,6 @@ async function extractSkillFromZipBuffer(buffer: ArrayBuffer): Promise<string | 
       break;
     }
   }
-
-  const candidateFiles: Array<{ name: string; method: number; compSize: number; localOffset: number }> = [];
 
   if (eocdOffset !== -1) {
     const cdCount = view.getUint16(eocdOffset + 10, true);
@@ -375,10 +436,58 @@ async function extractSkillFromZipBuffer(buffer: ArrayBuffer): Promise<string | 
       const localOffset = view.getUint32(ptr + 42, true);
       const fileName = decoder.decode(bytes.subarray(ptr + 46, ptr + 46 + nameLen));
 
-      if (!fileName.endsWith('/') && (fileName.toLowerCase().endsWith('.md') || fileName.toLowerCase().endsWith('.txt') || fileName.toLowerCase().endsWith('.skill'))) {
+      if (
+        !fileName.endsWith('/') &&
+        (fileName.toLowerCase().endsWith('.md') ||
+          fileName.toLowerCase().endsWith('.txt') ||
+          fileName.toLowerCase().endsWith('.skill') ||
+          fileName.toLowerCase().endsWith('.yaml') ||
+          fileName.toLowerCase().endsWith('.json'))
+      ) {
         candidateFiles.push({ name: fileName, method, compSize, localOffset });
       }
       ptr += 46 + nameLen + extraLen + commentLen;
+    }
+  }
+
+  // 2. Scan Local File Headers jika Central Directory kosong
+  if (candidateFiles.length === 0) {
+    let pos = 0;
+    while (pos + 30 <= bytes.length) {
+      if (view.getUint32(pos, true) === 0x04034b50) {
+        const method = view.getUint16(pos + 8, true);
+        let compSize = view.getUint32(pos + 18, true);
+        const nameLen = view.getUint16(pos + 26, true);
+        const extraLen = view.getUint16(pos + 28, true);
+        const fName = decoder.decode(bytes.subarray(pos + 30, pos + 30 + nameLen));
+        const dataStart = pos + 30 + nameLen + extraLen;
+
+        if (compSize === 0) {
+          let next = dataStart;
+          while (next + 4 <= bytes.length) {
+            const sig = view.getUint32(next, true);
+            if (sig === 0x04034b50 || sig === 0x02014b50 || sig === 0x08074b50) {
+              compSize = next - dataStart;
+              break;
+            }
+            next++;
+          }
+        }
+
+        if (
+          !fName.endsWith('/') &&
+          (fName.toLowerCase().endsWith('.md') ||
+            fName.toLowerCase().endsWith('.txt') ||
+            fName.toLowerCase().endsWith('.skill') ||
+            fName.toLowerCase().endsWith('.yaml') ||
+            fName.toLowerCase().endsWith('.json'))
+        ) {
+          candidateFiles.push({ name: fName, method, compSize, localOffset: pos });
+        }
+        pos = dataStart + compSize;
+      } else {
+        pos++;
+      }
     }
   }
 
@@ -399,45 +508,57 @@ async function extractSkillFromZipBuffer(buffer: ArrayBuffer): Promise<string | 
     if (dataEnd > bytes.length) continue;
 
     const compressedSlice = bytes.subarray(dataStart, dataEnd);
-    if (entry.method === 0) {
-      return decoder.decode(compressedSlice);
-    } else if (entry.method === 8 && typeof DecompressionStream !== 'undefined') {
-      try {
-        const ds = new DecompressionStream('deflate-raw');
-        const writer = ds.writable.getWriter();
-        writer.write(compressedSlice);
-        writer.close();
-        const decompressedResp = new Response(ds.readable);
-        const ab = await decompressedResp.arrayBuffer();
-        return decoder.decode(ab);
-      } catch {
-        continue;
-      }
+    const decompressed = await decompressSlice(compressedSlice, entry.method);
+    if (decompressed && decompressed.trim()) {
+      return decompressed;
     }
   }
 
   return null;
 }
 
-// Parser utama file Skill (.skill, .md, .txt, .json, .yaml)
+// Parser utama file Skill (.skill, .zip, .md, .txt, .json, .yaml)
 export async function parseUploadedSkillFile(file: File): Promise<{
   name: string;
   description?: string;
   content: string;
 }> {
-  const cleanFallbackName = file.name.replace(/\.(skill|md|txt|json|yaml|yml)$/i, '');
+  const cleanFallbackName = cleanSkillName(file.name);
   const buffer = await file.arrayBuffer();
   const bytes = new Uint8Array(buffer);
 
-  // Cek apakah file adalah paket ZIP (.skill berbasis ZIP diawali PK\x03\x04)
+  // 1. Cek apakah file adalah paket ZIP (.skill atau .zip diawali PK\x03\x04)
   if (bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04) {
-    const extracted = await extractSkillFromZipBuffer(buffer);
+    let extracted: string | null = null;
+    try {
+      extracted = await extractSkillFromZipBuffer(buffer);
+    } catch (zipErr) {
+      console.warn('[parseUploadedSkillFile] Client-side zip extraction failed:', zipErr);
+    }
+
     if (extracted && extracted.trim()) {
       return parseSkillMarkdownMetadata(extracted, cleanFallbackName);
     }
-    throw new Error('Tidak ditemukan berkas SKILL.md atau instruksi teks di dalam paket .skill ini.');
+
+    // 2. Fallback server route /api/skills/parse jika client-side zip parser tidak berhasil
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/skills/parse', { method: 'POST', body: formData });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          return json.data;
+        }
+      }
+    } catch (srvErr) {
+      console.warn('[parseUploadedSkillFile] Server fallback failed:', srvErr);
+    }
+
+    throw new Error('Tidak ditemukan berkas SKILL.md atau instruksi teks di dalam paket .skill/.zip ini.');
   }
 
+  // 3. File berbasis teks (.md, .txt, .json, .yaml, atau .skill raw text)
   const text = new TextDecoder('utf-8').decode(bytes);
   if (!text || !text.trim()) {
     throw new Error('File kosong atau tidak dapat dibaca.');

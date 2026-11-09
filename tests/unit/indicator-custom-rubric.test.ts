@@ -13,7 +13,8 @@ import {
   doesRecordMatchPreset,
   getRecordScoreForPresetIndicator
 } from '../../src/lib/types';
-import { createDefaultCEDPreset, getDefaultSkills } from '../../src/lib/indicators-storage';
+import { createDefaultCEDPreset, getDefaultSkills, parseUploadedSkillFile } from '../../src/lib/indicators-storage';
+import zlib from 'zlib';
 import { buildAnalysisPrompt, normalizeScores, preprocessTextForCED } from '../../src/lib/gemini';
 import {
   generateExcelTemplate,
@@ -382,5 +383,70 @@ describe('Custom Indicator Rubric & Dynamic Scoring Engine', () => {
     expect(decoded.owner_username).toBe('gojira123');
     expect(decoded.skills_used).toEqual(['pdfreader', 'esg-auditor']);
     expect(decoded.dynamic_scores?.['ghg1']).toBe('25000 ton CO2e');
+  });
+
+  it('parseUploadedSkillFile parses markdown skill files with frontmatter and multiline descriptions', async () => {
+    const mdContent = `---
+name: "carbon-expert"
+description: >
+  Deep carbon footprint and greenhouse gas auditing
+  according to ISO 14064 standards.
+---
+
+# Carbon Footprint Auditor
+Audit scope 1, 2, 3 emissions rigorously.`;
+
+    const file = new File([Buffer.from(mdContent)], 'carbon-expert.md', { type: 'text/markdown' });
+    const parsed = await parseUploadedSkillFile(file);
+
+    expect(parsed.name).toBe('carbon expert');
+    expect(parsed.description).toContain('Deep carbon footprint');
+    expect(parsed.description).toContain('ISO 14064');
+    expect(parsed.content).toContain('# Carbon Footprint Auditor');
+  });
+
+  it('parseUploadedSkillFile parses JSON skill files', async () => {
+    const jsonContent = JSON.stringify({
+      name: 'water-auditor',
+      description: 'Auditing water consumption and treatment',
+      content: '# Water Auditor\nExtract volume in liters or m3.'
+    });
+
+    const file = new File([Buffer.from(jsonContent)], 'water-auditor.json', { type: 'application/json' });
+    const parsed = await parseUploadedSkillFile(file);
+
+    expect(parsed.name).toBe('water-auditor');
+    expect(parsed.description).toBe('Auditing water consumption and treatment');
+    expect(parsed.content).toContain('Extract volume in liters');
+  });
+
+  it('parseUploadedSkillFile extracts and decompresses .skill ZIP packages containing SKILL.md', async () => {
+    const fName = Buffer.from('SKILL.md');
+    const skillContent = Buffer.from(`---
+name: pdf-extractor
+description: Advanced PDF extraction skill package
+---
+
+# PDF Extractor Instructions
+Scan tables and extract exact numbers.`);
+
+    const comp = zlib.deflateRawSync(skillContent);
+    const header = Buffer.alloc(30);
+    header.writeUInt32LE(0x04034b50, 0); // Local file header signature
+    header.writeUInt16LE(20, 4); // version needed
+    header.writeUInt16LE(0, 6); // flags
+    header.writeUInt16LE(8, 8); // compression method (8 = Deflate)
+    header.writeUInt32LE(comp.length, 18); // compSize
+    header.writeUInt32LE(skillContent.length, 22); // uncompSize
+    header.writeUInt16LE(fName.length, 26); // nameLen
+    header.writeUInt16LE(0, 28); // extraLen
+
+    const zipBuffer = Buffer.concat([header, fName, comp]);
+    const file = new File([zipBuffer], 'pdf-extractor.skill', { type: 'application/zip' });
+
+    const parsed = await parseUploadedSkillFile(file);
+    expect(parsed.name).toBe('pdf extractor');
+    expect(parsed.description).toBe('Advanced PDF extraction skill package');
+    expect(parsed.content).toContain('# PDF Extractor Instructions');
   });
 });

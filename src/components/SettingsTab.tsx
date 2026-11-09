@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Database, Key, Copy, ExternalLink, RefreshCw, Activity, Sparkles, Upload, FileText, Trash2, Eye, Plus, Check, X, BookOpen, Edit2, Globe } from 'lucide-react';
 import { CustomAISkill } from '@/lib/types';
-import { getStoredSkills, saveStoredSkills, parseUploadedSkillFile } from '@/lib/indicators-storage';
+import { getStoredSkills, saveStoredSkills, getActiveSkillIds, setActiveSkillIds, parseUploadedSkillFile } from '@/lib/indicators-storage';
 import { useLanguage } from '@/lib/i18n';
 import { SUPPORTED_MODEL_CATEGORIES, ALL_SUPPORTED_MODELS } from '@/lib/gemini';
 import { DEFAULT_OPENAI_MODELS } from '@/lib/openai';
@@ -229,8 +229,10 @@ export const SettingsTab: React.FC = () => {
   const [previewingSkill, setPreviewingSkill] = useState<CustomAISkill | null>(null);
   const [editingSkill, setEditingSkill] = useState<CustomAISkill | null>(null);
   const [skillFormName, setSkillFormName] = useState<string>('');
+  const [skillFormDesc, setSkillFormDesc] = useState<string>('');
   const [skillFormContent, setSkillFormContent] = useState<string>('');
   const [skillNotice, setSkillNotice] = useState<{ type: 'success' | 'warn'; text: string } | null>(null);
+  const [isUploadingSkill, setIsUploadingSkill] = useState<boolean>(false);
   const skillFileInputRef = useRef<HTMLInputElement>(null);
 
   const loadSkillsData = () => {
@@ -243,17 +245,19 @@ export const SettingsTab: React.FC = () => {
     if (!file) return;
 
     const lowerName = file.name.toLowerCase();
-    const allowedExts = ['.skill', '.md', '.txt', '.json', '.yaml', '.yml'];
-    if (!allowedExts.some(ext => lowerName.endsWith(ext))) {
+    const allowedExts = ['.skill', '.md', '.txt', '.json', '.yaml', '.yml', '.zip'];
+    const isAllowed = allowedExts.some(ext => lowerName.endsWith(ext)) || file.type.includes('text') || file.type.includes('zip');
+    if (!isAllowed) {
       alert(
         isEn
-          ? 'Supported formats: .skill, Markdown (.md), Text (.txt), JSON (.json), or YAML (.yaml).'
-          : 'Hanya mendukung file format .skill, Markdown (.md), Teks (.txt), JSON (.json), atau YAML (.yaml).'
+          ? 'Supported formats: .skill, .zip, Markdown (.md), Text (.txt), JSON (.json), or YAML (.yaml).'
+          : 'Hanya mendukung file format .skill, .zip, Markdown (.md), Teks (.txt), JSON (.json), atau YAML (.yaml).'
       );
       e.target.value = '';
       return;
     }
 
+    setIsUploadingSkill(true);
     try {
       const parsed = await parseUploadedSkillFile(file);
       const newSkill: CustomAISkill = {
@@ -265,19 +269,29 @@ export const SettingsTab: React.FC = () => {
         createdAt: new Date().toISOString()
       };
 
-      const updated = [newSkill, ...skills.filter(s => s.name !== parsed.name)];
+      const currentSkills = getStoredSkills();
+      const updated = [newSkill, ...currentSkills.filter(s => s.name !== parsed.name && s.id !== newSkill.id)];
       setSkills(updated);
       saveStoredSkills(updated);
+
+      // Aktifkan skill yang baru diunggah secara otomatis agar langsung aktif untuk evaluasi AI
+      const currentActiveIds = getActiveSkillIds();
+      if (!currentActiveIds.includes(newSkill.id)) {
+        setActiveSkillIds([...currentActiveIds, newSkill.id]);
+      }
+
       setSkillNotice({
         type: 'success',
         text: isEn
-          ? `Skill "${file.name}" (${parsed.name}) uploaded and saved!`
-          : `Skill "${file.name}" (${parsed.name}) berhasil diunggah dan disimpan!`
+          ? `Skill "${file.name}" (${parsed.name}) successfully uploaded, saved, and activated for AI! 🌿`
+          : `Skill "${file.name}" (${parsed.name}) berhasil diunggah, disimpan, dan otomatis diaktifkan untuk AI! 🌿`
       });
-      setTimeout(() => setSkillNotice(null), 4000);
+      setTimeout(() => setSkillNotice(null), 5000);
     } catch (err: any) {
+      console.error('[Upload Skill Error]:', err);
       alert(err?.message || (isEn ? 'Failed to read skill file.' : 'Gagal membaca file skill.'));
     } finally {
+      setIsUploadingSkill(false);
       e.target.value = '';
     }
   };
@@ -286,10 +300,12 @@ export const SettingsTab: React.FC = () => {
     if (skill) {
       setEditingSkill(skill);
       setSkillFormName(skill.name);
+      setSkillFormDesc(skill.description || '');
       setSkillFormContent(skill.content);
     } else {
       setEditingSkill(null);
       setSkillFormName('');
+      setSkillFormDesc('');
       setSkillFormContent('');
     }
     setShowSkillModal(true);
@@ -299,10 +315,12 @@ export const SettingsTab: React.FC = () => {
     e.preventDefault();
     if (!skillFormName.trim() || !skillFormContent.trim()) return;
 
+    const currentSkills = getStoredSkills();
     if (editingSkill) {
-      const updated = skills.map(s => s.id === editingSkill.id ? {
+      const updated = currentSkills.map(s => s.id === editingSkill.id ? {
         ...s,
         name: skillFormName.trim(),
+        description: skillFormDesc.trim() || undefined,
         content: skillFormContent.trim()
       } : s);
       setSkills(updated);
@@ -312,13 +330,20 @@ export const SettingsTab: React.FC = () => {
       const newSkill: CustomAISkill = {
         id: `skill_${Date.now()}`,
         name: skillFormName.trim(),
+        description: skillFormDesc.trim() || undefined,
         content: skillFormContent.trim(),
         createdAt: new Date().toISOString()
       };
-      const updated = [newSkill, ...skills];
+      const updated = [newSkill, ...currentSkills.filter(s => s.name !== newSkill.name)];
       setSkills(updated);
       saveStoredSkills(updated);
-      setSkillNotice({ type: 'success', text: `Skill baru "${newSkill.name}" berhasil ditambahkan.` });
+
+      const currentActiveIds = getActiveSkillIds();
+      if (!currentActiveIds.includes(newSkill.id)) {
+        setActiveSkillIds([...currentActiveIds, newSkill.id]);
+      }
+
+      setSkillNotice({ type: 'success', text: `Skill baru "${newSkill.name}" berhasil ditambahkan dan diaktifkan.` });
     }
 
     setShowSkillModal(false);
@@ -326,11 +351,18 @@ export const SettingsTab: React.FC = () => {
   };
 
   const handleDeleteSkill = (skillId: string, skillName: string) => {
-    if (!confirm(`Hapus skill "${skillName}"?`)) return;
-    const updated = skills.filter(s => s.id !== skillId);
+    if (!confirm(isEn ? `Delete skill "${skillName}"?` : `Hapus skill "${skillName}"?`)) return;
+    const currentSkills = getStoredSkills();
+    const updated = currentSkills.filter(s => s.id !== skillId);
     setSkills(updated);
     saveStoredSkills(updated);
-    setSkillNotice({ type: 'warn', text: `Skill "${skillName}" telah dihapus.` });
+
+    const activeIds = getActiveSkillIds();
+    if (activeIds.includes(skillId)) {
+      setActiveSkillIds(activeIds.filter(id => id !== skillId));
+    }
+
+    setSkillNotice({ type: 'warn', text: isEn ? `Skill "${skillName}" deleted.` : `Skill "${skillName}" telah dihapus.` });
     setTimeout(() => setSkillNotice(null), 4000);
   };
 
@@ -1706,17 +1738,30 @@ export const SettingsTab: React.FC = () => {
             <input
               type="file"
               ref={skillFileInputRef}
-              accept=".skill,.md,.txt,.json,.yaml,.yml"
+              accept=".skill,.md,.txt,.json,.yaml,.yml,.zip,text/*,application/zip,application/x-zip-compressed,*/*"
               style={{ display: 'none' }}
+              onClick={e => {
+                (e.target as HTMLInputElement).value = '';
+              }}
               onChange={handleSkillFileUpload}
             />
             <button
               type="button"
               className="btn btn-outline btn-sm"
+              disabled={isUploadingSkill}
               onClick={() => skillFileInputRef.current?.click()}
             >
-              <Upload size={14} />
-              <span>{isEn ? 'Upload Skill File (.skill / .md / .txt)' : 'Unggah File Skill (.skill / .md / .txt)'}</span>
+              {isUploadingSkill ? (
+                <>
+                  <span className="spinner" />
+                  <span>{isEn ? 'Processing...' : 'Memproses...'}</span>
+                </>
+              ) : (
+                <>
+                  <Upload size={14} />
+                  <span>{isEn ? 'Upload Skill File (.skill / .zip / .md / .txt)' : 'Unggah File Skill (.skill / .zip / .md / .txt)'}</span>
+                </>
+              )}
             </button>
 
             <button
@@ -1783,7 +1828,7 @@ export const SettingsTab: React.FC = () => {
                 <div
                   key={s.id}
                   style={{
-                    background: 'var(--white)',
+                    background: 'var(--surface)',
                     border: '1px solid var(--border)',
                     borderRadius: '12px',
                     padding: '14px',
@@ -1798,16 +1843,16 @@ export const SettingsTab: React.FC = () => {
                       <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)' }}>
                         ✨ {s.name}
                       </div>
-                      <span className="badge" style={{ fontSize: '10px', background: 'var(--dew)', color: 'var(--moss)' }}>
+                      <span className="badge" style={{ fontSize: '10px', background: 'var(--dew)', color: 'var(--primary)' }}>
                         {extBadge}
                       </span>
                     </div>
                     {s.description && (
-                      <div style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--fern)', marginBottom: '4px' }}>
+                      <div style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--primary)', marginBottom: '4px' }}>
                         {s.description}
                       </div>
                     )}
-                    <p style={{ fontSize: '12px', color: 'var(--stone)', lineHeight: '1.45', height: '36px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.45', maxHeight: '40px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', margin: 0 }}>
                       {s.content}
                     </p>
                   </div>
@@ -1871,7 +1916,9 @@ export const SettingsTab: React.FC = () => {
 
             <form onSubmit={handleSaveSkillManual}>
               <div style={{ marginBottom: '14px' }}>
-                <label className="form-label" style={{ fontWeight: 700, fontSize: '13px' }}>Nama Skill</label>
+                <label className="form-label" style={{ fontWeight: 700, fontSize: '13px' }}>
+                  {isEn ? 'Skill Name' : 'Nama Skill'}
+                </label>
                 <input
                   type="text"
                   className="form-input"
@@ -1879,6 +1926,19 @@ export const SettingsTab: React.FC = () => {
                   value={skillFormName}
                   onChange={e => setSkillFormName(e.target.value)}
                   required
+                />
+              </div>
+
+              <div style={{ marginBottom: '14px' }}>
+                <label className="form-label" style={{ fontWeight: 700, fontSize: '13px' }}>
+                  {isEn ? 'Description (Optional)' : 'Deskripsi Singkat (Opsional)'}
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Misal: Pedoman audit kepatuhan regulasi POJK 51 & pengungkapan kuantitatif"
+                  value={skillFormDesc}
+                  onChange={e => setSkillFormDesc(e.target.value)}
                 />
               </div>
 

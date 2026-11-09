@@ -132,6 +132,28 @@ function mergePresetsSnapshot(localRaw: string | null, remoteRaw: string, allowL
   }
 }
 
+function mergeSkillsSnapshot(localRaw: string | null, remoteRaw: string, allowLocalMerge: boolean): string {
+  try {
+    const remote = JSON.parse(remoteRaw);
+    if (!allowLocalMerge || !localRaw) return remoteRaw;
+    const local = JSON.parse(localRaw);
+    if (!Array.isArray(local) || local.length === 0) return remoteRaw;
+    if (!Array.isArray(remote) || remote.length === 0) return localRaw;
+
+    const mergedMap = new Map<string, any>();
+    for (const s of remote) {
+      if (s?.id) mergedMap.set(s.id, s);
+    }
+    for (const s of local) {
+      if (!s?.id) continue;
+      mergedMap.set(s.id, s);
+    }
+    return JSON.stringify(Array.from(mergedMap.values()));
+  } catch {
+    return remoteRaw;
+  }
+}
+
 function filterRecordsForOwner(rawRecordsJson: string, ownerUsername: string): string {
   if (!ownerUsername) return rawRecordsJson;
   try {
@@ -186,6 +208,13 @@ export function applySnapshotToLocal(
       if (key === 'analyzer_indicator_presets') {
         const localRaw = shouldReplaceAll ? null : localStorage.getItem(key);
         const merged = mergePresetsSnapshot(localRaw, settings[key], !shouldReplaceAll);
+        if (localRaw && merged !== settings[key]) {
+          hasLocalNewer = true;
+        }
+        localStorage.setItem(key, merged);
+      } else if (key === 'analyzer_custom_skills') {
+        const localRaw = shouldReplaceAll ? null : localStorage.getItem(key);
+        const merged = mergeSkillsSnapshot(localRaw, settings[key], !shouldReplaceAll);
         if (localRaw && merged !== settings[key]) {
           hasLocalNewer = true;
         }
