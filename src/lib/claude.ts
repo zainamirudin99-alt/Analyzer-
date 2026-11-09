@@ -230,16 +230,24 @@ export async function analyzeWithClaude(options: ClaudeAnalysisOptions): Promise
     skillContent: options.skillContent
   });
   const customKeys = options.indicators?.map(i => i.code);
-  const processedText = options.pdfText ? preprocessTextForCED(options.pdfText, 45000) : '';
+  const processedText = options.pdfText ? preprocessTextForCED(options.pdfText, 45000, options.indicators) : '';
 
   const userContent = processedText
     ? `${prompt}\n\n=== TEKS DOKUMEN LAPORAN (${options.companyCode} ${options.fiscalYear}) ===\n${processedText}`
     : prompt;
 
+  const isQuantitative = options.rubricType === 'quantitative_count' || options.rubricType === 'binary_count';
+  const keysInstruction =
+    customKeys && customKeys.length > 0
+      ? `You MUST evaluate ONLY these exact indicator codes: ${customKeys.join(', ')}. Do NOT use default CED indicator codes unless they are in that list.`
+      : 'Evaluate the 18 CED indicator codes.';
+  const rubricInstruction = isQuantitative
+    ? 'For each indicator, return the exact quantitative value and unit found in the report (e.g. "1000000 liter", "25000 ton CO2e"), or "0" if not disclosed.'
+    : 'Score each indicator according to the provided rubric scale.';
+
   const systemPrompt =
-    'You are an expert auditor for sustainability and disclosure indicators. ' +
-    'You strictly evaluate the report and return ONLY a valid JSON object containing indicator scores each scored from 0 to 5, ' +
-    'plus notes explaining key findings. Do not include markdown codeblock wrappers like ```json if possible, just the raw JSON.';
+    `You are an expert auditor for sustainability and disclosure indicators. ${keysInstruction} ${rubricInstruction} ` +
+    'Return ONLY a valid raw JSON object without markdown codeblock wrappers.';
 
   const executeRequest = async (useThinking: boolean) => {
     const payload: Record<string, any> = {

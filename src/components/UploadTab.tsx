@@ -4,7 +4,18 @@
 
 import { useState, useRef, useEffect, FC, DragEvent } from 'react';
 import { UploadCloud, FileText, CheckCircle2, Sparkles, RefreshCw, ArrowRight, Copy, Check, Eye, Download, X, Settings2, Sliders, Cpu } from 'lucide-react';
-import { CEDScores, INDICATOR_KEYS, CEDResultRecord, IndicatorPreset, CustomAISkill, getPresetMaxScore, getPresetRubricType } from '@/lib/types';
+import {
+  CEDScores,
+  INDICATOR_KEYS,
+  CEDResultRecord,
+  IndicatorPreset,
+  CustomAISkill,
+  getPresetMaxScore,
+  getPresetRubricType,
+  formatCleanDisclosureLevel,
+  normalizeQuantitativeScoreString,
+  isDisclosedQuantitativeValue
+} from '@/lib/types';
 import {
   getStoredPresets,
   saveStoredPresets,
@@ -410,10 +421,21 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
       return;
     }
 
+    // Lampirkan Preset Indikator Aktif & Gabungan Multi-Skill (jika ada)
+    const latestPresets = getStoredPresets();
+    const activePreset =
+      latestPresets.find(p => p.id === activePresetId) ||
+      presets.find(p => p.id === activePresetId) ||
+      getActivePreset();
+
     setIsAnalyzing(true);
     setScoreResult(null);
     setProgress(50);
-    setProgressLabel('AI sedang mengidentifikasi 18 indikator CED dari teks laporan...');
+    setProgressLabel(
+      isEn
+        ? `AI is evaluating ${activePreset.indicators.length} indicators (${getPresetName(activePreset, lang)})...`
+        : `AI sedang menganalisis ${activePreset.indicators.length} indikator (${getPresetName(activePreset, lang)})...`
+    );
     setAlertInfo(null);
 
     const formData = new FormData();
@@ -464,8 +486,6 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
       if (storedModel) formData.append('model', storedModel.trim());
     }
 
-    // Lampirkan Preset Indikator Aktif & Gabungan Multi-Skill (jika ada)
-    const activePreset = getActivePreset();
     formData.append('presetId', activePreset.id);
     formData.append('presetName', activePreset.name);
     formData.append('indicatorsJson', JSON.stringify(activePreset.indicators));
@@ -607,20 +627,38 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Helper ambil keys indikator aktif
+  // Helper ambil preset dan daftar indikator aktif
+  const resolveEvaluatedPreset = (): IndicatorPreset => {
+    const targetId = scoreResult?.presetId || activePresetId;
+    return presets.find(p => p.id === targetId) || getActivePreset();
+  };
+
   const getActiveIndicatorCodes = (): string[] => {
-    const activePreset = getActivePreset();
+    const activePreset = resolveEvaluatedPreset();
     if (activePreset?.indicators && activePreset.indicators.length > 0) {
       return activePreset.indicators.map(i => i.code.toLowerCase());
     }
     return INDICATOR_KEYS;
   };
 
+  const getFormattedScoreValue = (key: string): string | number => {
+    if (!scoreResult) return 0;
+    const activePreset = resolveEvaluatedPreset();
+    const isQuantitative =
+      getPresetRubricType(activePreset) === 'quantitative_count' ||
+      getPresetRubricType(activePreset) === 'binary_count';
+    const raw = scoreResult.scores[key] ?? scoreResult.scores[key.toUpperCase()];
+    if (isQuantitative) {
+      return normalizeQuantitativeScoreString(raw);
+    }
+    return raw ?? 0;
+  };
+
   // 1. SALIN HANYA SKOR (Indikator Aktif) -> TANPA KODE & TANPA TAHUN
   const copyScoresOnly = () => {
     if (!scoreResult) return;
     const keys = getActiveIndicatorCodes();
-    const scoresTsv = keys.map(k => scoreResult.scores[k] ?? scoreResult.scores[k.toUpperCase()] ?? 0).join('\t');
+    const scoresTsv = keys.map(k => getFormattedScoreValue(k)).join('\t');
     navigator.clipboard.writeText(scoresTsv);
     setCopiedType('scores_only');
     setTimeout(() => setCopiedType(null), 3000);
@@ -630,7 +668,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
   const copyScoresAndTotal = () => {
     if (!scoreResult) return;
     const keys = getActiveIndicatorCodes();
-    const scoresArray = keys.map(k => scoreResult.scores[k] ?? scoreResult.scores[k.toUpperCase()] ?? 0);
+    const scoresArray = keys.map(k => getFormattedScoreValue(k));
     const scoresTsv = [...scoresArray, scoreResult.totalScore].join('\t');
     navigator.clipboard.writeText(scoresTsv);
     setCopiedType('scores_total');
@@ -641,7 +679,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
   const copyFullRow = () => {
     if (!scoreResult) return;
     const keys = getActiveIndicatorCodes();
-    const scoresArray = keys.map(k => scoreResult.scores[k] ?? scoreResult.scores[k.toUpperCase()] ?? 0);
+    const scoresArray = keys.map(k => getFormattedScoreValue(k));
     const rowTsv = [
       scoreResult.code,
       scoreResult.year,
@@ -766,12 +804,12 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
 
         {/* Status Ekstraksi TXT Banner & Actions */}
         {extractedData && (
-          <div style={{ background: '#f0f7ea', border: '1.5px solid var(--border)', borderRadius: '12px', padding: '14px', margin: '14px 0' }}>
+          <div style={{ background: 'var(--dew)', border: '1.5px solid var(--border)', borderRadius: '12px', padding: '14px', margin: '14px 0' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--fern)', fontWeight: 800, fontSize: '13.5px', marginBottom: '6px' }}>
               <CheckCircle2 size={17} />
               <span>PDF Berhasil Diubah ke TXT! ✅</span>
             </div>
-            <div style={{ fontSize: '12.5px', color: 'var(--moss)', marginBottom: '10px' }}>
+            <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
               Terbaca <strong>{extractedData?.pageCount || 1} Halaman</strong> ({(extractedData?.totalCharacters || 0).toLocaleString()} Karakter).
             </div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -1198,47 +1236,88 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
 
       {/* Kolom Kanan: Hasil Skor / Preview Card */}
       {scoreResult ? (() => {
-        const activeCodes = getActiveIndicatorCodes();
-        const count = activeCodes.length || 18;
-        const maxPossible = count * 5;
-        const firstCode = (activeCodes[0] || 'CC1').toUpperCase();
-        const lastCode = (activeCodes[count - 1] || 'ACC2').toUpperCase();
+        const evaluatedPreset = resolveEvaluatedPreset();
+        const activeItems =
+          evaluatedPreset?.indicators && evaluatedPreset.indicators.length > 0
+            ? evaluatedPreset.indicators.map(i => ({ code: i.code, title: getIndicatorTitle(i, lang) }))
+            : INDICATOR_KEYS.map(k => ({ code: k.toUpperCase(), title: k.toUpperCase() }));
+        const count = activeItems.length || 18;
+        const isQuantitative =
+          getPresetRubricType(evaluatedPreset) === 'quantitative_count' ||
+          getPresetRubricType(evaluatedPreset) === 'binary_count';
+        const maxPossible = getPresetMaxScore(evaluatedPreset) || count * 5;
+        const firstCode = (activeItems[0]?.code || 'CC1').toUpperCase();
+        const lastCode = (activeItems[count - 1]?.code || 'ACC2').toUpperCase();
+        const cleanLevel = formatCleanDisclosureLevel(scoreResult.disclosureLevel, isEn);
+        const presetLabel = scoreResult.presetName || getPresetName(evaluatedPreset, lang);
 
         return (
-          <div className="card">
-            <div className="card-title" style={{ justifyContent: 'space-between' }}>
+          <div className="card" style={{ alignSelf: 'start' }}>
+            <div className="card-title" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div className="ct-icon">🌿</div>
-                <span>
-                  {isEn ? 'Analysis Result:' : 'Hasil Analisis:'}{' '}
-                  <strong style={{ color: 'var(--fern)' }}>{scoreResult.code} ({scoreResult.year})</strong>
-                </span>
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text)' }}>
+                    {isEn ? 'Analysis Result:' : 'Hasil Analisis:'}{' '}
+                    <strong style={{ color: 'var(--primary)' }}>{scoreResult.code} ({scoreResult.year})</strong>
+                  </div>
+                  <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontWeight: 600, marginTop: '2px' }}>
+                    🌱 {isEn ? 'Preset:' : 'Indikator:'} <strong style={{ color: 'var(--text)' }}>{presetLabel}</strong>
+                  </div>
+                </div>
               </div>
-              <span className="font-mono" style={{ fontSize: '12px', background: 'var(--dew)', padding: '4px 10px', borderRadius: '6px', color: 'var(--moss)' }}>
-                Model: {scoreResult.modelUsed}
+              <span
+                className="font-mono"
+                style={{
+                  fontSize: '11.5px',
+                  background: 'var(--dew)',
+                  padding: '5px 10px',
+                  borderRadius: '8px',
+                  color: 'var(--primary)',
+                  border: '1px solid var(--border)',
+                  fontWeight: 700
+                }}
+              >
+                🤖 {scoreResult.modelUsed}
               </span>
             </div>
 
-            <div className="grid-3" style={{ marginBottom: '20px' }}>
-              <div className="stat-box s-green">
-                <div className="stat-val">{scoreResult.totalScore}</div>
-                <div className="stat-lbl">{isEn ? `Total Score / ${maxPossible}` : `Total Skor / ${maxPossible}`}</div>
+            <div className="grid-3" style={{ marginBottom: '18px', gap: '12px' }}>
+              <div className="stat-box s-green" style={{ padding: '14px 16px' }}>
+                <div className="stat-val" style={{ fontSize: '24px' }}>
+                  {isQuantitative ? `${scoreResult.totalScore}/${count}` : scoreResult.totalScore}
+                </div>
+                <div className="stat-lbl">
+                  {isQuantitative
+                    ? isEn ? 'Disclosed Indicators' : 'Indikator Terungkap'
+                    : isEn ? `Total Score / ${maxPossible}` : `Total Skor / ${maxPossible}`}
+                </div>
               </div>
-              <div className="stat-box s-teal">
-                <div className="stat-val">{maxPossible > 0 ? ((scoreResult.totalScore / maxPossible) * 100).toFixed(1) : '0.0'}%</div>
+              <div className="stat-box s-teal" style={{ padding: '14px 16px' }}>
+                <div className="stat-val" style={{ fontSize: '24px' }}>
+                  {maxPossible > 0 ? ((scoreResult.totalScore / maxPossible) * 100).toFixed(1) : '0.0'}%
+                </div>
                 <div className="stat-lbl">{isEn ? 'Disclosure Index' : 'Indeks Pengungkapan'}</div>
               </div>
-              <div className="stat-box s-sage">
-                <div className="stat-val" style={{ fontSize: '17px', lineHeight: '1.3' }}>
-                  {scoreResult.disclosureLevel.split(' ')[0]}
+              <div className="stat-box s-sage" style={{ padding: '14px 16px' }}>
+                <div className="stat-val" style={{ fontSize: '17px', lineHeight: '1.35', marginTop: '2px' }}>
+                  {cleanLevel}
                 </div>
                 <div className="stat-lbl">{isEn ? 'Category Level' : 'Level Kategori'}</div>
               </div>
             </div>
 
             {/* Quick Copy Box */}
-            <div style={{ background: '#f0f7ea', border: '1.5px solid var(--border)', borderRadius: '12px', padding: '14px', marginBottom: '18px' }}>
-              <div style={{ fontSize: '12.5px', fontWeight: 800, color: 'var(--moss)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div
+              style={{
+                background: 'var(--dew)',
+                border: '1.5px solid var(--border)',
+                borderRadius: '12px',
+                padding: '14px',
+                marginBottom: '18px'
+              }}
+            >
+              <div style={{ fontSize: '12.5px', fontWeight: 800, color: 'var(--primary)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span>📋</span>
                 <span>
                   {isEn
@@ -1246,7 +1325,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
                     : 'Salin Cepat Nilai ke Spreadsheet (Excel / Google Sheets):'}
                 </span>
               </div>
-              
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {/* Tombol Utama: HANYA Skor Indikator Aktif */}
                 <button
@@ -1256,7 +1335,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
                   title={
                     isEn
                       ? `Copy ONLY the ${count} indicator scores (${firstCode} to ${lastCode})`
-                      : `Menyalin HANYA ${count} angka nilai indikator (${firstCode} s/d ${lastCode}), tanpa nama perusahaan atau tahun`
+                      : `Menyalin HANYA ${count} nilai indikator (${firstCode} s/d ${lastCode}), tanpa nama perusahaan atau tahun`
                   }
                 >
                   {copiedType === 'scores_only' ? <Check size={16} /> : <Copy size={16} />}
@@ -1264,10 +1343,10 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
                     {copiedType === 'scores_only'
                       ? isEn
                         ? `${count} Scores Copied! Ready to Paste (Ctrl+V) ✅`
-                        : `${count} Nilai Skor Tersalin! Siap Paste (Ctrl+V) ✅`
+                        : `${count} Nilai Tersalin! Siap Paste (Ctrl+V) ✅`
                       : isEn
-                      ? `📋 Copy ${count} Indicator Scores Only (${firstCode} to ${lastCode})`
-                      : `📋 Salin ${count} Nilai Skor Saja (${firstCode} s/d ${lastCode})`}
+                      ? `📋 Copy ${count} Indicator Values Only (${firstCode} to ${lastCode})`
+                      : `📋 Salin ${count} Nilai Indikator Saja (${firstCode} s/d ${lastCode})`}
                   </span>
                 </button>
 
@@ -1277,16 +1356,16 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
                     className="btn btn-accent btn-sm"
                     onClick={copyScoresAndTotal}
                     style={{ flex: 1, minWidth: '150px' }}
-                    title={isEn ? `Copy ${count} indicator scores + total score` : `Menyalin ${count} angka nilai indikator + total skor`}
+                    title={isEn ? `Copy ${count} indicator scores + total score` : `Menyalin ${count} nilai indikator + total skor`}
                   >
                     {copiedType === 'scores_total' ? <Check size={14} /> : <Copy size={14} />}
                     <span>
                       {copiedType === 'scores_total'
                         ? isEn
-                          ? `${count} Scores + Total Copied! ✅`
+                          ? `${count} Values + Total Copied! ✅`
                           : `${count} Nilai + Total Tersalin! ✅`
                         : isEn
-                        ? `Copy ${count} Scores + Total`
+                        ? `Copy ${count} Values + Total`
                         : `Salin ${count} Nilai + Total`}
                     </span>
                   </button>
@@ -1296,7 +1375,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
                     className="btn btn-outline btn-sm"
                     onClick={copyFullRow}
                     style={{ flex: 1, minWidth: '150px', background: 'var(--surface)' }}
-                    title={isEn ? `Copy Code, Year, ${count} Scores, and Total` : `Menyalin Kode, Tahun, ${count} Nilai, dan Total`}
+                    title={isEn ? `Copy Code, Year, ${count} Values, and Total` : `Menyalin Kode, Tahun, ${count} Nilai, dan Total`}
                   >
                     {copiedType === 'full_row' ? <Check size={14} /> : <Copy size={14} />}
                     <span>
@@ -1313,7 +1392,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
               </div>
 
               {copiedType && (
-                <div style={{ fontSize: '11.5px', color: 'var(--fern)', marginTop: '8px', fontWeight: 600 }}>
+                <div style={{ fontSize: '11.5px', color: 'var(--primary)', marginTop: '8px', fontWeight: 600 }}>
                   💡{' '}
                   {isEn ? (
                     <>
@@ -1328,24 +1407,72 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
               )}
             </div>
 
-            <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--stone)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-              {isEn ? `Indicator Breakdown (${count} Indicators · Scale 0 – 5):` : `Rincian Indikator (${count} Indikator · Skala 0 – 5):`}
+            <div style={{ fontSize: '12.5px', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+              {isQuantitative
+                ? isEn
+                  ? `Indicator Breakdown (${count} Indicators · Quantitative Value & Unit / 0):`
+                  : `Rincian Indikator (${count} Indikator · Nilai & Satuan Sesuai Laporan / 0):`
+                : isEn
+                ? `Indicator Breakdown (${count} Indicators):`
+                : `Rincian Hasil Indikator (${count} Indikator):`}
             </div>
 
-            <div className="ind-grid">
-              {activeCodes.map(k => {
-                const upper = k.toUpperCase();
-                const score = scoreResult.scores[k] ?? scoreResult.scores[upper] ?? 0;
+            <div
+              className="ind-grid"
+              style={{
+                gridTemplateColumns: isQuantitative
+                  ? 'repeat(auto-fill, minmax(175px, 1fr))'
+                  : 'repeat(auto-fill, minmax(135px, 1fr))'
+              }}
+            >
+              {activeItems.map(item => {
+                const rawScore = getFormattedScoreValue(item.code.toLowerCase());
+                const isZero = !isDisclosedQuantitativeValue(rawScore) || rawScore === 0 || rawScore === '0';
+                const displayVal = isZero ? (isQuantitative ? '0' : 0) : rawScore;
+                const isStringMetric = typeof displayVal === 'string' && displayVal !== '0';
+
                 return (
-                  <div key={k} className="ind-item">
-                    <div className="ind-code">{upper}</div>
-                    <div className={`score-badge score-${score}`}>{score}</div>
+                  <div key={item.code} className="ind-item" title={`${item.code} — ${item.title}: ${displayVal}`}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <span className="ind-code">{item.code}</span>
+                      <span
+                        className={`score-badge ${!isStringMetric ? `score-${Math.min(Number(displayVal) || 0, 5)}` : ''}`}
+                        style={
+                          isStringMetric
+                            ? {
+                                background: 'rgba(16, 185, 129, 0.16)',
+                                color: '#34d399',
+                                border: '1px solid rgba(16, 185, 129, 0.35)',
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                                fontSize: '11.5px',
+                                fontWeight: 700
+                              }
+                            : undefined
+                        }
+                      >
+                        {displayVal}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '11px',
+                        color: 'var(--text-muted)',
+                        lineHeight: 1.35,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden'
+                      }}
+                    >
+                      {item.title}
+                    </div>
                   </div>
                 );
               })}
             </div>
 
-            <div style={{ display: 'flex', gap: '10px', marginTop: '24px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '22px', flexWrap: 'wrap' }}>
               <button className="btn btn-accent btn-sm" onClick={onNavigateToResults}>
                 <span>{isEn ? 'View in Results Table' : 'Lihat di Tabel Database'}</span>
                 <ArrowRight size={16} />
@@ -1357,75 +1484,197 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
             </div>
           </div>
         );
-      })() : (
-        <div
-          className="card"
-          style={{
-            background: isAnalyzing ? 'var(--surface-muted)' : isExtracting ? 'var(--surface-muted)' : 'var(--surface-sunken)',
-            border: isAnalyzing || isExtracting ? '2px solid var(--primary)' : '2px dashed var(--border)',
-            boxShadow: isAnalyzing ? 'var(--glow-primary)' : 'none',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            minHeight: '420px',
-            textAlign: 'center',
-            padding: '30px 20px',
-            transition: 'all 0.3s ease'
-          }}
-        >
-          {isAnalyzing ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <div className="mascot-pulse-wrap">
-                <img src="/logo.png?v=2" alt="AI Analyzing" className="mascot-loading-img" />
-              </div>
-              <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--fern)', marginTop: '18px' }}>
-                {isEn ? 'AI Is Evaluating Document Indicators...' : 'AI Sedang Menilai Indikator Dokumen...'}
-              </h3>
-              <div style={{ fontSize: '13px', color: 'var(--stone)', maxWidth: '380px', marginTop: '8px', lineHeight: '1.6' }}>
-                {isEn
-                  ? `AI Engine (${activeModel}) is scanning the document and scoring each active indicator in depth.`
-                  : `Mesin AI (${activeModel}) sedang memindai laporan dan menghitung skor setiap indikator secara mendalam.`}
-              </div>
-              <div className="mascot-status-pill">
-                <span className="spinner" style={{ width: '14px', height: '14px' }} />
-                <span>{progressLabel || 'Memproses Analisis...'}</span>
-              </div>
+      })() : (() => {
+        const currentActivePreset = presets.find(p => p.id === activePresetId) || getActivePreset();
+        const isQuantPreset =
+          getPresetRubricType(currentActivePreset) === 'quantitative_count' ||
+          getPresetRubricType(currentActivePreset) === 'binary_count';
+
+        return (
+          <div
+            className="card"
+            style={{
+              background: isAnalyzing || isExtracting ? 'var(--surface-muted)' : 'var(--card-bg)',
+              border: isAnalyzing || isExtracting ? '2px solid var(--primary)' : '1px solid var(--border)',
+              boxShadow: isAnalyzing ? 'var(--glow-primary)' : 'var(--shadow)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              alignSelf: 'start',
+              padding: '26px',
+              transition: 'all 0.3s ease'
+            }}
+          >
+            <div className="card-title" style={{ marginBottom: '18px' }}>
+              <div className="ct-icon">✨</div>
+              <span>{isEn ? '2. Extraction & AI Analysis Status' : '2. Status Ekstraksi & Analisis AI'}</span>
             </div>
-          ) : isExtracting ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <div className="mascot-bounce-wrap">
-                <img src="/logo.png?v=2" alt="Extracting PDF" className="mascot-loading-img" />
+
+            {isAnalyzing ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '28px 16px' }}>
+                <div className="mascot-pulse-wrap">
+                  <img src="/logo.png?v=2" alt="AI Analyzing" className="mascot-loading-img" />
+                </div>
+                <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--primary)', marginTop: '18px' }}>
+                  {isEn ? 'AI Is Evaluating Document Indicators...' : 'AI Sedang Menilai Indikator Dokumen...'}
+                </h3>
+                <div style={{ fontSize: '13px', color: 'var(--text-muted)', maxWidth: '400px', marginTop: '8px', lineHeight: '1.6' }}>
+                  {isEn
+                    ? `AI Engine (${activeModel}) is scanning the document and evaluating ${currentActivePreset.indicators.length} indicators from "${getPresetName(currentActivePreset, lang)}".`
+                    : `Mesin AI (${activeModel}) sedang memindai laporan menggunakan ${currentActivePreset.indicators.length} indikator pada pilihan "${getPresetName(currentActivePreset, lang)}".`}
+                </div>
+                <div className="mascot-status-pill">
+                  <span className="spinner" style={{ width: '14px', height: '14px' }} />
+                  <span>{progressLabel || 'Memproses Analisis...'}</span>
+                </div>
               </div>
-              <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--moss)', marginTop: '18px' }}>
-                Mengekstrak Konten PDF ke TXT...
-              </h3>
-              <div style={{ fontSize: '13px', color: 'var(--stone)', maxWidth: '380px', marginTop: '8px', lineHeight: '1.6' }}>
-                Membaca teks dari setiap halaman dokumen langsung di browser lokal Anda tanpa limit server.
+            ) : isExtracting ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '28px 16px' }}>
+                <div className="mascot-bounce-wrap">
+                  <img src="/logo.png?v=2" alt="Extracting PDF" className="mascot-loading-img" />
+                </div>
+                <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--primary)', marginTop: '18px' }}>
+                  Mengekstrak Konten PDF ke TXT...
+                </h3>
+                <div style={{ fontSize: '13px', color: 'var(--text-muted)', maxWidth: '380px', marginTop: '8px', lineHeight: '1.6' }}>
+                  Membaca teks dari setiap halaman dokumen langsung di browser lokal Anda tanpa limit server.
+                </div>
+                <div className="mascot-status-pill">
+                  <span className="spinner" style={{ width: '14px', height: '14px' }} />
+                  <span>{progressLabel || 'Membaca Halaman Dokumen...'}</span>
+                </div>
               </div>
-              <div className="mascot-status-pill">
-                <span className="spinner" style={{ width: '14px', height: '14px' }} />
-                <span>{progressLabel || 'Membaca Halaman Dokumen...'}</span>
+            ) : (
+              <div>
+                {/* Logo & Intro Compact Banner */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                    background: 'var(--surface-sunken)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '14px',
+                    padding: '16px 18px',
+                    marginBottom: '18px'
+                  }}
+                >
+                  <img
+                    src="/logo.png?v=2"
+                    alt="ANALYZER(?) Mascot"
+                    style={{ width: '72px', height: '72px', objectFit: 'contain', flexShrink: 0, filter: 'drop-shadow(0 4px 12px var(--primary-glow))' }}
+                  />
+                  <div style={{ textAlign: 'left' }}>
+                    <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text)', margin: '0 0 4px 0' }}>
+                      {isEn ? 'PDF Extraction & AI Scoring Workflow' : 'Alur Ekstraksi & Analisis PDF'}
+                    </h3>
+                    <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+                      {isEn
+                        ? 'Analysis results, indicator breakdown, and one-click spreadsheet copy buttons will appear right here once completed.'
+                        : 'Hasil skor setiap indikator, indeks pengungkapan, dan tombol salin cepat ke Spreadsheet akan tampil rapi di panel ini setelah analisis selesai.'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Ringkasan Preset Indikator Aktif */}
+                <div
+                  style={{
+                    background: 'var(--dew)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '12px',
+                    padding: '14px 16px',
+                    marginBottom: '18px',
+                    textAlign: 'left'
+                  }}
+                >
+                  <div style={{ fontSize: '11.5px', fontWeight: 800, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>
+                    🌱 {isEn ? 'Active Indicator Preset Ready for Analysis' : 'Pilihan Indikator Aktif Saat Ini'}
+                  </div>
+                  <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text)', marginBottom: '4px' }}>
+                    {getPresetName(currentActivePreset, lang)}
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+                    <span className="badge" style={{ background: 'var(--surface)', color: 'var(--primary)', border: '1px solid var(--border)', padding: '2px 8px', fontSize: '11px', fontWeight: 700 }}>
+                      {currentActivePreset.indicators.length} {isEn ? 'Indicators' : 'Indikator'}
+                    </span>
+                    <span>•</span>
+                    <span>
+                      {isQuantPreset
+                        ? isEn
+                          ? 'Rubric: Quantitative Value & Unit (or 0)'
+                          : 'Rubrik: Nilai & Satuan Sesuai Laporan (atau 0)'
+                        : isEn
+                        ? `Rubric: Weighted Scale (Max ${getPresetMaxScore(currentActivePreset)} pts)`
+                        : `Rubrik: Skala Skor (Maks ${getPresetMaxScore(currentActivePreset)} Poin)`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 4 Langkah Alur Kerja Rapi */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', textAlign: 'left' }}>
+                  {[
+                    {
+                      step: '1',
+                      title: isEn ? 'Upload PDF Report' : 'Upload File PDF',
+                      desc: isEn ? 'Select annual or sustainability report PDF.' : 'Pilih laporan tahunan / keberlanjutan PDF.'
+                    },
+                    {
+                      step: '2',
+                      title: isEn ? 'Convert PDF to TXT' : 'Klik "1. Ubah PDF ke TXT"',
+                      desc: isEn ? 'Fast local browser extraction without size limits.' : 'Ekstraksi teks cepat di browser lokal.'
+                    },
+                    {
+                      step: '3',
+                      title: isEn ? 'Preview Extracted Text' : 'Preview Isi Teks',
+                      desc: isEn ? 'Verify extracted pages and character count.' : 'Periksa hasil pembacaan halaman dokumen.'
+                    },
+                    {
+                      step: '4',
+                      title: isEn ? 'Analyze with AI' : 'Klik "2. Analisis dengan AI"',
+                      desc: isEn ? 'AI evaluates all active preset indicators.' : 'AI menilai seluruh indikator pilihan aktif.'
+                    }
+                  ].map(item => (
+                    <div
+                      key={item.step}
+                      style={{
+                        background: 'var(--surface-muted)',
+                        border: '1px solid var(--border)',
+                        borderRadius: '10px',
+                        padding: '12px'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <span
+                          className="font-mono"
+                          style={{
+                            width: '22px',
+                            height: '22px',
+                            borderRadius: '6px',
+                            background: 'var(--dew)',
+                            color: 'var(--primary)',
+                            fontSize: '12px',
+                            fontWeight: 800,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            border: '1px solid var(--border)'
+                          }}
+                        >
+                          {item.step}
+                        </span>
+                        <strong style={{ fontSize: '12.5px', color: 'var(--text)' }}>{item.title}</strong>
+                      </div>
+                      <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                        {item.desc}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ) : (
-            <>
-              <div className="mascot-idle-wrap">
-                <img src="/logo.png?v=2" alt="ANALYZER(?) Mascot" className="mascot-idle-img" />
-              </div>
-              <h3 style={{ fontSize: '17px', fontWeight: 800, color: 'var(--text)', marginTop: '10px' }}>
-                Alur Ekstraksi & Analisis PDF
-              </h3>
-              <ol style={{ fontSize: '13px', color: 'var(--stone)', maxWidth: '360px', marginTop: '12px', textAlign: 'left', lineHeight: '1.8', paddingLeft: '24px' }}>
-                <li>Upload file PDF laporan tahunan / keberlanjutan</li>
-                <li>Klik tombol <strong>"1. Ubah PDF ke TXT"</strong></li>
-                <li>Preview isi teks yang berhasil diekstrak</li>
-                <li>Klik tombol <strong>"2. Analisis dengan AI"</strong></li>
-              </ol>
-            </>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        );
+      })()}
 
       {/* Modal Preview TXT */}
       {showPreviewModal && extractedData && (

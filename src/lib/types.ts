@@ -319,19 +319,118 @@ export const DEFAULT_BINARY_RUBRIC: RubricItem[] = [
 export const DEFAULT_QUANTITATIVE_RUBRIC: RubricItem[] = [
   {
     score: '0',
-    label: '0: 0 Liter / 0 (Tidak Ada Pengungkapan)',
-    desc: 'Jika tidak ditemukan pengungkapan kuantitatif atau tidak ada data dalam laporan, ditulis 0 liter (atau 0).',
-    label_en: '0: 0 Liters / 0 (No Disclosure)',
-    desc_en: 'If no quantitative disclosure or data found in report, recorded as 0 liters (or 0).'
+    label: '0: Tidak Ada Pengungkapan',
+    desc: 'Jika tidak ditemukan pengungkapan kuantitatif atau tidak ada data dalam laporan, cukup ditulis 0.',
+    label_en: '0: No Disclosure',
+    desc_en: 'If no quantitative disclosure or data is found in the report, recorded simply as 0.'
   },
   {
     score: 'Riil',
-    label: 'Riil: Nilai Nominal Kuantitatif (Angka + Satuan)',
-    desc: 'Tuliskan kuantitas / volume / angka nominal tertera dalam dokumen (misal: 1000000 liter, 25000 ton CO2e, Rp 50 Miliar, dll).',
-    label_en: 'Actual: Quantitative Metric Value (Number + Unit)',
-    desc_en: 'Extracts actual quantitative / metric volume disclosed in report file (e.g. 1000000 liters, 25000 ton CO2e).'
+    label: 'Riil: Nilai Nominal & Satuan Sesuai Laporan',
+    desc: 'Disesuaikan dengan nilai kuantitas dan satuan yang ada pada hasil analisis laporan (misal: 1000000 liter, 25000 ton CO2e, 50000 kWh, Rp 50 Miliar).',
+    label_en: 'Actual: Quantitative Value & Unit per Report',
+    desc_en: 'Adjusted to the actual quantitative value and unit found in the report analysis result (e.g. 1000000 liters, 25000 ton CO2e, 50000 kWh).'
   }
 ];
+
+export function normalizeQuantitativeScoreString(val: any): string {
+  if (val === undefined || val === null) return '0';
+  const s = String(val).trim();
+  if (!s) return '0';
+  const lower = s.toLowerCase();
+  if (
+    lower === '0' ||
+    lower === '0 liter' ||
+    lower === '0 liters' ||
+    lower === '0 unit' ||
+    lower === '0 ton' ||
+    lower === '0 tco2e' ||
+    lower === '0 kwh' ||
+    lower === '-' ||
+    lower === 'tidak ada' ||
+    lower === 'none' ||
+    lower === 'null' ||
+    lower === 'n/a' ||
+    /^0(\.0+)?\s*(liter|liters|unit|ton|kwh|gj|tj|mwh|rp|idr)?$/i.test(lower)
+  ) {
+    return '0';
+  }
+  return s;
+}
+
+export function isDisclosedQuantitativeValue(val: any): boolean {
+  return normalizeQuantitativeScoreString(val) !== '0';
+}
+
+export function formatCleanDisclosureLevel(level?: string, isEn = false): string {
+  if (!level) return isEn ? 'Low' : 'Rendah';
+  const base = level.replace(/\s*\([^)]*\)\s*/g, '').trim();
+  if (!isEn) return base || 'Rendah';
+  const mapEn: Record<string, string> = {
+    'Sangat Tinggi': 'Very High',
+    'Tinggi': 'High',
+    'Sedang': 'Moderate',
+    'Rendah': 'Low',
+    'Sangat Rendah': 'Very Low'
+  };
+  return mapEn[base] || base;
+}
+
+const ANALYZER_META_PREFIX = '<!--ANALYZER_META:';
+const ANALYZER_META_SUFFIX = '-->';
+
+export function encodeNotesWithAnalyzerMeta(
+  userNotes: string,
+  meta: {
+    preset_id?: string;
+    preset_name?: string;
+    dynamic_scores?: Record<string, number | string>;
+    total_score?: number;
+  }
+): string {
+  const cleanNotes = (userNotes || '').replace(/<!--ANALYZER_META:[\s\S]*?-->/g, '').trim();
+  const payload = JSON.stringify(meta);
+  return cleanNotes ? `${cleanNotes}\n${ANALYZER_META_PREFIX}${payload}${ANALYZER_META_SUFFIX}` : `${ANALYZER_META_PREFIX}${payload}${ANALYZER_META_SUFFIX}`;
+}
+
+export function decodeRecordAnalyzerMeta(row: CEDResultRecord): CEDResultRecord {
+  if (!row || typeof row !== 'object') return row;
+  const rawNotes = typeof row.notes === 'string' ? row.notes : '';
+  const startIdx = rawNotes.indexOf(ANALYZER_META_PREFIX);
+  if (startIdx === -1) return row;
+
+  const endIdx = rawNotes.indexOf(ANALYZER_META_SUFFIX, startIdx);
+  if (endIdx === -1) return row;
+
+  const jsonStr = rawNotes.slice(startIdx + ANALYZER_META_PREFIX.length, endIdx).trim();
+  const cleanNotes = (rawNotes.slice(0, startIdx) + rawNotes.slice(endIdx + ANALYZER_META_SUFFIX.length)).trim();
+
+  try {
+    const parsedMeta = JSON.parse(jsonStr);
+    const dynamicScores: Record<string, number | string> = {
+      ...(parsedMeta.dynamic_scores || {}),
+      ...(row.dynamic_scores || {})
+    };
+    const normalizedDynamic: Record<string, number | string> = {};
+    for (const [k, v] of Object.entries(dynamicScores)) {
+      const val = typeof v === 'string' ? normalizeQuantitativeScoreString(v) : v;
+      normalizedDynamic[k.toLowerCase()] = val;
+      normalizedDynamic[k.toUpperCase()] = val;
+    }
+
+    return {
+      ...row,
+      ...normalizedDynamic,
+      notes: cleanNotes,
+      preset_id: row.preset_id || parsedMeta.preset_id,
+      preset_name: row.preset_name || parsedMeta.preset_name,
+      total_score: row.total_score ?? parsedMeta.total_score,
+      dynamic_scores: normalizedDynamic
+    };
+  } catch {
+    return { ...row, notes: cleanNotes };
+  }
+}
 
 export function getPresetRubric(preset?: IndicatorPreset | null): RubricItem[] {
   if (!preset) return SCORING_RUBRIC;

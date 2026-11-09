@@ -5,7 +5,10 @@ import {
   IndicatorPreset,
   getPresetRubric,
   getPresetRubricType,
-  getPresetMaxScore
+  getPresetMaxScore,
+  encodeNotesWithAnalyzerMeta,
+  decodeRecordAnalyzerMeta,
+  formatCleanDisclosureLevel
 } from '../../src/lib/types';
 import { createDefaultCEDPreset } from '../../src/lib/indicators-storage';
 import { buildAnalysisPrompt, normalizeScores } from '../../src/lib/gemini';
@@ -82,7 +85,7 @@ describe('Custom Indicator Rubric & Dynamic Scoring Engine', () => {
     expect(maxCount).toBe(2); // 2 indicators max
   });
 
-  it('buildAnalysisPrompt generates quantitative extraction prompt with real values instead of 0/1 binary', () => {
+  it('buildAnalysisPrompt generates quantitative extraction prompt with real values + units and "0" when undisclosed', () => {
     const prompt = buildAnalysisPrompt({
       companyCode: 'ASII',
       fiscalYear: 'FY 2024',
@@ -93,9 +96,8 @@ describe('Custom Indicator Rubric & Dynamic Scoring Engine', () => {
     });
 
     expect(prompt).toContain('Quantitative Disclosure Extraction');
-    expect(prompt).toContain('JANGAN mengembalikan skor biner 0 atau 1');
     expect(prompt).toContain('1000000 liter');
-    expect(prompt).toContain('0 liter');
+    expect(prompt).toContain('cukup ditulis "0" saja');
     expect(prompt).toContain('"WATER1":"1000000 liter"');
   });
 
@@ -161,7 +163,7 @@ describe('Custom Indicator Rubric & Dynamic Scoring Engine', () => {
     expect(colonParsed[0].title).toBe('Audit Keuangan');
   });
 
-  it('normalizes quantitative scores preserving metric strings like 1000000 liter and 0 liter', () => {
+  it('normalizes quantitative scores preserving metric strings with units and normalizing 0 / empty to "0"', () => {
     const rawAiOutput = {
       WATER1: '1000000 liter',
       EMIS1: '25000 ton CO2e',
@@ -172,7 +174,33 @@ describe('Custom Indicator Rubric & Dynamic Scoring Engine', () => {
     const normalized = normalizeScores(rawAiOutput, ['WATER1', 'EMIS1', 'WASTE1', 'ENERGY1'], undefined, 'quantitative_count');
     expect(normalized.water1).toBe('1000000 liter');
     expect(normalized.emis1).toBe('25000 ton CO2e');
-    expect(normalized.waste1).toBe('0 liter');
-    expect(normalized.energy1).toBe('0 liter');
+    expect(normalized.waste1).toBe('0');
+    expect(normalized.energy1).toBe('0');
+  });
+
+  it('encodes and decodes custom indicator metadata in Supabase notes without data loss', () => {
+    const encoded = encodeNotesWithAnalyzerMeta('Laporan Keberlanjutan 2025', {
+      preset_id: 'preset_green_15',
+      preset_name: 'Standar Kualitas Perusahaan Hijau',
+      dynamic_scores: { enrg1: '50000 kWh', water1: '0 liter', gov1: 4 },
+      total_score: 12
+    });
+
+    const decoded = decodeRecordAnalyzerMeta({
+      company_code: 'AKRA',
+      fiscal_year: 'FY 2025',
+      file_name: 'AKRA_2025.pdf',
+      notes: encoded
+    });
+
+    expect(decoded.notes).toBe('Laporan Keberlanjutan 2025');
+    expect(decoded.preset_id).toBe('preset_green_15');
+    expect(decoded.preset_name).toBe('Standar Kualitas Perusahaan Hijau');
+    expect(decoded.total_score).toBe(12);
+    expect(decoded.dynamic_scores?.enrg1).toBe('50000 kWh');
+    expect(decoded.dynamic_scores?.water1).toBe('0');
+    expect(decoded.dynamic_scores?.gov1).toBe(4);
+    expect(formatCleanDisclosureLevel('Sangat Tinggi (High Disclosure)', false)).toBe('Sangat Tinggi');
+    expect(formatCleanDisclosureLevel('Sangat Rendah (Minimal)', false)).toBe('Sangat Rendah');
   });
 });

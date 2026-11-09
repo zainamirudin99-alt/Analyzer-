@@ -3,7 +3,16 @@ import { extractTextFromPdf } from '@/lib/pdf-parser';
 import { analyzeWithGemini, evaluateDocumentHeuristically } from '@/lib/gemini';
 import { analyzeWithOpenAI } from '@/lib/openai';
 import { analyzeWithClaude, ClaudeEffortLevel } from '@/lib/claude';
-import { calculateDisclosureLevel, calculateTotalScore, IndicatorItem, INDICATOR_KEYS, RubricItem, RubricType } from '@/lib/types';
+import {
+  calculateDisclosureLevel,
+  calculateTotalScore,
+  encodeNotesWithAnalyzerMeta,
+  IndicatorItem,
+  INDICATOR_KEYS,
+  isDisclosedQuantitativeValue,
+  RubricItem,
+  RubricType
+} from '@/lib/types';
 import { getSupabaseServerClient } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
@@ -153,7 +162,7 @@ export async function POST(req: NextRequest) {
       if (textToAnalyze && textToAnalyze.trim().length > 20) {
         aiResult = {
           success: true,
-          scores: evaluateDocumentHeuristically(textToAnalyze, parsedIndicators),
+          scores: evaluateDocumentHeuristically(textToAnalyze, parsedIndicators, parsedRubric, rubricType),
           modelUsed: customModel || (provider === 'gemini' ? 'gemini-3.8-flash' : provider)
         };
       } else {
@@ -169,11 +178,9 @@ export async function POST(req: NextRequest) {
     if (parsedIndicators && parsedIndicators.length > 0) {
       const indicatorCount = parsedIndicators.length;
       if (isQuantitative) {
-        const disclosedCount = Object.values(aiResult.scores as Record<string, any>).filter(val => {
-          if (val === undefined || val === null) return false;
-          const s = String(val).trim().toLowerCase();
-          return s !== '0' && s !== '0 liter' && s !== '0 unit' && s !== '0 ton' && s !== '';
-        }).length;
+        const disclosedCount = Object.values(aiResult.scores as Record<string, any>).filter(val =>
+          isDisclosedQuantitativeValue(val)
+        ).length;
         totalScore = disclosedCount;
         const ratio = indicatorCount > 0 ? totalScore / indicatorCount : 0;
         if (ratio >= 0.8) disclosureLevel = 'Sangat Tinggi (Kuantitatif Lengkap)';
@@ -221,11 +228,18 @@ export async function POST(req: NextRequest) {
           }
         });
 
+        const enrichedNotes = encodeNotesWithAnalyzerMeta(notes, {
+          preset_id: presetId,
+          preset_name: presetName,
+          dynamic_scores: aiResult.scores,
+          total_score: totalScore
+        });
+
         const recordData = {
           company_code: companyCode,
           fiscal_year: fiscalYear,
           file_name: fileName,
-          notes,
+          notes: enrichedNotes,
           status: 'completed',
           ...standardScoreCols,
           disclosure_level: disclosureLevel,

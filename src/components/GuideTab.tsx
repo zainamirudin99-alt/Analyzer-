@@ -257,6 +257,8 @@ export const GuideTab: React.FC = () => {
     saveStoredPresets(updated);
     setPresets(updated);
     setSelectedId(copyPreset.id);
+    setActivePresetId(copyPreset.id);
+    setActiveId(copyPreset.id);
     setNoticeMessage({
       type: 'success',
       text: isEn
@@ -736,7 +738,7 @@ export const GuideTab: React.FC = () => {
                   <div
                     key={p.id}
                     className={`preset-card-item ${isSelected ? 'selected' : ''} ${isActive ? 'is-active-preset' : ''}`}
-                    onClick={() => setSelectedId(p.id)}
+                    onClick={() => handleSelectActivePreset(p.id)}
                   >
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
                       <div style={{ flex: 1 }}>
@@ -889,7 +891,7 @@ export const GuideTab: React.FC = () => {
                     <>
                       {isEn ? 'Evaluation Mode:' : 'Metode Penilaian:'}{' '}
                       <strong style={{ color: 'var(--fern)' }}>
-                        {isEn ? 'Quantitative Real Values (e.g. 1000000 liters / 0 liters)' : 'Nilai Riil Kuantitatif (misal 1000000 liter / 0 liter)'}
+                        {isEn ? 'Quantitative Real Values (Actual Value + Unit / 0 if none)' : 'Nilai Riil Kuantitatif (Angka + Satuan Sesuai Laporan / 0 jika tidak ada)'}
                       </strong>{' '}
                       • {isEn ? 'Total Indicators:' : 'Total Indikator:'} <strong>{selectedPreset.indicators.length}</strong>
                     </>
@@ -997,11 +999,11 @@ export const GuideTab: React.FC = () => {
               {getPresetRubricType(selectedPreset) === 'binary_count' || getPresetRubricType(selectedPreset) === 'quantitative_count' ? (
                 isEn ? (
                   <>
-                    Indicators are evaluated by <strong>extracting actual quantitative metrics</strong> disclosed in the report (e.g. 1000000 liters, 25000 tons). If not disclosed, recorded as <strong>0 liters</strong> (or 0):
+                    Indicators are evaluated by <strong>extracting actual quantitative values and units</strong> found in the report analysis result (e.g. 1000000 liters, 25000 ton CO2e, 50000 kWh). If not disclosed, recorded simply as <strong>0</strong>:
                   </>
                 ) : (
                   <>
-                    Setiap indikator dievaluasi dengan <strong>mengekstrak nilai riil / volume nominal</strong> yang tertera dalam laporan file (misal: 1000000 liter). Jika tidak diungkapkan, bernilai <strong>0 liter</strong> (atau 0):
+                    Setiap indikator yang ada isinya disesuaikan dengan <strong>nilai dan satuan yang ada pada hasil analisis laporan</strong> (misal: 1000000 liter, 25000 ton CO2e, 50000 kWh). Jika tidak ada pengungkapan (hasil 0), cukup ditulis <strong>0</strong>:
                   </>
                 )
               ) : (
@@ -1233,8 +1235,8 @@ export const GuideTab: React.FC = () => {
                     </div>
                     <div style={{ fontSize: '11px', color: 'var(--stone)', lineHeight: '1.3' }}>
                       {isEn
-                        ? 'Extracts actual quantitative metric from report (e.g. 1000000 liters). If not disclosed, records 0 liters.'
-                        : 'Mengekstrak nilai riil / volume nominal dari file laporan (misal 1000000 liter). Jika tidak ada pengungkapan, bernilai 0 liter.'}
+                        ? 'Extracts actual quantitative metric and unit from report. If not disclosed, records 0.'
+                        : 'Isi disesuaikan dengan nilai dan satuan pada hasil analisis laporan. Jika hasil 0, cukup ditulis 0.'}
                     </div>
                   </button>
                 </div>
@@ -1549,8 +1551,8 @@ export const GuideTab: React.FC = () => {
                   </div>
                   <div style={{ fontSize: '11px', color: 'var(--stone)', lineHeight: '1.4' }}>
                     {isEn
-                      ? 'Extracts actual volume / metric from report (e.g. 1000000 liters). If no disclosure, records 0 liters.'
-                      : 'Mengekstrak nilai riil / volume nominal dari file laporan (misal 1000000 liter). Jika tidak ada pengungkapan, bernilai 0 liter.'}
+                      ? 'Extracts actual value & unit from report analysis. If no disclosure, records 0.'
+                      : 'Isi disesuaikan dengan nilai & satuan pada hasil analisis laporan. Jika hasil 0, cukup ditulis 0.'}
                   </div>
                 </button>
               </div>
@@ -1606,8 +1608,8 @@ export const GuideTab: React.FC = () => {
                 >
                   💡 <strong>{isEn ? 'Quantitative Disclosure Mode (Real Values):' : 'Mode Nilai Riil Pengungkapan (Kuantitatif):'}</strong>{' '}
                   {isEn
-                    ? 'AI extracts the exact quantitative number and unit stated in the report file (e.g. 1000000 liters). If the company does not disclose data for this indicator, it records 0 liters.'
-                    : 'AI membaca dokumen dan mengekstrak angka nominal kuantitatif riil beserta satuannya dari laporan file (misal: 1000000 liter). Jika tidak ada pengungkapan, bernilai 0 liter.'}
+                    ? 'AI extracts the exact quantitative number and unit stated in the report file (e.g. 1000000 liters, 25000 ton CO2e). If not disclosed, it records 0.'
+                    : 'Untuk indikator yang ada isinya disesuaikan dengan nilai dan satuan pada hasil analisis laporan (misal: 1000000 liter, 25000 ton CO2e). Jika tidak ada pengungkapan, cukup ditulis 0.'}
                 </div>
               )}
 

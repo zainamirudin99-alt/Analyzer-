@@ -4,7 +4,8 @@ import {
   IndicatorItem,
   IndicatorPreset,
   CustomAISkill,
-  SCORING_RUBRIC
+  SCORING_RUBRIC,
+  DEFAULT_QUANTITATIVE_RUBRIC
 } from './types';
 
 export const DEFAULT_PRESET_ID = 'default_ced_18';
@@ -86,6 +87,27 @@ export function getStoredPresets(): IndicatorPreset[] {
         localStorage.setItem('analyzer_indicator_presets', JSON.stringify(parsed));
       }
     }
+
+    // Migrasi otomatis label rubrik kuantitatif lama ("0: 0 Liter") menjadi "0: Tidak Ada Pengungkapan"
+    let migratedRubric = false;
+    for (const preset of parsed) {
+      if (
+        (preset.rubricType === 'quantitative_count' || preset.rubricType === 'binary_count') &&
+        Array.isArray(preset.rubric)
+      ) {
+        const hasLegacyZeroLiter = preset.rubric.some(
+          r => typeof r.label === 'string' && r.label.toLowerCase().includes('0 liter')
+        );
+        if (hasLegacyZeroLiter) {
+          preset.rubric = DEFAULT_QUANTITATIVE_RUBRIC.map(item => ({ ...item }));
+          migratedRubric = true;
+        }
+      }
+    }
+    if (migratedRubric) {
+      localStorage.setItem('analyzer_indicator_presets', JSON.stringify(parsed));
+    }
+
     return parsed;
   } catch (e) {
     console.warn('Gagal membaca indicator presets dari localStorage:', e);

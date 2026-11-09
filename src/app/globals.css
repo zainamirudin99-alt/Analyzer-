@@ -853,10 +853,14 @@ input:focus, select:focus, textarea:focus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  min-width: 32px;
+  min-height: 30px;
+  width: auto;
+  height: auto;
+  padding: 3px 10px;
+  white-space: nowrap;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 800;
   font-family: 'JetBrains Mono', 'DM Mono', monospace;
   transition: var(--transition);
@@ -940,16 +944,17 @@ input:focus, select:focus, textarea:focus {
 }
 
 table.result-table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
+  table-layout: auto;
   border-collapse: collapse;
   font-size: 13px;
-  min-width: 1000px;
 }
 
 .result-table th {
   background: var(--surface-muted);
   color: var(--text);
-  padding: 13px 10px;
+  padding: 12px 14px;
   text-align: center;
   font-weight: 700;
   white-space: nowrap;
@@ -957,6 +962,7 @@ table.result-table {
   letter-spacing: 0.4px;
   border-bottom: 2px solid var(--border);
   border-right: 1px solid var(--border-light);
+  vertical-align: middle;
 }
 
 .result-table th:first-child {
@@ -964,12 +970,45 @@ table.result-table {
 }
 
 .result-table td {
-  padding: 10px 8px;
+  padding: 11px 14px;
   text-align: center;
+  white-space: nowrap;
   border-bottom: 1px solid var(--border-light);
   border-right: 1px solid var(--border-light);
   transition: var(--transition-fast);
   color: var(--text-secondary);
+  vertical-align: middle;
+}
+
+/* Indicator Breakdown Grid (Post-Analysis Card) */
+.ind-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+  gap: 10px;
+}
+
+.ind-item {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  transition: var(--transition-fast);
+}
+
+.ind-item:hover {
+  border-color: var(--primary);
+  background: var(--dew);
+}
+
+.ind-code {
+  font-family: 'JetBrains Mono', 'DM Mono', monospace;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text);
 }
 
 .result-table tr:hover td {

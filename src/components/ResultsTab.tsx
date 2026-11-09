@@ -2,7 +2,16 @@
 
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, Download, Search, Trash2, Printer, Copy, Check, Table } from 'lucide-react';
-import { CEDResultRecord, INDICATOR_KEYS, IndicatorPreset, getPresetRubricType } from '@/lib/types';
+import {
+  CEDResultRecord,
+  INDICATOR_KEYS,
+  IndicatorPreset,
+  getPresetRubricType,
+  normalizeQuantitativeScoreString,
+  isDisclosedQuantitativeValue,
+  formatCleanDisclosureLevel,
+  decodeRecordAnalyzerMeta
+} from '@/lib/types';
 import {
   getStoredPresets,
   saveStoredPresets,
@@ -62,25 +71,32 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
       console.warn('Backend fetch notice:', err);
     }
 
-    // 3. Gabungkan data: pertahankan skor indikator kustom & preset_id dari localData agar tidak hilang oleh tabel standar Supabase
+    // 3. Gabungkan data: pertahankan skor indikator kustom & preset_id dari localData maupun metadata Supabase
     const combinedMap = new Map<string, CEDResultRecord>();
 
-    localData.forEach(item => {
+    localData.forEach(rawItem => {
+      const item = decodeRecordAnalyzerMeta(rawItem);
       const key = `${item.company_code}_${item.fiscal_year}`;
       combinedMap.set(key, item);
     });
 
-    supabaseData.forEach(sbItem => {
+    supabaseData.forEach(rawSbItem => {
+      const sbItem = decodeRecordAnalyzerMeta(rawSbItem);
       const key = `${sbItem.company_code}_${sbItem.fiscal_year}`;
       const existingLocal = combinedMap.get(key);
       if (existingLocal) {
+        const mergedDynamic = {
+          ...(sbItem.dynamic_scores || {}),
+          ...(existingLocal.dynamic_scores || {})
+        };
         combinedMap.set(key, {
           ...sbItem,
           ...existingLocal,
+          ...mergedDynamic,
           id: sbItem.id || existingLocal.id,
           preset_id: existingLocal.preset_id || sbItem.preset_id,
           preset_name: existingLocal.preset_name || sbItem.preset_name,
-          dynamic_scores: existingLocal.dynamic_scores || sbItem.dynamic_scores
+          dynamic_scores: Object.keys(mergedDynamic).length > 0 ? mergedDynamic : undefined
         });
       } else {
         combinedMap.set(key, sbItem);
@@ -190,22 +206,32 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     const lower = code.toLowerCase();
     const upper = code.toUpperCase();
     const raw =
+      (row.dynamic_scores ? row.dynamic_scores[lower] ?? row.dynamic_scores[upper] : undefined) ??
       (row as any)[lower] ??
-      (row as any)[upper] ??
-      (row.dynamic_scores ? row.dynamic_scores[lower] ?? row.dynamic_scores[upper] : undefined);
-    if (raw !== undefined && raw !== null && raw !== '') {
-      if (typeof raw === 'string') return raw;
-      if (typeof raw === 'number' && !isNaN(raw)) return raw;
+      (row as any)[upper];
+
+    if (isQuantitativeMode) {
+      return normalizeQuantitativeScoreString(raw);
     }
-    return isQuantitativeMode ? '0 liter' : 0;
+
+    if (raw !== undefined && raw !== null && raw !== '') {
+      if (typeof raw === 'number' && !isNaN(raw)) return raw;
+      if (typeof raw === 'string') {
+        const cleaned = normalizeQuantitativeScoreString(raw);
+        if (cleaned === '0') return 0;
+        const parsedNum = Number(cleaned);
+        if (!isNaN(parsedNum)) return parsedNum;
+        return cleaned;
+      }
+    }
+    return 0;
   };
 
   const getRowTotalForActivePreset = (row: CEDResultRecord): number | string => {
     if (isQuantitativeMode) {
       const disclosedCount = displayIndicatorItems.filter(ind => {
         const val = getScoreForIndicator(row, ind.code);
-        const s = String(val).trim().toLowerCase();
-        return s !== '0' && s !== '0 liter' && s !== '0 unit' && s !== '0 ton' && s !== '';
+        return isDisclosedQuantitativeValue(val);
       }).length;
       return `${disclosedCount}/${displayIndicatorItems.length}`;
     }
@@ -459,17 +485,23 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
               className="form-select font-mono"
               style={{
                 width: 'auto',
-                minWidth: '240px',
-                background: '#ffffff',
+                minWidth: '260px',
+                background: 'var(--surface)',
+                color: 'var(--text)',
+                border: '1.5px solid var(--border)',
                 fontSize: '12.5px',
-                padding: '6px 10px',
+                padding: '7px 12px',
                 fontWeight: 700
               }}
               value={selectedPresetId}
               onChange={e => handleSelectPresetInTable(e.target.value)}
             >
               {presets.map(p => (
-                <option key={p.id} value={p.id}>
+                <option
+                  key={p.id}
+                  value={p.id}
+                  style={{ background: 'var(--surface)', color: 'var(--text)' }}
+                >
                   {getPresetName(p, lang)} ({p.indicators.length} {isEn ? 'Indicators' : 'Indikator'})
                 </option>
               ))}
@@ -477,12 +509,13 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
             <span
               className="badge"
               style={{
-                background: '#ffffff',
-                color: 'var(--fern)',
+                background: 'var(--dew)',
+                color: 'var(--primary)',
                 border: '1px solid var(--border)',
                 fontSize: '11.5px',
-                padding: '4px 10px',
-                fontWeight: 700
+                padding: '5px 12px',
+                fontWeight: 800,
+                borderRadius: '8px'
               }}
             >
               {displayIndicatorItems.length} {isEn ? 'Columns' : 'Kolom Indikator'} · {isEn ? 'Max Score:' : 'Skor Maks:'} {maxPossibleScore}
@@ -527,17 +560,39 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
             <thead>
               <tr>
                 <th style={{ textAlign: 'left', minWidth: '90px' }}>Code</th>
-                <th style={{ minWidth: '90px' }}>Years</th>
+                <th style={{ minWidth: '92px' }}>Years</th>
                 {displayIndicatorItems.map(ind => (
-                  <th key={ind.code} title={`${ind.code}: ${ind.title}`}>
-                    {ind.code}
+                  <th
+                    key={ind.code}
+                    title={`${ind.code} — ${ind.title}`}
+                    style={{ minWidth: '88px', padding: '10px 12px' }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+                      <span className="font-mono" style={{ fontSize: '12px', fontWeight: 800, color: 'var(--primary)' }}>
+                        {ind.code}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          fontWeight: 600,
+                          color: 'var(--text-muted)',
+                          maxWidth: '125px',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          lineHeight: 1.2
+                        }}
+                      >
+                        {ind.title}
+                      </span>
+                    </div>
                   </th>
                 ))}
-                <th style={{ minWidth: '80px' }} title={`Max: ${maxPossibleScore}`}>
+                <th style={{ minWidth: '95px' }} title={`Max: ${maxPossibleScore}`}>
                   TOTAL / {maxPossibleScore}
                 </th>
-                <th style={{ minWidth: '100px' }}>Level</th>
-                <th style={{ minWidth: '190px' }}>{isEn ? 'Copy & Actions' : 'Salin & Aksi'}</th>
+                <th style={{ minWidth: '125px' }}>Level</th>
+                <th style={{ minWidth: '210px' }}>{isEn ? 'Copy & Actions' : 'Salin & Aksi'}</th>
               </tr>
             </thead>
             <tbody>
@@ -570,43 +625,61 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
                   const isCopiedRow = copiedId === `row_${rowKey}`;
                   const isCopiedScores = copiedId === `scores_${rowKey}`;
                   const rowTotal = getRowTotalForActivePreset(row);
+                  const cleanLevel = formatCleanDisclosureLevel(row.disclosure_level, isEn);
 
                   return (
                     <tr key={row.id || rowKey}>
                       <td className="td-code">{row.company_code}</td>
-                      <td className="td-year">{row.fiscal_year}</td>
+                      <td className="td-year" style={{ whiteSpace: 'nowrap' }}>{row.fiscal_year}</td>
 
                       {displayIndicatorItems.map(ind => {
-                        const score = getScoreForIndicator(row, ind.code);
-                        const isString = typeof score === 'string';
-                        const isZero = score === 0 || score === '0' || score === '0 liter' || score === '0 unit' || score === '0 ton';
+                        const rawScore = getScoreForIndicator(row, ind.code);
+                        const isZero = !isDisclosedQuantitativeValue(rawScore) || rawScore === 0 || rawScore === '0';
+                        const displayVal = isZero ? (isQuantitativeMode ? '0' : 0) : rawScore;
+                        const isStringMetric = typeof displayVal === 'string' && displayVal !== '0';
+
                         return (
-                          <td key={ind.code} title={`${ind.code} — ${ind.title}: ${score}`} style={{ whiteSpace: 'nowrap' }}>
+                          <td key={ind.code} title={`${ind.code} — ${ind.title}: ${displayVal}`} style={{ whiteSpace: 'nowrap' }}>
                             <span
-                              className={`score-badge ${!isString ? `score-${score}` : ''}`}
+                              className={`score-badge ${!isStringMetric ? `score-${Math.min(Number(displayVal) || 0, 5)}` : ''}`}
                               style={
-                                isString
+                                isStringMetric
                                   ? {
-                                      background: isZero ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.15)',
-                                      color: isZero ? '#f87171' : '#34d399',
-                                      border: `1px solid ${isZero ? 'rgba(239, 68, 68, 0.28)' : 'rgba(16, 185, 129, 0.3)'}`,
-                                      padding: '2px 8px',
-                                      borderRadius: '6px',
-                                      fontSize: '11px',
-                                      fontWeight: 700
+                                      background: 'rgba(16, 185, 129, 0.16)',
+                                      color: '#34d399',
+                                      border: '1px solid rgba(16, 185, 129, 0.35)',
+                                      padding: '4px 10px',
+                                      borderRadius: '8px',
+                                      fontSize: '12px',
+                                      fontWeight: 700,
+                                      whiteSpace: 'nowrap'
                                     }
                                   : undefined
                               }
                             >
-                              {score}
+                              {displayVal}
                             </span>
                           </td>
                         );
                       })}
 
-                      <td className="td-total">{rowTotal}</td>
-                      <td style={{ fontSize: '12px', fontWeight: 700, color: 'var(--moss)', whiteSpace: 'nowrap' }}>
-                        {row.disclosure_level?.split(' ')[0] || (isEn ? 'Low' : 'Rendah')}
+                      <td className="td-total" style={{ whiteSpace: 'nowrap' }}>{rowTotal}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            padding: '4px 10px',
+                            borderRadius: '999px',
+                            fontSize: '11.5px',
+                            fontWeight: 800,
+                            background: 'var(--dew)',
+                            color: 'var(--primary)',
+                            border: '1px solid var(--border)',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {cleanLevel}
+                        </span>
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', alignItems: 'center' }}>

@@ -400,7 +400,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
                       autoComplete="username"
                       value={username}
                       onChange={e => setUsername(e.target.value)}
-                      placeholder={isEn ? 'e.g. zain99' : 'Contoh: zain99'}
+                      placeholder={isEn ? 'e.g. gojira123' : 'Contoh: gojira123'}
                       required
                       style={{
                         width: '100%',

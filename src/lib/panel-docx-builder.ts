@@ -245,7 +245,7 @@ export async function generatePanelDocx(options: PanelDocxExportOptions): Promis
       }),
       new Paragraph({
         children: [
-          new TextRun({ text: 'Penjelasan Bahasa Bayi (Analogi Awam): ', bold: true, size: 19, color: 'B45309' }),
+          new TextRun({ text: 'Penjelasan Ringkas (Analogi Awam): ', bold: true, size: 19, color: 'B45309' }),
           new TextRun({ text: block.babyLanguage, italics: true, size: 19 })
         ],
         spacing: { after: 180 }

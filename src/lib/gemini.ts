@@ -4,7 +4,14 @@
 // Dilengkapi Smart Alias Routing, AbortController Timeout, & Multi-HTTP Error Shield
 // ============================================================
 
-import { CEDScores, INDICATOR_KEYS, IndicatorItem, RubricItem, RubricType } from './types';
+import {
+  CEDScores,
+  INDICATOR_KEYS,
+  IndicatorItem,
+  RubricItem,
+  RubricType,
+  normalizeQuantitativeScoreString
+} from './types';
 
 export interface ModelCategory {
   category: string;
@@ -96,8 +103,8 @@ export function buildAnalysisPrompt(params: {
     indicatorsText = indicators
       .map((ind, idx) => `${idx + 1}. ${ind.code} – ${ind.title}: ${ind.fullDesc}`)
       .join('\n');
-    indicators.forEach(ind => {
-      sampleJsonObj[ind.code] = isQuantitative ? '1000000 liter' : 0;
+    indicators.forEach((ind, idx) => {
+      sampleJsonObj[ind.code] = isQuantitative ? (idx === 0 ? '1000000 liter' : '0') : 0;
     });
   } else {
     indicatorsText = `1. CC1 – Penilaian/deskripsi dari risiko (peraturan/regulasi baik khusus maupun umum) yang berhubungan dengan perubahan iklim dan aksi yang dilakukan atau aksi yang dilakukan untuk mengatasi risiko tersebut.
@@ -119,7 +126,7 @@ export function buildAnalysisPrompt(params: {
 17. ACC1 – Indikasi dari dewan komite (atau badan eksekutif lainnya) yang memiliki tanggungjawab atas tindakan yang berhubungan dengan perubahan iklim.
 18. ACC2 – Deskripsi dari mekanisme dimana dewan (atau suatu badan eksekutif lain) melakukan peninjauan kemajuan perusahaan mengenai perubahan iklim.`;
     sampleJsonObj = isQuantitative
-      ? { CC1: '0 liter', GHG1: '1500000 ton CO2e', EC1: '1000000 liter' }
+      ? { CC1: '0', GHG1: '1500000 ton CO2e', EC1: '1000000 liter' }
       : {
           CC1: 0, CC2: 0,
           GHG1: 0, GHG2: 0, GHG3: 0, GHG4: 0, GHG5: 0, GHG6: 0, GHG7: 0,
@@ -139,13 +146,13 @@ export function buildAnalysisPrompt(params: {
   if (isQuantitative) {
     rubricSection = `Indikator di atas dievaluasi berdasarkan nilai riil / kuantitatif pengungkapan (Quantitative Disclosure Extraction):
 Scoring Rubric (Nilai Riil Pengungkapan):
-- Jika indikator diungkapkan dalam dokumen laporan (misal: jumlah limbah air yang diolah perusahaan adalah 1jt liter, total emisi 25000 ton CO2e, atau konsumsi energi 50000 kWh), ekstrak dan tuliskan angka nominal / volume riil tersebut beserta satuannya (misal: "1000000 liter", "25000 ton CO2e", "50000 kWh", "120 karyawan", "Rp 50 Miliar").
-- Jika indikator TIDAK diungkapkan atau tidak ada data yang ditemukan dalam dokumen laporan, berikan nilai "0 liter" (atau "0 [satuan]", atau "0" jika tanpa satuan spesifik).
+- Jika indikator diungkapkan dalam dokumen laporan (misal: jumlah limbah air yang diolah perusahaan adalah 1jt liter, total emisi 25000 ton CO2e, atau konsumsi energi 50000 kWh), ekstrak dan tuliskan angka nominal / volume riil tersebut disesuaikan dengan satuannya yang ada pada hasil analisis laporan (misal: "1000000 liter", "25000 ton CO2e", "50000 kWh", "120 karyawan", "Rp 50 Miliar").
+- Jika indikator TIDAK diungkapkan atau hasilnya adalah 0 (tidak ada data dalam dokumen laporan), cukup ditulis "0" saja (TIDAK PERLU ditulis "0 liter").
 
 ATURAN PENTING:
-1. JANGAN mengembalikan skor biner 0 atau 1. Kembalikan angka kuantitas riil yang tertulis di laporan file beserta satuannya (contoh: "1000000 liter"), atau "0 liter" jika tidak ada pengungkapan.
-2. Format angka gunakan angka penuh tanpa singkatan (misal: 1000000 liter).`;
-    scoringGoalText = 'Bantulah untuk mengekstrak angka riil kuantitatif pengungkapan setiap indikator di atas secara objektif dan apa adanya dari dokumen laporan. Tuliskan nilai riil beserta satuannya (misal "1000000 liter") atau "0 liter" jika tidak ada pengungkapan.';
+1. Jika hasil pengungkapan adalah 0 (tidak ada pengungkapan), cukup tulis "0" saja tanpa satuan.
+2. Untuk indikator yang ada isinya di dalam laporan, tuliskan angka kuantitas riil beserta satuannya sesuai yang tertera pada laporan (contoh: "1000000 liter", "25000 ton CO2e").`;
+    scoringGoalText = 'Bantulah untuk mengekstrak angka riil kuantitatif pengungkapan beserta satuannya sesuai laporan untuk setiap indikator yang diungkapkan, atau tulis "0" saja jika tidak ada pengungkapan.';
   } else if (rubric && rubric.length > 0) {
     const minScore = Math.min(...rubric.map(r => Number(r.score) || 0));
     const maxScore = Math.max(...rubric.map(r => Number(r.score) || 0));
@@ -166,13 +173,21 @@ Scoring Rubric (Skala 0 sampai 5):
     scoringGoalText = 'Bantulah untuk mengidentifikasi dan memberi nilai skor 0 sampai 5 untuk setiap indikator di atas secara objektif, ketat, dan apa adanya.';
   }
 
+  const strictIndicatorConstraint =
+    indicators && indicators.length > 0
+      ? `\nATURAN KODE INDIKATOR WAJIB:
+- Anda WAJIB menilai HANYA ${indicators.length} indikator dari pilihan pengguna di atas dengan kode: ${indicators.map(i => i.code).join(', ')}.
+- DILARANG menggunakan indikator bawaan lain di luar daftar tersebut.
+- Key pada JSON output WAJIB persis menggunakan kode berikut: ${indicators.map(i => `"${i.code}"`).join(', ')}.\n`
+      : '';
+
   return `Saya adalah peneliti yang ingin mengidentifikasi dan menilai pengungkapan indikator pada dokumen laporan perusahaan di Indonesia.
 Saya ingin mengidentifikasi tingkat pengungkapan menggunakan daftar indikator berikut:
 
 ${indicatorsText}
 
 ${rubricSection}${skillPromptBlock}
-
+${strictIndicatorConstraint}
 Berikut terlampir dokumen laporan tahunan / keberlanjutan perusahaan "${companyCode}" untuk tahun fiskal "${fiscalYear}".
 ${scoringGoalText}
 
@@ -189,7 +204,11 @@ export function buildCEDPrompt(companyCode: string, fiscalYear: string): string 
  * Optimasi dan Pembersihan Teks Laporan untuk Analisis Indikator
  * Mencegah Quota Limit Exceeded (429), Payload Too Large (413), dan Gateway Timeout (504)
  */
-export function preprocessTextForCED(rawText: string, maxChars = 220000): string {
+export function preprocessTextForCED(
+  rawText: string,
+  maxChars = 220000,
+  customIndicators?: IndicatorItem[]
+): string {
   if (!rawText) return '';
   const cleaned = rawText
     .replace(/\r\n/g, '\n')
@@ -201,15 +220,29 @@ export function preprocessTextForCED(rawText: string, maxChars = 220000): string
     return cleaned;
   }
 
-  const cedKeywords = [
+  const baseKeywords = [
     'emisi', 'grk', 'ghg', 'scope 1', 'scope 2', 'scope 3', 'cakupan 1', 'cakupan 2', 'cakupan 3',
     'gas rumah kaca', 'greenhouse gas', 'karbon', 'carbon', 'co2', 'energi', 'energy', 'listrik',
     'batu bara', 'solar', 'diesel', 'fuel', 'bahan bakar', 'konsumsi energi', 'efisiensi energi',
     'tcfd', 'iso 14064', 'gri', 'sustainability', 'keberlanjutan', 'lingkungan', 'iklim', 'climate',
     'transisi energi', 'net zero', 'dekarbonisasi', 'target emisi', 'pengurangan emisi',
     'komite keberlanjutan', 'dewan komisaris', 'dewan direksi', 'tanggung jawab sosial', 'esg',
-    'indikator', 'pengungkapan', 'disclosure', 'audit', 'kinerja', 'tata kelola'
+    'indikator', 'pengungkapan', 'disclosure', 'audit', 'kinerja', 'tata kelola',
+    'air', 'water', 'limbah', 'waste', 'biodiversitas', 'biodiversity', 'polusi', 'pollution'
   ];
+
+  const customKeywords: string[] = [];
+  if (customIndicators && customIndicators.length > 0) {
+    for (const ind of customIndicators) {
+      const combinedText = `${ind.code} ${ind.title || ''} ${ind.fullDesc || ''} ${ind.group || ''} ${ind.title_en || ''} ${ind.fullDesc_en || ''}`.toLowerCase();
+      const words = combinedText.split(/[^a-z0-9]+/).filter(w => w.length >= 3);
+      for (const w of words) {
+        if (!customKeywords.includes(w)) customKeywords.push(w);
+      }
+    }
+  }
+
+  const activeKeywords = customKeywords.length > 0 ? [...customKeywords, ...baseKeywords] : baseKeywords;
 
   const sections = cleaned.split(/(?=--- HALAMAN \d+ ---|\n\n(?=[A-Z0-9\s]{4,40}\n))/i);
   const relevantSections: string[] = [];
@@ -224,7 +257,7 @@ export function preprocessTextForCED(rawText: string, maxChars = 220000): string
   for (let i = 10; i < sections.length; i++) {
     const sec = sections[i];
     const secLower = sec.toLowerCase();
-    const isRelevant = cedKeywords.some(kw => secLower.includes(kw));
+    const isRelevant = activeKeywords.some(kw => secLower.includes(kw));
 
     if (isRelevant) {
       if (totalLen + sec.length > maxChars) break;
@@ -319,11 +352,7 @@ export function normalizeScores(
       const val = rawObj[upper] ?? rawObj[lower] ?? rawObj[k];
 
       if (isQuantitative) {
-        if (val === undefined || val === null || val === '') {
-          result[lower] = '0 liter';
-        } else {
-          result[lower] = String(val).trim();
-        }
+        result[lower] = normalizeQuantitativeScoreString(val);
       } else {
         const num = parseInt(String(val ?? 0), 10);
         const maxScore = rubric && rubric.length > 0 ? Math.max(...rubric.map(r => Number(r.score) || 0)) : 5;
@@ -338,11 +367,7 @@ export function normalizeScores(
     const val = rawObj[upper] ?? rawObj[k];
 
     if (isQuantitative) {
-      if (val === undefined || val === null || val === '') {
-        result[k] = '0 liter';
-      } else {
-        result[k] = String(val).trim();
-      }
+      result[k] = normalizeQuantitativeScoreString(val);
     } else {
       const num = parseInt(String(val ?? 0), 10);
       result[k] = isNaN(num) ? 0 : Math.max(0, Math.min(5, num));
@@ -594,28 +619,55 @@ export async function executeGeminiRequest(
  */
 export function evaluateDocumentHeuristically(
   text: string,
-  indicators?: IndicatorItem[]
-): Record<string, number> {
+  indicators?: IndicatorItem[],
+  rubric?: RubricItem[],
+  rubricType?: RubricType
+): Record<string, any> {
   const lower = (text || '').toLowerCase();
   const list = indicators && indicators.length > 0 ? indicators : undefined;
+  const isQuantitative = rubricType === 'quantitative_count' || rubricType === 'binary_count';
 
   if (list) {
-    const raw: Record<string, number> = {};
+    const raw: Record<string, any> = {};
     for (const ind of list) {
-      const tokens = `${ind.title} ${ind.fullDesc}`
+      const tokens = `${ind.title} ${ind.fullDesc} ${ind.title_en || ''} ${ind.fullDesc_en || ''}`
         .toLowerCase()
         .split(/[^a-z0-9]+/)
         .filter(w => w.length >= 4);
       let hits = 0;
+      let matchedSnippet = '';
       for (const t of tokens.slice(0, 12)) {
-        const regex = new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+        const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(escaped, 'g');
         const count = (lower.match(regex) || []).length;
-        if (count > 0) hits += Math.min(count, 5);
+        if (count > 0) {
+          hits += Math.min(count, 5);
+          if (!matchedSnippet) {
+            const idx = lower.indexOf(t);
+            if (idx !== -1) {
+              matchedSnippet = text.slice(Math.max(0, idx - 60), Math.min(text.length, idx + 180));
+            }
+          }
+        }
       }
-      const score = hits === 0 ? 0 : hits <= 3 ? 1 : hits <= 8 ? 2 : hits <= 16 ? 3 : hits <= 28 ? 4 : 5;
-      raw[ind.code] = score;
+
+      if (isQuantitative) {
+        if (hits === 0) {
+          raw[ind.code] = '0';
+        } else {
+          const metricMatch = matchedSnippet.match(
+            /(\d[\d.,]*\s*(?:juta|miliar|triliun|ribu|liter|kl|m3|ton\s*co2e?|tco2e?|ton|kg|kwh|mwh|gwh|gj|tj|pj|%|persen|orang|karyawan|hektar|ha|pohon|unit|kali|jam))/i
+          );
+          raw[ind.code] = metricMatch ? metricMatch[1].trim() : '0';
+        }
+      } else {
+        const maxTier = rubric && rubric.length > 0 ? Math.max(...rubric.map(r => Number(r.score) || 0)) : 5;
+        const baseScore = hits === 0 ? 0 : hits <= 3 ? 1 : hits <= 8 ? 2 : hits <= 16 ? 3 : hits <= 28 ? 4 : 5;
+        const scaledScore = maxTier !== 5 ? Math.round((baseScore / 5) * maxTier) : baseScore;
+        raw[ind.code] = scaledScore;
+      }
     }
-    return normalizeScores(raw, list.map(i => i.code));
+    return normalizeScores(raw, list.map(i => i.code), rubric, rubricType);
   }
 
   const keywordMap: Record<string, string[]> = {
@@ -639,7 +691,7 @@ export function evaluateDocumentHeuristically(
     acc2: ['mekanisme peninjauan', 'evaluasi berkala', 'rapat komite', 'pengawasan iklim']
   };
 
-  const raw: Record<string, number> = {};
+  const raw: Record<string, any> = {};
   for (const key of INDICATOR_KEYS) {
     const kws = keywordMap[key] || [];
     let hits = 0;
@@ -647,9 +699,9 @@ export function evaluateDocumentHeuristically(
       const parts = lower.split(kw);
       hits += Math.max(0, parts.length - 1);
     }
-    raw[key] = hits === 0 ? 0 : hits <= 2 ? 1 : hits <= 5 ? 2 : hits <= 10 ? 3 : hits <= 18 ? 4 : 5;
+    raw[key] = isQuantitative ? (hits === 0 ? '0' : `${hits} pengungkapan`) : hits === 0 ? 0 : hits <= 2 ? 1 : hits <= 5 ? 2 : hits <= 10 ? 3 : hits <= 18 ? 4 : 5;
   }
-  return normalizeScores(raw);
+  return normalizeScores(raw, undefined, rubric, rubricType);
 }
 
 /**
@@ -669,7 +721,7 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
     if (options.pdfText && options.pdfText.trim().length > 20) {
       return {
         success: true,
-        scores: evaluateDocumentHeuristically(options.pdfText, options.indicators),
+        scores: evaluateDocumentHeuristically(options.pdfText, options.indicators, options.rubric, options.rubricType),
         modelUsed: `${chosenModel} (Local Engine)`
       };
     }
@@ -698,7 +750,7 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
 
     let processedText = '';
     if (options.pdfText && options.pdfText.trim().length > 50) {
-      processedText = preprocessTextForCED(options.pdfText, maxChars);
+      processedText = preprocessTextForCED(options.pdfText, maxChars, options.indicators);
     }
 
     const parts: any[] = [];
@@ -766,7 +818,7 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
     console.warn('[Gemini Analyze] Mengaktifkan Heuristic Fallback Engine agar analisis tetap selesai tanpa error.');
     return {
       success: true,
-      scores: evaluateDocumentHeuristically(options.pdfText, options.indicators),
+      scores: evaluateDocumentHeuristically(options.pdfText, options.indicators, options.rubric, options.rubricType),
       modelUsed: chosenModel
     };
   }

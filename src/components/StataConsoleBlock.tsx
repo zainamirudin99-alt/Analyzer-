@@ -281,7 +281,7 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
         </pre>
       </div>
 
-      {/* 4. Penjelasan Bahasa Bayi */}
+      {/* 4. Penjelasan Ringkas (Analogi Awam) */}
       <div
         style={{
           background: 'var(--surface-sunken)',
@@ -310,7 +310,7 @@ export const StataConsoleBlock: React.FC<StataConsoleBlockProps> = ({ block }) =
               margin: '0 0 4px 0'
             }}
           >
-            (4) Penjelasan Bahasa Bayi (Analogi Awam)
+            (4) Penjelasan Ringkas (Analogi Awam)
           </h4>
           <p
             style={{

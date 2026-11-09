@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '@/lib/supabase';
+import { decodeRecordAnalyzerMeta } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,9 +38,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
+    const unpackedData = Array.isArray(data) ? data.map(row => decodeRecordAnalyzerMeta(row)) : [];
+
     return NextResponse.json({
       success: true,
-      data: data || []
+      data: unpackedData
     });
   } catch (err: any) {
     return NextResponse.json({

@@ -110,11 +110,20 @@ export async function analyzeWithOpenAI(options: OpenAIAnalysisOptions): Promise
     skillContent: options.skillContent
   });
   const customKeys = options.indicators?.map(i => i.code);
-  const processedText = options.pdfText ? preprocessTextForCED(options.pdfText, 45000) : '';
+  const processedText = options.pdfText ? preprocessTextForCED(options.pdfText, 45000, options.indicators) : '';
 
   const userContent = processedText
     ? `${prompt}\n\n=== TEKS DOKUMEN LAPORAN (${options.companyCode} ${options.fiscalYear}) ===\n${processedText}`
     : prompt;
+
+  const isQuantitative = options.rubricType === 'quantitative_count' || options.rubricType === 'binary_count';
+  const keysInstruction =
+    customKeys && customKeys.length > 0
+      ? `You MUST evaluate ONLY these exact indicator codes: ${customKeys.join(', ')}. Do NOT output default CED codes if they are not in that list.`
+      : 'Evaluate the 18 CED indicator codes.';
+  const rubricInstruction = isQuantitative
+    ? 'For each indicator, return the exact quantitative value and unit found in the report (e.g. "1000000 liter", "25000 ton CO2e"), or "0" if not disclosed.'
+    : 'Score each indicator according to the provided rubric scale.';
 
   const res = await fetch(endpoint, {
     method: 'POST',
@@ -127,7 +136,7 @@ export async function analyzeWithOpenAI(options: OpenAIAnalysisOptions): Promise
       messages: [
         {
           role: 'system',
-          content: 'You are an expert auditor for sustainability and disclosure indicators. You strictly output valid JSON with indicators scored 0 to 5.'
+          content: `You are an expert auditor for corporate sustainability and disclosure indicators. ${keysInstruction} ${rubricInstruction} Strictly output a valid JSON object.`
         },
         {
           role: 'user',
