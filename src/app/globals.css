@@ -853,17 +853,21 @@ input:focus, select:focus, textarea:focus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 32px;
-  min-height: 30px;
+  min-width: 30px;
+  min-height: 28px;
   width: auto;
   height: auto;
-  padding: 3px 10px;
+  padding: 3px 8px;
   white-space: nowrap;
   border-radius: 8px;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 800;
   font-family: 'JetBrains Mono', 'DM Mono', monospace;
   transition: var(--transition);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
 }
 
 .score-0 { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
@@ -995,8 +999,12 @@ table.result-table {
   background: var(--surface-muted);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 11px 13px;
   transition: var(--transition-fast);
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+  box-sizing: border-box;
 }
 
 .ind-item:hover {

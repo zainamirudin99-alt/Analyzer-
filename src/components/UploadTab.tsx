@@ -676,7 +676,9 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
     if (isQuantitative) {
       return normalizeQuantitativeScoreString(raw);
     }
-    return raw ?? 0;
+    if (typeof raw === 'number' && !isNaN(raw)) return raw;
+    const parsed = parseFloat(String(raw ?? '').replace(/[^0-9.-]/g, ''));
+    return isNaN(parsed) ? 0 : parsed;
   };
 
   // 1. SALIN HANYA SKOR (Indikator Aktif) -> TANPA KODE & TANPA TAHUN
@@ -1446,8 +1448,9 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
               className="ind-grid"
               style={{
                 gridTemplateColumns: isQuantitative
-                  ? 'repeat(auto-fill, minmax(175px, 1fr))'
-                  : 'repeat(auto-fill, minmax(135px, 1fr))'
+                  ? 'repeat(auto-fill, minmax(185px, 1fr))'
+                  : 'repeat(auto-fill, minmax(140px, 1fr))',
+                gap: '10px'
               }}
             >
               {activeItems.map(item => {
@@ -1457,11 +1460,48 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
                 const isStringMetric = typeof displayVal === 'string' && displayVal !== '0';
 
                 return (
-                  <div key={item.code} className="ind-item" title={`${item.code} — ${item.title}: ${displayVal}`}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                      <span className="ind-code">{item.code}</span>
+                  <div
+                    key={item.code}
+                    className="ind-item"
+                    title={`${item.code} — ${item.title}: ${displayVal}`}
+                    style={{
+                      minWidth: 0,
+                      overflow: 'hidden',
+                      position: 'relative',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      boxSizing: 'border-box',
+                      padding: '11px 13px',
+                      background: 'var(--surface-muted)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '10px'
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '8px',
+                        minWidth: 0,
+                        width: '100%'
+                      }}
+                    >
+                      <span
+                        className="ind-code"
+                        style={{
+                          flexShrink: 0,
+                          fontWeight: 800,
+                          letterSpacing: '0.4px',
+                          color: 'var(--text)'
+                        }}
+                      >
+                        {item.code}
+                      </span>
                       <span
                         className={`score-badge ${!isStringMetric ? `score-${Math.min(Number(displayVal) || 0, 5)}` : ''}`}
+                        title={String(displayVal)}
                         style={
                           isStringMetric
                             ? {
@@ -1471,23 +1511,37 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
                                 padding: '3px 8px',
                                 borderRadius: '6px',
                                 fontSize: '11.5px',
-                                fontWeight: 700
+                                fontWeight: 800,
+                                maxWidth: 'calc(100% - 46px)',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                display: 'inline-block',
+                                textAlign: 'center',
+                                boxShadow: '0 0 8px rgba(16, 185, 129, 0.2)'
                               }
-                            : undefined
+                            : {
+                                flexShrink: 0,
+                                minWidth: '28px',
+                                textAlign: 'center'
+                              }
                         }
                       >
                         {displayVal}
                       </span>
                     </div>
                     <div
+                      title={item.title}
                       style={{
                         fontSize: '11px',
                         color: 'var(--text-muted)',
                         lineHeight: 1.35,
+                        marginTop: '6px',
                         display: '-webkit-box',
                         WebkitLineClamp: 2,
                         WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden'
+                        overflow: 'hidden',
+                        wordBreak: 'break-word'
                       }}
                     >
                       {item.title}

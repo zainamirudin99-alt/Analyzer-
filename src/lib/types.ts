@@ -338,7 +338,12 @@ export function normalizeQuantitativeScoreString(val: any): string {
   if (val === undefined || val === null) return '0';
   const s = String(val).trim();
   if (!s) return '0';
-  const lower = s.toLowerCase();
+
+  // Bersihkan karakter pemisah berulang di ujung (pipa |, titik dua :, titik koma ;, dsb)
+  let cleaned = s.replace(/[\s|;:,"'\\/]+$/g, '').replace(/^[\s|;:,"'\\/]+/g, '').trim();
+  if (!cleaned) return '0';
+
+  const lower = cleaned.toLowerCase();
   if (
     lower === '0' ||
     lower === '0 liter' ||
@@ -356,7 +361,40 @@ export function normalizeQuantitativeScoreString(val: any): string {
   ) {
     return '0';
   }
-  return s;
+
+  // Buang kode indikator (seperti CC1, GHG1, WATER1) dan label scope/kategori (Scope 1, Lingkup 2)
+  // untuk memastikan angka yang terdeteksi adalah angka metrik riil, bukan bagian dari nama kode variabel
+  const textWithoutCodes = cleaned
+    .replace(/\b(?:scope|lingkup|tier|level|cc|ghg|ec|rc|acc|ind|enrg|water|waste|biodiv|poll|sc|gov)\s*\d+\b/gi, '')
+    .replace(/\b[A-Za-z]+\d+\b/g, '')
+    .trim();
+
+  // Jika setelah membuang kode/label kategori TIDAK ADA DIGIT ANGKA (0-9) sama sekali,
+  // maka ini adalah teks narasi kualitatif murni (bukan nilai angka metrik) -> kembalikan '0'!
+  if (!/\d/.test(textWithoutCodes)) {
+    return '0';
+  }
+
+  // Jika string terlalu panjang (mengandung narasi/kalimat), ekstrak hanya bagian angka + satuan ringkas
+  if (cleaned.length > 25) {
+    // 1. Pola Mata Uang: Rp 50 Miliar / IDR 50.000.000 / $ 10M
+    const currencyMatch = cleaned.match(/(?:rp\.?|idr|\$)\s*[\d.,]+\s*(?:miliar|triliun|juta|ribu|billion|million)?/i);
+    if (currencyMatch) return currencyMatch[0].trim();
+
+    // 2. Pola Persentase: 80% / 80.5 %
+    const percentMatch = cleaned.match(/[\d.,]+\s*%/);
+    if (percentMatch) return percentMatch[0].trim();
+
+    // 3. Pola Angka + Satuan Ilmiah/Fisik: 25000 ton CO2e / 1000000 liter / 50000 kWh / 120 karyawan
+    const unitMatch = cleaned.match(/[\d.,]+\s*(?:ton(?:\s*co2e?)?|tco2e?|liter|liters|l|m3|kwh|mwh|gwh|gj|tj|pj|kg|gram|unit|orang|karyawan|ha|hektar|pohon|tahun|miliar|juta|triliun)/i);
+    if (unitMatch) return unitMatch[0].trim();
+
+    // 4. Pola Angka Murni Pertama (harus berupa angka terpisah, bukan kode)
+    const numMatch = textWithoutCodes.match(/[\d.,]+/);
+    if (numMatch) return numMatch[0].trim();
+  }
+
+  return cleaned;
 }
 
 export function isDisclosedQuantitativeValue(val: any): boolean {

@@ -104,7 +104,7 @@ export function buildAnalysisPrompt(params: {
       .map((ind, idx) => `${idx + 1}. ${ind.code} – ${ind.title}: ${ind.fullDesc}`)
       .join('\n');
     indicators.forEach((ind, idx) => {
-      sampleJsonObj[ind.code] = isQuantitative ? (idx === 0 ? '1000000 liter' : '0') : 0;
+      sampleJsonObj[ind.code] = isQuantitative ? (idx === 0 ? '1000000 liter' : idx === 1 ? '25000 ton CO2e' : '0') : 0;
     });
   } else {
     indicatorsText = `1. CC1 – Penilaian/deskripsi dari risiko (peraturan/regulasi baik khusus maupun umum) yang berhubungan dengan perubahan iklim dan aksi yang dilakukan atau aksi yang dilakukan untuk mengatasi risiko tersebut.
@@ -145,14 +145,15 @@ export function buildAnalysisPrompt(params: {
 
   if (isQuantitative) {
     rubricSection = `Indikator di atas dievaluasi berdasarkan nilai riil / kuantitatif pengungkapan (Quantitative Disclosure Extraction):
-Scoring Rubric (Nilai Riil Pengungkapan):
-- Jika indikator diungkapkan dalam dokumen laporan (misal: jumlah limbah air yang diolah perusahaan adalah 1jt liter, total emisi 25000 ton CO2e, atau konsumsi energi 50000 kWh), ekstrak dan tuliskan angka nominal / volume riil tersebut disesuaikan dengan satuannya yang ada pada hasil analisis laporan (misal: "1000000 liter", "25000 ton CO2e", "50000 kWh", "120 karyawan", "Rp 50 Miliar").
-- Jika indikator TIDAK diungkapkan atau hasilnya adalah 0 (tidak ada data dalam dokumen laporan), cukup ditulis "0" saja (TIDAK PERLU ditulis "0 liter").
+Scoring Rubric (Nilai Riil Pengungkapan Kuantitatif):
+- Jika indikator diungkapkan secara kuantitatif dalam dokumen laporan, ekstrak dan tuliskan ANGKA NOMINAL BESERTA SATUANNYA SECARA SINGKAT (maksimal 2-3 kata, misal: "1000000 liter", "25000 ton CO2e", "80 %", "Rp 50 Miliar", "2030").
+- Jika indikator TIDAK diungkapkan secara kuantitatif atau TIDAK DITEMUKAN angka/volume nominal spesifik dalam laporan (hanya berupa klaim/kalimat kualitatif tanpa angka), nilainya WAJIB ditulis "0" saja (TIDAK PERLU ditulis "0 liter").
 
-ATURAN PENTING:
-1. Jika hasil pengungkapan adalah 0 (tidak ada pengungkapan), cukup tulis "0" saja tanpa satuan.
-2. Untuk indikator yang ada isinya di dalam laporan, tuliskan angka kuantitas riil beserta satuannya sesuai yang tertera pada laporan (contoh: "1000000 liter", "25000 ton CO2e").`;
-    scoringGoalText = 'Bantulah untuk mengekstrak angka riil kuantitatif pengungkapan beserta satuannya sesuai laporan untuk setiap indikator yang diungkapkan, atau tulis "0" saja jika tidak ada pengungkapan.';
+ATURAN WAJIB & SANGAT KETAT:
+1. NILAI HARUS BERUPA ANGKA: Dilarang keras mengembalikan kalimat naratif, paragraf, atau frasa kualitatif (misalnya DILARANG menulis kalimat: "Net Zero Emisi di seluruh rantai nilai", "Telah berkomitmen", "Ada pengungkapan", "Memiliki strategi iklim").
+2. Jika dokumen hanya memuat komitmen atau deskripsi kualitatif tanpa angka metrik yang terukur, nilai untuk indikator tersebut adalah "0"!
+3. Untuk indikator yang memiliki angka riil dalam laporan, tuliskan angka dan satuannya secara ringkas (contoh: "1000000 liter", "25000 ton CO2e", "80 %").`;
+    scoringGoalText = 'Bantulah untuk mengekstrak angka riil kuantitatif pengungkapan beserta satuannya secara ringkas untuk setiap indikator yang diungkapkan, atau tulis "0" jika tidak ada angka pengungkapan.';
   } else if (rubric && rubric.length > 0) {
     const minScore = Math.min(...rubric.map(r => Number(r.score) || 0));
     const maxScore = Math.max(...rubric.map(r => Number(r.score) || 0));

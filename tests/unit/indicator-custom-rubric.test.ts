@@ -100,7 +100,7 @@ describe('Custom Indicator Rubric & Dynamic Scoring Engine', () => {
 
     expect(prompt).toContain('Quantitative Disclosure Extraction');
     expect(prompt).toContain('1000000 liter');
-    expect(prompt).toContain('cukup ditulis "0" saja');
+    expect(prompt).toContain('ditulis "0" saja');
     expect(prompt).toContain('"WATER1":"1000000 liter"');
   });
 
@@ -179,6 +179,23 @@ describe('Custom Indicator Rubric & Dynamic Scoring Engine', () => {
     expect(normalized.emis1).toBe('25000 ton CO2e');
     expect(normalized.waste1).toBe('0');
     expect(normalized.energy1).toBe('0');
+  });
+
+  it('normalizes purely qualitative narrative phrases without numbers to "0" and trims metrics in long sentences', () => {
+    const rawAiOutput = {
+      GHG1: 'Net Zero Emisi CC1 di seluruh rantai nilai |',
+      CC1: 'Komitmen dekarbonisasi jangka panjang',
+      ENRG1: '80 %',
+      WATER1: 'Target limbah air sebesar 500.000 liter pada tahun 2025',
+      WASTE1: '0 liter'
+    };
+
+    const normalized = normalizeScores(rawAiOutput, ['GHG1', 'CC1', 'ENRG1', 'WATER1', 'WASTE1'], undefined, 'quantitative_count');
+    expect(normalized.ghg1).toBe('0'); // Pure narrative without digits -> '0'
+    expect(normalized.cc1).toBe('0'); // Pure narrative without digits -> '0'
+    expect(normalized.enrg1).toBe('80 %'); // Valid percentage with digits -> '80 %'
+    expect(normalized.water1).toBe('500.000 liter'); // Extracted metric from sentence -> '500.000 liter'
+    expect(normalized.waste1).toBe('0'); // '0 liter' -> '0'
   });
 
   it('encodes and decodes custom indicator metadata in Supabase notes without data loss', () => {
