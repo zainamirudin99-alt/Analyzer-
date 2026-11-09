@@ -55,6 +55,16 @@ export async function POST(req: NextRequest) {
     const ownerUsername =
       normalizeUsername(session?.username || (formData.get('ownerUsername') as string) || '') || undefined;
     const skillContent = ((formData.get('skillContent') as string) || '').trim();
+    const skillsUsedJson = (formData.get('skillsUsed') as string) || '';
+    let parsedSkillsUsed: string[] = [];
+    if (skillsUsedJson) {
+      try {
+        const arr = JSON.parse(skillsUsedJson);
+        if (Array.isArray(arr)) parsedSkillsUsed = arr.filter(s => typeof s === 'string');
+      } catch (err) {
+        console.warn('[Analyze] Gagal parse skillsUsedJson:', err);
+      }
+    }
     const indicatorsJson = (formData.get('indicatorsJson') as string) || '';
     const rubricJson = (formData.get('rubricJson') as string) || '';
     const rubricType = (((formData.get('rubricType') as string) || 'weighted').trim()) as RubricType;
@@ -244,7 +254,8 @@ export async function POST(req: NextRequest) {
           preset_name: presetName,
           owner_username: ownerUsername,
           dynamic_scores: aiResult.scores,
-          total_score: totalScore
+          total_score: totalScore,
+          skills_used: parsedSkillsUsed
         });
 
         const recordData = {
@@ -294,6 +305,7 @@ export async function POST(req: NextRequest) {
         preset_id: presetId,
         preset_name: presetName,
         owner_username: ownerUsername,
+        skills_used: parsedSkillsUsed,
         created_at: new Date().toISOString(),
         extraction_summary: {
           page_count: pageCount,

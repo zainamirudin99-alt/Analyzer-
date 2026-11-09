@@ -13,8 +13,8 @@ import {
   doesRecordMatchPreset,
   getRecordScoreForPresetIndicator
 } from '../../src/lib/types';
-import { createDefaultCEDPreset } from '../../src/lib/indicators-storage';
-import { buildAnalysisPrompt, normalizeScores } from '../../src/lib/gemini';
+import { createDefaultCEDPreset, getDefaultSkills } from '../../src/lib/indicators-storage';
+import { buildAnalysisPrompt, normalizeScores, preprocessTextForCED } from '../../src/lib/gemini';
 import {
   generateExcelTemplate,
   parseExcelBuffer,
@@ -304,5 +304,83 @@ describe('Custom Indicator Rubric & Dynamic Scoring Engine', () => {
     expect(getRecordScoreForPresetIndicator(validGreenRow, 'WATER1', greenPreset, allPresets)).toBe('1000000 liter');
     expect(getRecordScoreForPresetIndicator(validGreenRow, 'GHG1', greenPreset, allPresets)).toBe('25000 ton CO2e');
     expect(getRecordScoreForPresetIndicator(validGreenRow, 'CC1', greenPreset, allPresets)).toBe('0');
+  });
+
+  it('provides built-in AI assistant skills (pdfreader & esg-auditor) with deep extraction instructions', () => {
+    const defaultSkills = getDefaultSkills();
+    expect(defaultSkills.length).toBeGreaterThanOrEqual(2);
+
+    const pdfReader = defaultSkills.find(s => s.name === 'pdfreader');
+    expect(pdfReader).toBeDefined();
+    expect(pdfReader?.content).toContain('PDF Deep Reader');
+    expect(pdfReader?.content).toContain('Navigasi Tabel & Metrik Kuantitatif');
+    expect(pdfReader?.content).toContain('Format Nilai Riil & Zero Non-Disclosure');
+
+    const esgAuditor = defaultSkills.find(s => s.name === 'esg-auditor');
+    expect(esgAuditor).toBeDefined();
+    expect(esgAuditor?.content).toContain('Rigorous ESG');
+  });
+
+  it('buildAnalysisPrompt injects active skill instructions as top-priority AI directives', () => {
+    const promptWithSkill = buildAnalysisPrompt({
+      companyCode: 'UNVR',
+      fiscalYear: 'FY 2025',
+      indicators: [
+        { id: 'ghg1', code: 'GHG1', title: 'Inventarisasi Emisi', fullDesc: 'Scope 1, 2, 3', group: 'Emisi' }
+      ],
+      rubricType: 'quantitative_count',
+      skillContent: 'Gunakan metodologi audit GHG Protocol tabel kinerja lingkungan hal 15-30.'
+    });
+
+    expect(promptWithSkill).toContain('DIREKTIF UTAMA DARI SKILL BANTUAN AI');
+    expect(promptWithSkill).toContain('GHG Protocol tabel kinerja lingkungan');
+    expect(promptWithSkill).toContain('WAJIB dijadikan panduan utama');
+  });
+
+  it('preprocessTextForCED prioritizes and retains skill keywords during text extraction', () => {
+    const dummyPages = [
+      '--- HALAMAN 1 ---\nKata Pengantar Direksi dan Profil Bisnis Perusahaan.',
+      '--- HALAMAN 2 ---\nIkhtisar Keuangan dan Laporan Manajemen Umum.',
+      '--- HALAMAN 3 ---\nTata Kelola Perusahaan dan Struktur Dewan Komisaris.',
+      '--- HALAMAN 4 ---\nOperasional dan Fasilitas Logistik Perusahaan.',
+      '--- HALAMAN 5 ---\nSumber Daya Manusia dan Pelatihan Karyawan.',
+      '--- HALAMAN 6 ---\nManajemen Risiko Umum Perusahaan.',
+      '--- HALAMAN 7 ---\nStrategi Bisnis dan Ekspansi Pasar.',
+      '--- HALAMAN 8 ---\nKegiatan Sosial dan Hubungan Masyarakat.',
+      '--- HALAMAN 9 ---\nTanggung Jawab Sosial Lingkungan Umum.',
+      '--- HALAMAN 10 ---\nKomitmen Kepatuhan Regulasi.',
+      '--- HALAMAN 11 ---\nTabel Kinerja Lingkungan: Pengolahan Air Limbah Pabrik mencapai 1000000 liter pada FY 2025.',
+      '--- HALAMAN 12 ---\nSurat Pernyataan Dewan Direksi dan Penutup Laporan.'
+    ].join('\n\n');
+
+    const skill = 'Audit tabel kinerja lingkungan dan ekstraksi air limbah';
+    // Budget terbatas hanya cukup untuk 11 halaman pertama
+    const processed = preprocessTextForCED(dummyPages, 1000, undefined, skill);
+
+    // Halaman 11 yang memuat kata kunci dari skill (air limbah) wajib diprioritaskan masuk
+    expect(processed.toLowerCase()).toContain('air limbah');
+  });
+
+  it('encodes and decodes skills_used in record metadata', () => {
+    const notesWithSkills = encodeNotesWithAnalyzerMeta('Catatan analisis tahunan', {
+      preset_id: 'preset_green_15',
+      preset_name: 'Standar Kualitas Perusahaan Hijau',
+      owner_username: 'gojira123',
+      dynamic_scores: { GHG1: '25000 ton CO2e' },
+      skills_used: ['pdfreader', 'esg-auditor']
+    });
+
+    const decoded = decodeRecordAnalyzerMeta({
+      company_code: 'UNVR',
+      fiscal_year: 'FY 2025',
+      file_name: 'UNVR.pdf',
+      notes: notesWithSkills
+    });
+
+    expect(decoded.notes).toBe('Catatan analisis tahunan');
+    expect(decoded.preset_id).toBe('preset_green_15');
+    expect(decoded.owner_username).toBe('gojira123');
+    expect(decoded.skills_used).toEqual(['pdfreader', 'esg-auditor']);
+    expect(decoded.dynamic_scores?.['ghg1']).toBe('25000 ton CO2e');
   });
 });

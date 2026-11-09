@@ -157,15 +157,83 @@ export function getActivePreset(): IndicatorPreset {
 }
 
 // Custom AI Skills Helper Functions
+export function getDefaultSkills(): CustomAISkill[] {
+  return [
+    {
+      id: 'skill_pdfreader_default',
+      name: 'pdfreader',
+      description: 'PDF Deep Reader & Quantitative Extractor (Auditor Tabel Laporan & Ekstraksi Metrik Kuantitatif)',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      content: `---
+name: pdfreader
+description: PDF Deep Reader & Quantitative Extractor untuk laporan tahunan dan keberlanjutan
+---
+
+# PDF Deep Reader & Quantitative Metric Extractor
+
+## Peran & Tanggung Jawab Utama
+Anda bertindak sebagai auditor data kuantitatif PDF tingkat lanjut. Tugas Anda adalah memindai seluruh teks, tabel, catatan kaki, dan lampiran dari laporan keberlanjutan / laporan tahunan perusahaan untuk menemukan angka kuantitatif riil yang berhubungan dengan indikator evaluasi.
+
+## Aturan Analisis Dokumen & Ekstraksi Kuantitatif
+1. **Navigasi Tabel & Metrik Kuantitatif**:
+   - Cari data kuantitatif dalam tabel kinerja lingkungan, tabel emisi GRK (Scope 1, Scope 2, Scope 3), konsumsi energi, pengelolaan air, limbah (B3 & Non-B3), belanja modal (Green CapEx), dan indikator terkait.
+   - Pindai variasi istilah dwi-bahasa: "Ton CO2e", "tCO2e", "Liter", "m3", "kWh", "GJ", "TJ", "Rupiah/IDR/USD", "%", "Hektar", "Orang/Karyawan".
+2. **Kesesuaian Tahun Fiskal**:
+   - Pastikan angka metrik yang diambil sesuai dengan tahun fiskal (FY) yang sedang dianalisis. Jika terdapat tabel perbandingan multi-tahun (misal 2023, 2024, 2025), prioritaskan angka pada kolom tahun fiskal target.
+3. **Format Nilai Riil & Zero Non-Disclosure**:
+   - Jika indikator diungkapkan secara kuantitatif: tuliskan angka nominal lengkap beserta satuannya (contoh: "1500000 ton CO2e", "250000 liter", "85 %", "Rp 50 Miliar").
+   - Jika indikator TIDAK diungkapkan secara kuantitatif atau hanya berupa narasi kualitatif/komitmen tanpa angka nominal riil: kembalikan HANYA nilai "0" (tanpa satuan, tanpa kata tambahan).
+4. **Anti-Halusinasi & Ketelitian**:
+   - Dilarang mengarang angka yang tidak tertulis dalam laporan.
+   - Jangan menyalin judul atau kalimat panjang sebagai pengganti angka.`
+    },
+    {
+      id: 'skill_esg_auditor_default',
+      name: 'esg-auditor',
+      description: 'Rigorous ESG & Sustainability Disclosure Auditor (Standar GRI, TCFD, & POJK 51)',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      content: `---
+name: esg-auditor
+description: Rigorous ESG & Sustainability Disclosure Auditor
+---
+
+# Rigorous ESG & Sustainability Disclosure Auditor
+
+## Peran & Metodologi
+Bertindak sebagai auditor independen kepatuhan pengungkapan ESG berbasis standar global (GRI Standards, TCFD, SASB, ISO 14064, dan POJK 51/POJK.03/2017).
+
+## Panduan Penilaian Indikator
+1. Evaluasi kedalaman pengungkapan berdasarkan bukti objektif dalam teks laporan.
+2. Nilai apakah pengungkapan mencakup tata kelola (governance), strategi (strategy), manajemen risiko (risk management), serta target dan metrik (metrics & targets).
+3. Jika evaluasi menggunakan skala skor (weighted): tetapkan skor secara adil dan objektif sesuai kriteria rubrik yang ditentukan.
+4. Jika evaluasi menggunakan ekstraksi kuantitatif: cari angka riil dan satuan terverifikasi dalam dokumen.`
+    }
+  ];
+}
+
 export function getStoredSkills(): CustomAISkill[] {
-  if (typeof window === 'undefined') return [];
+  const defaults = getDefaultSkills();
+  if (typeof window === 'undefined') return defaults;
   try {
     const raw = localStorage.getItem('analyzer_custom_skills');
-    if (!raw) return [];
-    return JSON.parse(raw);
+    if (!raw) {
+      localStorage.setItem('analyzer_custom_skills', JSON.stringify(defaults));
+      return defaults;
+    }
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const hasPdfReader = parsed.some(s => s.name === 'pdfreader' || s.id === 'skill_pdfreader_default');
+      if (!hasPdfReader) {
+        const merged = [...defaults, ...parsed];
+        localStorage.setItem('analyzer_custom_skills', JSON.stringify(merged));
+        return merged;
+      }
+      return parsed;
+    }
+    return defaults;
   } catch (e) {
     console.warn('Gagal membaca custom AI skills dari localStorage:', e);
-    return [];
+    return defaults;
   }
 }
 
@@ -198,22 +266,25 @@ export function setActiveSkillId(id: string): void {
 }
 
 export function getActiveSkillIds(): string[] {
-  if (typeof window === 'undefined') return [];
+  if (typeof window === 'undefined') return ['skill_pdfreader_default'];
   try {
     const raw = localStorage.getItem('analyzer_active_skill_ids');
+    const allSkills = getStoredSkills();
+    const validIds = new Set(allSkills.map(s => s.id));
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        const validIds = new Set(getStoredSkills().map(s => s.id));
         return parsed.filter(id => typeof id === 'string' && validIds.has(id));
       }
     }
     const legacy = localStorage.getItem('analyzer_active_skill_id');
     if (legacy && legacy !== 'none') {
-      const validIds = new Set(getStoredSkills().map(s => s.id));
-      return validIds.has(legacy) ? [legacy] : [];
+      if (validIds.has(legacy)) return [legacy];
+      const matchByName = allSkills.find(s => s.name === legacy);
+      if (matchByName) return [matchByName.id];
     }
-    return [];
+    const pdfReader = allSkills.find(s => s.name === 'pdfreader' || s.id === 'skill_pdfreader_default');
+    return pdfReader ? [pdfReader.id] : [];
   } catch {
     return [];
   }

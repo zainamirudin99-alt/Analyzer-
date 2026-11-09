@@ -110,7 +110,7 @@ export async function analyzeWithOpenAI(options: OpenAIAnalysisOptions): Promise
     skillContent: options.skillContent
   });
   const customKeys = options.indicators?.map(i => i.code);
-  const processedText = options.pdfText ? preprocessTextForCED(options.pdfText, 45000, options.indicators) : '';
+  const processedText = options.pdfText ? preprocessTextForCED(options.pdfText, 45000, options.indicators, options.skillContent) : '';
 
   const userContent = processedText
     ? `${prompt}\n\n=== TEKS DOKUMEN LAPORAN (${options.companyCode} ${options.fiscalYear}) ===\n${processedText}`
@@ -125,6 +125,10 @@ export async function analyzeWithOpenAI(options: OpenAIAnalysisOptions): Promise
     ? 'For each indicator, return the exact quantitative value and unit found in the report (e.g. "1000000 liter", "25000 ton CO2e"), or "0" if not disclosed.'
     : 'Score each indicator according to the provided rubric scale.';
 
+  const skillDirective = options.skillContent && options.skillContent.trim()
+    ? `\n\n=== AI ASSISTANT SKILL DIRECTIVES (HIGHEST PRIORITY) ===\n${options.skillContent.trim()}\nYou must strictly apply all rules, methodology, and extraction directives from the skill above.`
+    : '';
+
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -136,7 +140,7 @@ export async function analyzeWithOpenAI(options: OpenAIAnalysisOptions): Promise
       messages: [
         {
           role: 'system',
-          content: `You are an expert auditor for corporate sustainability and disclosure indicators. ${keysInstruction} ${rubricInstruction} Strictly output a valid JSON object.`
+          content: `You are an expert auditor for corporate sustainability and disclosure indicators. ${keysInstruction} ${rubricInstruction}${skillDirective} Strictly output a valid JSON object.`
         },
         {
           role: 'user',

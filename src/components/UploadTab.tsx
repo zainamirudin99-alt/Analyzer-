@@ -26,6 +26,7 @@ import {
   getStoredSkills,
   getActiveSkillIds,
   setActiveSkillIds,
+  getActiveSkills,
   getCombinedActiveSkillContent,
   DEFAULT_PRESET_ID
 } from '@/lib/indicators-storage';
@@ -85,6 +86,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
     modelUsed: string;
     presetId?: string;
     presetName?: string;
+    skillsUsed?: string[];
     extraction?: { page_count: number; total_characters: number; is_scanned: boolean };
     savedInDb: boolean;
   } | null>(null);
@@ -430,13 +432,17 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
       presets.find(p => p.id === activePresetId) ||
       getActivePreset();
 
+    const activeSkillsList = getActiveSkills();
+    const activeSkillNames = activeSkillsList.map(s => s.name);
+    const skillGuideText = activeSkillNames.length > 0 ? ` (🧠 Skill: ${activeSkillNames.join(', ')})` : '';
+
     setIsAnalyzing(true);
     setScoreResult(null);
     setProgress(50);
     setProgressLabel(
       isEn
-        ? `AI is evaluating ${activePreset.indicators.length} indicators (${getPresetName(activePreset, lang)})...`
-        : `AI sedang menganalisis ${activePreset.indicators.length} indikator (${getPresetName(activePreset, lang)})...`
+        ? `AI is evaluating ${activePreset.indicators.length} indicators (${getPresetName(activePreset, lang)})${skillGuideText}...`
+        : `AI sedang menganalisis ${activePreset.indicators.length} indikator (${getPresetName(activePreset, lang)})${skillGuideText}...`
     );
     setAlertInfo(null);
 
@@ -504,6 +510,9 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
     if (combinedSkillContent) {
       formData.append('skillContent', combinedSkillContent);
     }
+    if (activeSkillNames.length > 0) {
+      formData.append('skillsUsed', JSON.stringify(activeSkillNames));
+    }
 
     try {
       const executeAnalyzeFetch = async (attempt: number): Promise<{ res: Response; raw: string }> => {
@@ -558,6 +567,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
         modelUsed: data.model_used,
         presetId: data.preset_id || activePreset.id,
         presetName: data.preset_name || activePreset.name,
+        skillsUsed: data.skills_used || activeSkillNames,
         extraction: data.extraction_summary,
         savedInDb: data.saved_in_supabase
       };
@@ -579,6 +589,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
             preset_id: targetPresetId,
             preset_name: data.preset_name || activePreset.name,
             owner_username: data.owner_username || activeOwner || undefined,
+            skills_used: data.skills_used || activeSkillNames,
             dynamic_scores: data.scores,
             ...(isDefaultPreset ? data.scores : {}),
             total_score: data.total_score,
@@ -618,11 +629,15 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
         ? `${data.total_score}/${activeCount} ${isEn ? 'indicators disclosed (Quantitative Value)' : 'indikator terungkap (Nilai Kuantitatif Riil)'}`
         : `${data.total_score}/${maxPts} ${isEn ? 'pts' : 'poin'}`;
 
+      const skillsNote = (data.skills_used && data.skills_used.length > 0)
+        ? ` | 🧠 Dipandu Skill: ${data.skills_used.join(', ')}`
+        : (activeSkillNames.length > 0 ? ` | 🧠 Dipandu Skill: ${activeSkillNames.join(', ')}` : '');
+
       setAlertInfo({
         type: 'success',
         message: isEn
-          ? `Analysis for ${code} (${fiscalYear}) completed! Total score: ${scoreLabel}. Click the green button on the right to copy the ${activeCount} indicator scores.`
-          : `Analisis untuk ${code} (${fiscalYear}) selesai! Total skor: ${scoreLabel}. Klik tombol hijau di kanan untuk menyalin ${activeCount} angka skor.`
+          ? `Analysis for ${code} (${fiscalYear}) completed! Total score: ${scoreLabel}${skillsNote}. Click the green button on the right to copy the ${activeCount} indicator scores.`
+          : `Analisis untuk ${code} (${fiscalYear}) selesai! Total skor: ${scoreLabel}${skillsNote}. Klik tombol hijau di kanan untuk menyalin ${activeCount} angka skor.`
       });
 
       onSuccessAnalysis();
@@ -1042,6 +1057,16 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
                   })
                 )}
               </div>
+              {activeSkillIds.length > 0 && (
+                <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--fern)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <span>🎯</span>
+                  <span>
+                    {isEn
+                      ? `Skill Active: Directing AI for rigorous table auditing & quantitative extraction.`
+                      : `Skill Aktif: Memandu AI memindai tabel laporan & mengekstrak angka metrik secara ketat.`}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1293,20 +1318,41 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
                   </div>
                 </div>
               </div>
-              <span
-                className="font-mono"
-                style={{
-                  fontSize: '11.5px',
-                  background: 'var(--dew)',
-                  padding: '5px 10px',
-                  borderRadius: '8px',
-                  color: 'var(--primary)',
-                  border: '1px solid var(--border)',
-                  fontWeight: 700
-                }}
-              >
-                🤖 {scoreResult.modelUsed}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span
+                  className="font-mono"
+                  style={{
+                    fontSize: '11.5px',
+                    background: 'var(--dew)',
+                    padding: '5px 10px',
+                    borderRadius: '8px',
+                    color: 'var(--primary)',
+                    border: '1px solid var(--border)',
+                    fontWeight: 700
+                  }}
+                >
+                  🤖 {scoreResult.modelUsed}
+                </span>
+                {scoreResult.skillsUsed && scoreResult.skillsUsed.length > 0 && (
+                  <span
+                    style={{
+                      fontSize: '11.5px',
+                      background: 'rgba(6, 182, 212, 0.12)',
+                      padding: '5px 10px',
+                      borderRadius: '8px',
+                      color: 'var(--primary)',
+                      border: '1px solid rgba(6, 182, 212, 0.35)',
+                      fontWeight: 700,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px'
+                    }}
+                  >
+                    <span>🧠 Skill:</span>
+                    <span style={{ color: 'var(--text)' }}>{scoreResult.skillsUsed.join(', ')}</span>
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="grid-3" style={{ marginBottom: '18px', gap: '12px' }}>

@@ -310,3 +310,4 @@ export function buildPanelXlsxBuffer(options: PanelXlsxExportOptions): Buffer {
   const out = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
   return Buffer.from(out);
 }
+

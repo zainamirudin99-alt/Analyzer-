@@ -93,6 +93,7 @@ export interface CEDResultRecord extends Partial<CEDScores> {
   preset_id?: string;
   preset_name?: string;
   owner_username?: string;
+  skills_used?: string[];
   dynamic_scores?: Record<string, number | string>;
   created_at?: string;
   updated_at?: string;
@@ -426,6 +427,7 @@ export function encodeNotesWithAnalyzerMeta(
     owner_username?: string;
     dynamic_scores?: Record<string, number | string>;
     total_score?: number;
+    skills_used?: string[];
   }
 ): string {
   const cleanNotes = (userNotes || '').replace(/<!--ANALYZER_META:[\s\S]*?-->/g, '').trim();
@@ -478,6 +480,7 @@ export function decodeRecordAnalyzerMeta(row: CEDResultRecord): CEDResultRecord 
       preset_name: parsedMeta.preset_name || row.preset_name,
       owner_username: ownerUsername,
       total_score: parsedMeta.total_score ?? row.total_score,
+      skills_used: parsedMeta.skills_used || row.skills_used,
       dynamic_scores: normalizedDynamic
     };
   } catch {

@@ -137,7 +137,13 @@ export function buildAnalysisPrompt(params: {
   }
 
   const skillPromptBlock = skillContent && skillContent.trim()
-    ? `\n\n=== PANDUAN & KEAHLIAN AUDIT TAMBAHAN (CUSTOM AI SKILL) ===\n${skillContent.trim()}\nPetunjuk: Gunakan panduan keahlian di atas sebagai acuan penilaian mendalam saat mengevaluasi dokumen.`
+    ? `\n\n======================================================================
+🧠 PANDUAN DAN DIREKTIF UTAMA DARI SKILL BANTUAN AI:
+${skillContent.trim()}
+
+ATURAN KERJA SANGAT PENTING:
+Instruksi dari skill bantuan di atas WAJIB dijadikan panduan utama oleh AI dalam menganalisis dokumen dan mengekstrak nilai indikator!
+======================================================================`
     : '';
 
   let rubricSection = '';
@@ -208,7 +214,8 @@ export function buildCEDPrompt(companyCode: string, fiscalYear: string): string 
 export function preprocessTextForCED(
   rawText: string,
   maxChars = 220000,
-  customIndicators?: IndicatorItem[]
+  customIndicators?: IndicatorItem[],
+  skillContent?: string
 ): string {
   if (!rawText) return '';
   const cleaned = rawText
@@ -243,6 +250,16 @@ export function preprocessTextForCED(
     }
   }
 
+  if (skillContent && skillContent.trim()) {
+    const skillWords = skillContent
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(w => w.length >= 3);
+    for (const w of skillWords) {
+      if (!customKeywords.includes(w)) customKeywords.push(w);
+    }
+  }
+
   const activeKeywords = customKeywords.length > 0 ? [...customKeywords, ...baseKeywords] : baseKeywords;
 
   const sections = cleaned.split(/(?=--- HALAMAN \d+ ---|\n\n(?=[A-Z0-9\s]{4,40}\n))/i);
@@ -274,6 +291,21 @@ export function preprocessTextForCED(
         relevantSections.push(sections[i]);
         totalLen += sections[i].length;
       }
+    }
+  }
+
+  if (relevantSections.length === 0) {
+    const paragraphs = cleaned.split(/\n\s*\n/);
+    for (const p of paragraphs) {
+      const pLower = p.toLowerCase();
+      if (activeKeywords.some(kw => pLower.includes(kw))) {
+        if (totalLen + p.length > maxChars) break;
+        relevantSections.push(p);
+        totalLen += p.length;
+      }
+    }
+    if (relevantSections.length === 0) {
+      return cleaned.slice(0, maxChars);
     }
   }
 
@@ -523,6 +555,9 @@ function stripUnsupportedV1Fields(body: any): any {
   if (cloned.generationConfig && 'responseMimeType' in cloned.generationConfig) {
     delete cloned.generationConfig.responseMimeType;
   }
+  if ('system_instruction' in cloned) {
+    delete cloned.system_instruction;
+  }
   return cloned;
 }
 
@@ -751,7 +786,7 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
 
     let processedText = '';
     if (options.pdfText && options.pdfText.trim().length > 50) {
-      processedText = preprocessTextForCED(options.pdfText, maxChars, options.indicators);
+      processedText = preprocessTextForCED(options.pdfText, maxChars, options.indicators, options.skillContent);
     }
 
     const parts: any[] = [];
@@ -772,8 +807,15 @@ export async function analyzeWithGemini(options: GeminiAnalysisOptions): Promise
 
     parts.push({ text: prompt });
 
-    const requestBody = {
+    const systemDirective = options.skillContent && options.skillContent.trim()
+      ? `Anda adalah auditor data laporan perusahaan ahli. Patuhi seluruh direktif utama dari Skill Bantuan AI berikut:\n\n${options.skillContent.trim()}\n\nEkstrak data secara akurat dan kembalikan HANYA format JSON murni.`
+      : 'Anda adalah auditor data pengungkapan perusahaan ahli. Ekstrak data indikator secara akurat dan objektif, kembalikan HANYA format JSON murni.';
+
+    const requestBody: any = {
       contents: [{ parts }],
+      system_instruction: {
+        parts: [{ text: systemDirective }]
+      },
       generationConfig: {
         temperature: 0.1,
         maxOutputTokens: 2048,
