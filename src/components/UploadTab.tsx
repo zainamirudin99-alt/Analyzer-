@@ -14,7 +14,8 @@ import {
   getPresetRubricType,
   formatCleanDisclosureLevel,
   normalizeQuantitativeScoreString,
-  isDisclosedQuantitativeValue
+  isDisclosedQuantitativeValue,
+  resolveRecordPresetId
 } from '@/lib/types';
 import {
   getStoredPresets,
@@ -557,9 +558,11 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
 
       setScoreResult(resultObj);
 
-      // Simpan ke LocalStorage
+      // Simpan ke LocalStorage (terisolasi per Preset Indikator agar tidak saling menimpa antar pilihan indikator)
       if (typeof window !== 'undefined') {
         try {
+          const targetPresetId = data.preset_id || activePreset.id || DEFAULT_PRESET_ID;
+          const isDefaultPreset = targetPresetId === DEFAULT_PRESET_ID;
           const newRecord: CEDResultRecord = {
             id: data.id || `local_${Date.now()}`,
             company_code: data.company_code,
@@ -567,10 +570,10 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
             file_name: data.file_name,
             notes: data.notes,
             status: 'completed',
-            preset_id: data.preset_id || activePreset.id,
+            preset_id: targetPresetId,
             preset_name: data.preset_name || activePreset.name,
             dynamic_scores: data.scores,
-            ...data.scores,
+            ...(isDefaultPreset ? data.scores : {}),
             total_score: data.total_score,
             disclosure_level: data.disclosure_level,
             model_used: data.model_used,
@@ -579,7 +582,17 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
 
           const rawExisting = localStorage.getItem('analyzer_records');
           const existingList: CEDResultRecord[] = rawExisting ? JSON.parse(rawExisting) : [];
-          const updatedList = [newRecord, ...existingList.filter(r => !(r.company_code === newRecord.company_code && r.fiscal_year === newRecord.fiscal_year))];
+          const updatedList = [
+            newRecord,
+            ...existingList.filter(r => {
+              const rPresetId = resolveRecordPresetId(r, latestPresets);
+              return !(
+                r.company_code === newRecord.company_code &&
+                r.fiscal_year === newRecord.fiscal_year &&
+                rPresetId === targetPresetId
+              );
+            })
+          ];
           localStorage.setItem('analyzer_records', JSON.stringify(updatedList));
         } catch (storageErr) {
           console.warn('Gagal menyimpan cache lokal:', storageErr);

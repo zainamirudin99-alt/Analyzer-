@@ -214,9 +214,16 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseServerClient();
     if (supabase) {
       try {
-        // Ambil hanya kolom-kolom yang ada di tabel standar ced_results agar tidak error pada kolom kustom
+        // Ambil hanya kolom-kolom yang ada di tabel standar ced_results agar tidak error pada kolom kustom.
+        // Jika dianalisis menggunakan preset indikator kustom (bukan default_ced_18), jangan isi kolom standar cc1..acc2
+        // agar nilai variabel dari indikator lain tidak bocor ke indikator standar CED.
+        const isDefaultPreset = !presetId || presetId === 'default_ced_18';
         const standardScoreCols: Record<string, number> = {};
         INDICATOR_KEYS.forEach(k => {
+          if (!isDefaultPreset) {
+            standardScoreCols[k] = 0;
+            return;
+          }
           const rawVal = aiResult.scores[k];
           if (typeof rawVal === 'number') {
             standardScoreCols[k] = rawVal;

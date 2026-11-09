@@ -7,10 +7,12 @@ import {
   INDICATOR_KEYS,
   IndicatorPreset,
   getPresetRubricType,
-  normalizeQuantitativeScoreString,
   isDisclosedQuantitativeValue,
   formatCleanDisclosureLevel,
-  decodeRecordAnalyzerMeta
+  decodeRecordAnalyzerMeta,
+  resolveRecordPresetId,
+  doesRecordMatchPreset,
+  getRecordScoreForPresetIndicator
 } from '@/lib/types';
 import {
   getStoredPresets,
@@ -33,7 +35,6 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
   const [results, setResults] = useState<CEDResultRecord[]>([]);
   const [presets, setPresets] = useState<IndicatorPreset[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState<string>(DEFAULT_PRESET_ID);
-  const [onlyMatchingPresetRows, setOnlyMatchingPresetRows] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState(false);
   const [filterCode, setFilterCode] = useState('');
   const [filterYear, setFilterYear] = useState('');
@@ -71,35 +72,56 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
       console.warn('Backend fetch notice:', err);
     }
 
-    // 3. Gabungkan data: pertahankan skor indikator kustom & preset_id dari localData maupun metadata Supabase
+    // 3. Gabungkan data secara terisolasi per Preset Indikator (company_code + fiscal_year + effectivePresetId)
+    // agar hasil analisis dari satu pilihan indikator tidak pernah tercampur dengan pilihan indikator lain.
+    const currentPresets = getStoredPresets();
     const combinedMap = new Map<string, CEDResultRecord>();
 
     localData.forEach(rawItem => {
       const item = decodeRecordAnalyzerMeta(rawItem);
-      const key = `${item.company_code}_${item.fiscal_year}`;
-      combinedMap.set(key, item);
+      const effectivePresetId = resolveRecordPresetId(item, currentPresets);
+      const normalizedItem: CEDResultRecord = {
+        ...item,
+        preset_id: effectivePresetId,
+        preset_name: effectivePresetId === DEFAULT_PRESET_ID ? undefined : item.preset_name
+      };
+      const key = `${normalizedItem.company_code}_${normalizedItem.fiscal_year}_${effectivePresetId}`;
+      const existing = combinedMap.get(key);
+      if (!existing || new Date(normalizedItem.created_at || 0).getTime() >= new Date(existing.created_at || 0).getTime()) {
+        combinedMap.set(key, normalizedItem);
+      }
     });
 
     supabaseData.forEach(rawSbItem => {
       const sbItem = decodeRecordAnalyzerMeta(rawSbItem);
-      const key = `${sbItem.company_code}_${sbItem.fiscal_year}`;
+      const effectivePresetId = resolveRecordPresetId(sbItem, currentPresets);
+      const normalizedSb: CEDResultRecord = {
+        ...sbItem,
+        preset_id: effectivePresetId,
+        preset_name: effectivePresetId === DEFAULT_PRESET_ID ? undefined : sbItem.preset_name
+      };
+      const key = `${normalizedSb.company_code}_${normalizedSb.fiscal_year}_${effectivePresetId}`;
       const existingLocal = combinedMap.get(key);
       if (existingLocal) {
-        const mergedDynamic = {
-          ...(sbItem.dynamic_scores || {}),
-          ...(existingLocal.dynamic_scores || {})
-        };
+        const localTime = new Date(existingLocal.created_at || 0).getTime();
+        const sbTime = new Date(normalizedSb.created_at || 0).getTime();
+        const newer = sbTime >= localTime ? normalizedSb : existingLocal;
+        const older = sbTime >= localTime ? existingLocal : normalizedSb;
+        const mergedDynamic =
+          effectivePresetId !== DEFAULT_PRESET_ID
+            ? { ...(older.dynamic_scores || {}), ...(newer.dynamic_scores || {}) }
+            : newer.dynamic_scores || older.dynamic_scores;
+
         combinedMap.set(key, {
-          ...sbItem,
-          ...existingLocal,
-          ...mergedDynamic,
-          id: sbItem.id || existingLocal.id,
-          preset_id: existingLocal.preset_id || sbItem.preset_id,
-          preset_name: existingLocal.preset_name || sbItem.preset_name,
-          dynamic_scores: Object.keys(mergedDynamic).length > 0 ? mergedDynamic : undefined
+          ...older,
+          ...newer,
+          id: normalizedSb.id || existingLocal.id,
+          preset_id: effectivePresetId,
+          preset_name: newer.preset_name || older.preset_name,
+          dynamic_scores: mergedDynamic
         });
       } else {
-        combinedMap.set(key, sbItem);
+        combinedMap.set(key, normalizedSb);
       }
     });
 
@@ -162,9 +184,12 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
       return;
     }
 
-    const updatedLocal = results.filter(
-      r => !(r.company_code === record.company_code && r.fiscal_year === record.fiscal_year)
-    );
+    const targetPresetId = resolveRecordPresetId(record, presets);
+    const updatedLocal = results.filter(r => {
+      if (record.id && r.id) return r.id !== record.id;
+      const rPresetId = resolveRecordPresetId(r, presets);
+      return !(r.company_code === record.company_code && r.fiscal_year === record.fiscal_year && rPresetId === targetPresetId);
+    });
     setResults(updatedLocal);
     if (typeof window !== 'undefined') {
       localStorage.setItem('analyzer_records', JSON.stringify(updatedLocal));
@@ -203,28 +228,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
   const maxPossibleScore = isQuantitativeMode ? displayIndicatorItems.length : displayIndicatorItems.length * 5;
 
   const getScoreForIndicator = (row: CEDResultRecord, code: string): string | number => {
-    const lower = code.toLowerCase();
-    const upper = code.toUpperCase();
-    const raw =
-      (row.dynamic_scores ? row.dynamic_scores[lower] ?? row.dynamic_scores[upper] : undefined) ??
-      (row as any)[lower] ??
-      (row as any)[upper];
-
-    if (isQuantitativeMode) {
-      return normalizeQuantitativeScoreString(raw);
-    }
-
-    if (raw !== undefined && raw !== null && raw !== '') {
-      if (typeof raw === 'number' && !isNaN(raw)) return raw;
-      if (typeof raw === 'string') {
-        const cleaned = normalizeQuantitativeScoreString(raw);
-        if (cleaned === '0') return 0;
-        const parsedNum = Number(cleaned);
-        if (!isNaN(parsedNum)) return parsedNum;
-        return cleaned;
-      }
-    }
-    return 0;
+    return getRecordScoreForPresetIndicator(row, code, currentPresetForColumns, presets);
   };
 
   const getRowTotalForActivePreset = (row: CEDResultRecord): number | string => {
@@ -341,11 +345,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
   const filteredResults = results.filter(item => {
     const matchCode = !filterCode || item.company_code.toLowerCase().includes(filterCode.toLowerCase());
     const matchYear = !filterYear || item.fiscal_year === filterYear;
-    const matchPreset = !onlyMatchingPresetRows
-      ? true
-      : item.preset_id
-      ? item.preset_id === selectedPresetId
-      : selectedPresetId === DEFAULT_PRESET_ID;
+    const matchPreset = doesRecordMatchPreset(item, currentPresetForColumns, presets);
     return matchCode && matchYear && matchPreset;
   });
 
@@ -522,29 +522,20 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
             </span>
           </div>
 
-          <label
+          <span
             style={{
               display: 'inline-flex',
               alignItems: 'center',
               gap: '6px',
               fontSize: '12px',
-              fontWeight: 600,
-              color: 'var(--text)',
-              cursor: 'pointer'
+              fontWeight: 700,
+              color: 'var(--text-muted)'
             }}
           >
-            <input
-              type="checkbox"
-              checked={onlyMatchingPresetRows}
-              onChange={e => setOnlyMatchingPresetRows(e.target.checked)}
-              style={{ accentColor: 'var(--fern)', cursor: 'pointer' }}
-            />
-            <span>
-              {isEn
-                ? 'Show only reports analyzed with this preset'
-                : 'Tampilkan hanya laporan dari preset ini'}
-            </span>
-          </label>
+            {isEn
+              ? `Showing ${filteredResults.length} report(s) analyzed with this indicator preset`
+              : `Menampilkan ${filteredResults.length} laporan yang dianalisis dengan pilihan indikator ini`}
+          </span>
         </div>
 
         {message && (
@@ -610,11 +601,11 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
                   <td colSpan={displayIndicatorItems.length + 5} style={{ padding: '48px 20px', color: 'var(--stone)', fontStyle: 'italic' }}>
                     {isEn ? (
                       <>
-                        🌿 No analysis records found for this filter. Upload a report in the <strong>"Upload & Analysis"</strong> tab.
+                        🌿 No reports have been analyzed using <strong>"{getPresetName(currentPresetForColumns, lang)}"</strong> yet. Analyze a report with this indicator preset in the <strong>"Upload & Analysis"</strong> tab, or switch the <strong>Active Indicator Columns</strong> dropdown above.
                       </>
                     ) : (
                       <>
-                        🌿 Belum ada data analisis untuk filter ini. Silakan upload laporan tahunan pada tab <strong>"Upload & Analisis"</strong>.
+                        🌿 Belum ada laporan yang dianalisis menggunakan pilihan indikator <strong>"{getPresetName(currentPresetForColumns, lang)}"</strong>. Silakan jalankan analisis dengan indikator ini pada tab <strong>"Upload & Analisis"</strong>, atau pilih indikator lain pada dropdown <strong>Pilihan Indikator Tabel</strong> di atas.
                       </>
                     )}
                   </td>

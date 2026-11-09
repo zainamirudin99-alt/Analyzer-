@@ -8,7 +8,10 @@ import {
   getPresetMaxScore,
   encodeNotesWithAnalyzerMeta,
   decodeRecordAnalyzerMeta,
-  formatCleanDisclosureLevel
+  formatCleanDisclosureLevel,
+  resolveRecordPresetId,
+  doesRecordMatchPreset,
+  getRecordScoreForPresetIndicator
 } from '../../src/lib/types';
 import { createDefaultCEDPreset } from '../../src/lib/indicators-storage';
 import { buildAnalysisPrompt, normalizeScores } from '../../src/lib/gemini';
@@ -202,5 +205,87 @@ describe('Custom Indicator Rubric & Dynamic Scoring Engine', () => {
     expect(decoded.dynamic_scores?.gov1).toBe(4);
     expect(formatCleanDisclosureLevel('Sangat Tinggi (High Disclosure)', false)).toBe('Sangat Tinggi');
     expect(formatCleanDisclosureLevel('Sangat Rendah (Minimal)', false)).toBe('Sangat Rendah');
+  });
+
+  it('strictly isolates table rows and variable scores across different indicator presets even when variable codes overlap (e.g. GHG1, CC1, CC2)', () => {
+    const defaultPreset = createDefaultCEDPreset();
+    const greenPreset: IndicatorPreset = {
+      id: 'preset_green_15',
+      name: 'Standar Kualitas Perusahaan Hijau',
+      isDefault: false,
+      rubricType: 'quantitative_count',
+      indicators: [
+        { id: 'ghg1', code: 'GHG1', title: 'Inventarisasi & Reduksi GRK', fullDesc: '', group: 'Emisi' },
+        { id: 'cc1', code: 'CC1', title: 'Target Net-Zero', fullDesc: '', group: 'Iklim' },
+        { id: 'cc2', code: 'CC2', title: 'Risiko Iklim', fullDesc: '', group: 'Iklim' },
+        { id: 'enrg1', code: 'ENRG1', title: 'Transisi Energi Terbarukan', fullDesc: '', group: 'Energi' },
+        { id: 'water1', code: 'WATER1', title: 'Efisiensi Air', fullDesc: '', group: 'Air' }
+      ]
+    };
+    const allPresets = [defaultPreset, greenPreset];
+
+    // 1. Rekaman yang dianalisis menggunakan Standar CED 18
+    const ced18Row = {
+      company_code: 'AKRA',
+      fiscal_year: 'FY 2025',
+      file_name: 'AKRA_2025.pdf',
+      preset_id: 'default_ced_18',
+      ghg1: 2,
+      cc1: 2,
+      cc2: 1,
+      ec1: 3
+    };
+
+    expect(doesRecordMatchPreset(ced18Row, defaultPreset, allPresets)).toBe(true);
+    expect(doesRecordMatchPreset(ced18Row, greenPreset, allPresets)).toBe(false);
+    // Saat menampilkan greenPreset, skor GHG1/CC1/CC2 dari ced18Row tidak boleh bocor
+    expect(getRecordScoreForPresetIndicator(ced18Row, 'GHG1', greenPreset, allPresets)).toBe('0');
+    expect(getRecordScoreForPresetIndicator(ced18Row, 'CC1', greenPreset, allPresets)).toBe('0');
+    // Saat menampilkan defaultPreset, skor asli muncul
+    expect(getRecordScoreForPresetIndicator(ced18Row, 'GHG1', defaultPreset, allPresets)).toBe(2);
+
+    // 2. Rekaman cache lama yang tercemar (memiliki preset_id greenPreset tetapi isinya sebenarnya skor Likert 1-5 dari CED 18 dan seluruh indikator unik bernilai 0)
+    const mislabeledLegacyRow = {
+      company_code: 'BBCA',
+      fiscal_year: 'FY 2025',
+      file_name: 'BBCA_2025.pdf',
+      preset_id: 'preset_green_15',
+      ghg1: 4,
+      cc1: 5,
+      cc2: 5,
+      dynamic_scores: {
+        ghg1: '4',
+        cc1: '5',
+        cc2: '5',
+        enrg1: '0',
+        water1: '0'
+      }
+    };
+
+    expect(resolveRecordPresetId(mislabeledLegacyRow, allPresets)).toBe('default_ced_18');
+    expect(doesRecordMatchPreset(mislabeledLegacyRow, greenPreset, allPresets)).toBe(false);
+    expect(doesRecordMatchPreset(mislabeledLegacyRow, defaultPreset, allPresets)).toBe(true);
+
+    // 3. Rekaman yang benar-benar dianalisis menggunakan Standar Kualitas Perusahaan Hijau
+    const validGreenRow = {
+      company_code: 'PTBA',
+      fiscal_year: 'FY 2025',
+      file_name: 'PTBA_2025.pdf',
+      preset_id: 'preset_green_15',
+      dynamic_scores: {
+        ghg1: '25000 ton CO2e',
+        cc1: '0',
+        cc2: '0',
+        enrg1: '50000 kWh',
+        water1: '1000000 liter'
+      }
+    };
+
+    expect(resolveRecordPresetId(validGreenRow, allPresets)).toBe('preset_green_15');
+    expect(doesRecordMatchPreset(validGreenRow, greenPreset, allPresets)).toBe(true);
+    expect(doesRecordMatchPreset(validGreenRow, defaultPreset, allPresets)).toBe(false);
+    expect(getRecordScoreForPresetIndicator(validGreenRow, 'WATER1', greenPreset, allPresets)).toBe('1000000 liter');
+    expect(getRecordScoreForPresetIndicator(validGreenRow, 'GHG1', greenPreset, allPresets)).toBe('25000 ton CO2e');
+    expect(getRecordScoreForPresetIndicator(validGreenRow, 'CC1', greenPreset, allPresets)).toBe('0');
   });
 });

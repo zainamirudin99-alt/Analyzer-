@@ -397,7 +397,18 @@ export function decodeRecordAnalyzerMeta(row: CEDResultRecord): CEDResultRecord 
   if (!row || typeof row !== 'object') return row;
   const rawNotes = typeof row.notes === 'string' ? row.notes : '';
   const startIdx = rawNotes.indexOf(ANALYZER_META_PREFIX);
-  if (startIdx === -1) return row;
+  if (startIdx === -1) {
+    if (row.dynamic_scores && typeof row.dynamic_scores === 'object') {
+      const normalizedLocal: Record<string, number | string> = {};
+      for (const [k, v] of Object.entries(row.dynamic_scores)) {
+        const val = typeof v === 'string' ? normalizeQuantitativeScoreString(v) : v;
+        normalizedLocal[k.toLowerCase()] = val;
+        normalizedLocal[k.toUpperCase()] = val;
+      }
+      return { ...row, dynamic_scores: normalizedLocal };
+    }
+    return row;
+  }
 
   const endIdx = rawNotes.indexOf(ANALYZER_META_SUFFIX, startIdx);
   if (endIdx === -1) return row;
@@ -420,16 +431,161 @@ export function decodeRecordAnalyzerMeta(row: CEDResultRecord): CEDResultRecord 
 
     return {
       ...row,
-      ...normalizedDynamic,
       notes: cleanNotes,
-      preset_id: row.preset_id || parsedMeta.preset_id,
-      preset_name: row.preset_name || parsedMeta.preset_name,
-      total_score: row.total_score ?? parsedMeta.total_score,
+      preset_id: parsedMeta.preset_id || row.preset_id,
+      preset_name: parsedMeta.preset_name || row.preset_name,
+      total_score: parsedMeta.total_score ?? row.total_score,
       dynamic_scores: normalizedDynamic
     };
   } catch {
     return { ...row, notes: cleanNotes };
   }
+}
+
+export function resolveRecordPresetId(
+  row: CEDResultRecord,
+  allPresets?: IndicatorPreset[]
+): string {
+  const DEFAULT_ID = 'default_ced_18';
+  if (!row || typeof row !== 'object') return DEFAULT_ID;
+
+  let candidatePreset: IndicatorPreset | undefined;
+  if (allPresets && allPresets.length > 0) {
+    if (row.preset_id) {
+      candidatePreset = allPresets.find(p => p.id === row.preset_id);
+    }
+    if (!candidatePreset && row.preset_name) {
+      const targetName = row.preset_name.trim().toLowerCase();
+      candidatePreset = allPresets.find(
+        p =>
+          p.name.trim().toLowerCase() === targetName ||
+          (p.name_id && p.name_id.trim().toLowerCase() === targetName) ||
+          (p.name_en && p.name_en.trim().toLowerCase() === targetName)
+      );
+    }
+  }
+
+  const rawPresetId = candidatePreset?.id || row.preset_id || DEFAULT_ID;
+  if (rawPresetId === DEFAULT_ID) {
+    return DEFAULT_ID;
+  }
+
+  // Untuk preset kustom, pastikan data ini benar-benar memiliki dynamic_scores hasil analisis preset tersebut,
+  // bukan rekaman lama CED-18 yang tercampur di cache lokal.
+  const dyn = row.dynamic_scores;
+  if (!dyn || typeof dyn !== 'object' || Object.keys(dyn).length === 0) {
+    return DEFAULT_ID;
+  }
+
+  if (candidatePreset && candidatePreset.indicators && candidatePreset.indicators.length > 0) {
+    const defaultKeySet = new Set<string>(INDICATOR_KEYS.map(k => k.toLowerCase()));
+    const allPresetCodes = candidatePreset.indicators.map(i => i.code.toLowerCase());
+    const presetCodeSet = new Set<string>(allPresetCodes);
+    const customUniqueCodes = allPresetCodes.filter(code => !defaultKeySet.has(code));
+    const overlappingDefaultCodes = allPresetCodes.filter(code => defaultKeySet.has(code));
+    const excludedDefaultCodes = INDICATOR_KEYS.map(k => k.toLowerCase()).filter(code => !presetCodeSet.has(code));
+
+    // Jika preset kustom memiliki kode indikator unik di luar 18 kode CED (misal ENRG1, WATER1, WASTE1),
+    // rekaman hasil analisis wajib memiliki minimal salah satu kode unik tersebut di dynamic_scores.
+    if (customUniqueCodes.length > 0) {
+      const hasCustomKey = customUniqueCodes.some(
+        code => code in dyn || code.toUpperCase() in dyn
+      );
+      if (!hasCustomKey) {
+        return DEFAULT_ID;
+      }
+
+      const allCustomUniqueZero = customUniqueCodes.every(code => {
+        const v = dyn[code] ?? dyn[code.toUpperCase()];
+        return !isDisclosedQuantitativeValue(v);
+      });
+
+      if (allCustomUniqueZero) {
+        // 1. Jika baris memiliki nilai > 0 pada kolom standar CED-18 yang TIDAK ada di preset kustom ini (misal ghg2..acc2),
+        // maka baris ini adalah hasil analisis Standar CED-18.
+        const hasExcludedCedScore = excludedDefaultCodes.some(code => {
+          const v = dyn[code] ?? dyn[code.toUpperCase()] ?? (row as any)[code] ?? (row as any)[code.toUpperCase()];
+          return typeof v === 'number' ? v > 0 : isDisclosedQuantitativeValue(v);
+        });
+        if (hasExcludedCedScore) {
+          return DEFAULT_ID;
+        }
+
+        // 2. Pada preset quantitative_count atau binary_count, jika kode yang beririsan (misal GHG1, CC1, CC2)
+        // berisi angka bulat skala Likert 1-5 tanpa satuan sedangkan seluruh kode unik bernilai 0,
+        // maka baris ini berasal dari analisis Standar CED-18.
+        const rubricType = getPresetRubricType(candidatePreset);
+        if ((rubricType === 'quantitative_count' || rubricType === 'binary_count') && overlappingDefaultCodes.length > 0) {
+          const overlappingDisclosedVals = overlappingDefaultCodes
+            .map(code => dyn[code] ?? dyn[code.toUpperCase()] ?? (row as any)[code] ?? (row as any)[code.toUpperCase()])
+            .filter(v => isDisclosedQuantitativeValue(v));
+
+          const allOverlappingAreBareLikert =
+            overlappingDisclosedVals.length > 0 &&
+            overlappingDisclosedVals.every(v => /^[1-5]$/.test(String(v).trim()));
+
+          if (allOverlappingAreBareLikert) {
+            return DEFAULT_ID;
+          }
+        }
+      }
+    }
+  }
+
+  return rawPresetId;
+}
+
+export function doesRecordMatchPreset(
+  row: CEDResultRecord,
+  preset: IndicatorPreset,
+  allPresets?: IndicatorPreset[]
+): boolean {
+  if (!row || !preset) return false;
+  const effectiveId = resolveRecordPresetId(row, allPresets);
+  return effectiveId === preset.id;
+}
+
+export function getRecordScoreForPresetIndicator(
+  row: CEDResultRecord,
+  indicatorCode: string,
+  preset: IndicatorPreset,
+  allPresets?: IndicatorPreset[]
+): string | number {
+  const isQuantitativeMode =
+    getPresetRubricType(preset) === 'quantitative_count' ||
+    getPresetRubricType(preset) === 'binary_count';
+
+  // Jika baris ini dianalisis menggunakan pilihan indikator lain, jangan tampilkan nilainya
+  if (!doesRecordMatchPreset(row, preset, allPresets)) {
+    return isQuantitativeMode ? '0' : 0;
+  }
+
+  const lower = indicatorCode.toLowerCase();
+  const upper = indicatorCode.toUpperCase();
+  const isCustomPreset = preset.id !== 'default_ced_18';
+
+  const raw = isCustomPreset
+    ? row.dynamic_scores?.[lower] ?? row.dynamic_scores?.[upper]
+    : row.dynamic_scores?.[lower] ??
+      row.dynamic_scores?.[upper] ??
+      (row as any)[lower] ??
+      (row as any)[upper];
+
+  if (isQuantitativeMode) {
+    return normalizeQuantitativeScoreString(raw);
+  }
+
+  if (raw !== undefined && raw !== null && raw !== '') {
+    if (typeof raw === 'number' && !isNaN(raw)) return raw;
+    if (typeof raw === 'string') {
+      const cleaned = normalizeQuantitativeScoreString(raw);
+      if (cleaned === '0') return 0;
+      const parsedNum = Number(cleaned);
+      if (!isNaN(parsedNum)) return parsedNum;
+      return cleaned;
+    }
+  }
+  return 0;
 }
 
 export function getPresetRubric(preset?: IndicatorPreset | null): RubricItem[] {
