@@ -417,7 +417,7 @@ export const SettingsTab: React.FC = () => {
           });
           const snap = readLocalSnapshot();
           if (Object.keys(snap).length > 0) {
-            pushAccountSettings(snap).catch(() => {});
+            pushAccountSettings(snap).catch(() => { });
           }
           window.dispatchEvent(new Event('storage'));
           window.dispatchEvent(new Event('analyzer-settings-changed'));
@@ -487,7 +487,7 @@ export const SettingsTab: React.FC = () => {
         if (Array.isArray(parsed) && parsed.length > 0) {
           setOpenaiCustomModels(parsed);
         }
-      } catch {}
+      } catch { }
     }
 
     const defaultIds = DEFAULT_OPENAI_MODELS.map(m => m.id);
@@ -517,7 +517,7 @@ export const SettingsTab: React.FC = () => {
         if (Array.isArray(parsed) && parsed.length > 0) {
           setClaudeCustomModels(parsed);
         }
-      } catch {}
+      } catch { }
     }
 
     const defaultClaudeIds = ALL_CLAUDE_MODELS.map(m => m.id);
@@ -540,7 +540,7 @@ export const SettingsTab: React.FC = () => {
     hydrateFromAccount().then(() => {
       loadLocalProviderSettings();
       loadSkillsData();
-    }).catch(() => {});
+    }).catch(() => { });
 
     const handleSyncUpdate = () => {
       loadLocalProviderSettings();
@@ -1684,7 +1684,7 @@ export const SettingsTab: React.FC = () => {
               <div>
                 <span style={{ color: 'var(--text-muted)' }}>Ping Terakhir:</span>
                 <div style={{ fontWeight: 500, marginTop: '2px' }}>
-                  {sysStatus?.supabase?.heartbeat?.last_ping 
+                  {sysStatus?.supabase?.heartbeat?.last_ping
                     ? new Date(sysStatus.supabase.heartbeat.last_ping).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit', day: 'numeric', month: 'short' })
                     : (sysStatus?.supabase?.connected ? 'Terkoneksi (Menunggu Siklus)' : 'Belum aktif')}
                 </div>
@@ -1820,8 +1820,8 @@ export const SettingsTab: React.FC = () => {
                 ? s.fileName.toLowerCase().endsWith('.skill')
                   ? '.SKILL'
                   : s.fileName.toLowerCase().endsWith('.md')
-                  ? '.MD'
-                  : '.TXT'
+                    ? '.MD'
+                    : '.TXT'
                 : 'MANUAL';
 
               return (

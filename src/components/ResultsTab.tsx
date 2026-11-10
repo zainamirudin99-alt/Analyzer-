@@ -1,7 +1,16 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Download, Search, Trash2, Printer, Copy, Check, Table } from 'lucide-react';
+import { RefreshCw, Download, Search, Trash2, Printer, Copy, Check, Table, FileSpreadsheet, FileText } from 'lucide-react';
+import {
+  exportResultsToExcelFile,
+  exportResultsToDocxFile,
+  exportResultsToCSVFile,
+  copyResultsToSpreadsheetClipboard,
+  ResultsExportOptions,
+  ResultsExportIndicator,
+  ResultsExportRow
+} from '@/lib/results-export-builder';
 import {
   CEDResultRecord,
   INDICATOR_KEYS,
@@ -47,6 +56,9 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedAll, setCopiedAll] = useState(false);
+  const [isExportingDocx, setIsExportingDocx] = useState(false);
+  const [isExportingGDocs, setIsExportingGDocs] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
 
   const fetchResults = async () => {
     setIsLoading(true);
@@ -317,71 +329,6 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     setTimeout(() => setCopiedId(null), 2500);
   };
 
-  // Salin Seluruh Tabel ke TSV (Format Paste Spreadsheet)
-  const handleCopyAllTable = () => {
-    if (filteredResults.length === 0) return;
-
-    const headers = ['Code', 'Years', ...displayIndicatorItems.map(i => i.code), 'TOTAL'];
-    const rows = filteredResults.map(r => {
-      const scores = displayIndicatorItems.map(ind => getScoreForIndicator(r, ind.code));
-      return [r.company_code, r.fiscal_year, ...scores, getRowTotalForActivePreset(r)].join('\t');
-    });
-
-    const fullTsv = [headers.join('\t'), ...rows].join('\n');
-    navigator.clipboard.writeText(fullTsv);
-    setCopiedAll(true);
-    setMessage({
-      type: 'success',
-      text: isEn
-        ? `${filteredResults.length} rows (${displayIndicatorItems.length} indicators) copied! Ready to paste into Google Sheets / Excel.`
-        : `${filteredResults.length} baris data (${displayIndicatorItems.length} indikator) berhasil disalin! Siap di-paste ke Google Sheets / Excel.`
-    });
-    setTimeout(() => setCopiedAll(false), 3000);
-  };
-
-  const handleExportCSV = () => {
-    if (results.length === 0) {
-      alert(isEn ? 'No data available to export.' : 'Tidak ada data untuk diekspor.');
-      return;
-    }
-
-    const headers = [
-      'Company Code',
-      'Fiscal Year',
-      'File Name',
-      'Preset Name',
-      ...displayIndicatorItems.map(i => i.code),
-      'Total Score',
-      'Disclosure Level',
-      'Model Used',
-      'Created At'
-    ];
-
-    const rows = filteredResults.map(r => {
-      const scores = displayIndicatorItems.map(ind => getScoreForIndicator(r, ind.code));
-      return [
-        `"${r.company_code}"`,
-        `"${r.fiscal_year}"`,
-        `"${(r.file_name || '').replace(/"/g, '""')}"`,
-        `"${(r.preset_name || getPresetName(currentPresetForColumns, lang)).replace(/"/g, '""')}"`,
-        ...scores,
-        getRowTotalForActivePreset(r),
-        `"${r.disclosure_level || ''}"`,
-        `"${r.model_used || ''}"`,
-        `"${r.created_at || ''}"`
-      ];
-    });
-
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Scoring_Results_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   const filteredResults = results.filter(item => {
     const matchCode = !filterCode || item.company_code.toLowerCase().includes(filterCode.toLowerCase());
     const matchYear = !filterYear || item.fiscal_year === filterYear;
@@ -404,6 +351,187 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
   const minScore = totalCount > 0 ? Math.min(...numericScoresArray) : 0;
   const topCompany = filteredResults.find((_, idx) => numericScoresArray[idx] === maxScore);
   const lowestCompany = filteredResults.find((_, idx) => numericScoresArray[idx] === minScore);
+
+  // Helper pembuat payload ekspor dinamis sesuai pilihan indikator aktif
+  const buildExportPayload = (): ResultsExportOptions => {
+    const exportIndicators: ResultsExportIndicator[] = displayIndicatorItems.map(ind => {
+      const fullInd = currentPresetForColumns.indicators?.find(i => i.code === ind.code);
+      return {
+        code: ind.code,
+        title: ind.title,
+        group: fullInd?.group || (isEn ? 'General' : 'Umum'),
+        fullDesc: fullInd?.fullDesc || ''
+      };
+    });
+
+    const exportRows: ResultsExportRow[] = filteredResults.map(r => {
+      const scoresMap: Record<string, string | number> = {};
+      displayIndicatorItems.forEach(ind => {
+        scoresMap[ind.code] = getScoreForIndicator(r, ind.code);
+      });
+
+      return {
+        company_code: r.company_code,
+        fiscal_year: r.fiscal_year,
+        file_name: r.file_name,
+        preset_name: r.preset_name || getPresetName(currentPresetForColumns, lang),
+        scores: scoresMap,
+        total_score: getRowTotalForActivePreset(r),
+        disclosure_level: formatCleanDisclosureLevel(r.disclosure_level, isEn),
+        model_used: r.model_used,
+        created_at: r.created_at ? new Date(r.created_at).toLocaleString(isEn ? 'en-US' : 'id-ID') : '-'
+      };
+    });
+
+    return {
+      presetName: getPresetName(currentPresetForColumns, lang),
+      presetId: currentPresetForColumns.id,
+      rubricType: isQuantitativeMode ? (isEn ? 'Quantitative Real Metric' : 'Kuantitatif Riil (Angka + Satuan)') : (isEn ? 'Structured Weighted (0-5)' : 'Bobot Terstruktur (0-5)'),
+      indicators: exportIndicators,
+      rows: exportRows,
+      stats: {
+        total: totalCount,
+        avg: avgScore,
+        max: maxScore,
+        min: minScore
+      },
+      filterCode,
+      filterYear,
+      lang
+    };
+  };
+
+  // 1. Salin Seluruh Tabel ke Spreadsheet (HTML Table ber-styling + TSV)
+  const handleCopyAllTable = async () => {
+    if (filteredResults.length === 0) {
+      alert(isEn ? 'No data available to copy.' : 'Tidak ada data untuk disalin.');
+      return;
+    }
+
+    const payload = buildExportPayload();
+    const ok = await copyResultsToSpreadsheetClipboard(payload);
+
+    if (ok) {
+      setCopiedAll(true);
+      setMessage({
+        type: 'success',
+        text: isEn
+          ? `${filteredResults.length} rows (${displayIndicatorItems.length} indicators) copied in rich spreadsheet format! Ready to paste (Ctrl+V) into Google Sheets / Excel.`
+          : `${filteredResults.length} baris data (${displayIndicatorItems.length} indikator) berhasil disalin dengan format rapi! Siap di-paste (Ctrl+V) langsung ke Google Sheets / Excel.`
+      });
+      setTimeout(() => setCopiedAll(false), 3000);
+    } else {
+      setMessage({
+        type: 'error',
+        text: isEn ? 'Failed to copy table to clipboard.' : 'Gagal menyalin tabel ke clipboard.'
+      });
+    }
+  };
+
+  // 2. Ekspor Excel Multi-Sheet (.xlsx)
+  const handleExportExcel = () => {
+    if (filteredResults.length === 0) {
+      alert(isEn ? 'No data available to export.' : 'Tidak ada data untuk diekspor.');
+      return;
+    }
+
+    setIsExportingExcel(true);
+    try {
+      const payload = buildExportPayload();
+      exportResultsToExcelFile(payload);
+      setMessage({
+        type: 'success',
+        text: isEn
+          ? `Excel workbook (.xlsx) successfully exported with ${displayIndicatorItems.length} indicators and Glossary Sheet!`
+          : `Berkas Excel (.xlsx) berhasil diunduh dengan ${displayIndicatorItems.length} kolom indikator & Sheet Kamus Indikator!`
+      });
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: isEn ? 'Failed to export Excel file: ' + err.message : 'Gagal mengekspor file Excel: ' + (err?.message || '')
+      });
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
+  // 3. Ekspor Word Dokumen (.docx)
+  const handleExportWord = async () => {
+    if (filteredResults.length === 0) {
+      alert(isEn ? 'No data available to export.' : 'Tidak ada data untuk diekspor.');
+      return;
+    }
+
+    setIsExportingDocx(true);
+    try {
+      const payload = buildExportPayload();
+      await exportResultsToDocxFile(payload, false);
+      setMessage({
+        type: 'success',
+        text: isEn
+          ? 'Word document (.docx) successfully exported in landscape layout!'
+          : 'Dokumen Word (.docx) berhasil diunduh dalam tata letak Landscape yang rapi!'
+      });
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: isEn ? 'Failed to export Word document: ' + err.message : 'Gagal mengekspor file Word: ' + (err?.message || '')
+      });
+    } finally {
+      setIsExportingDocx(false);
+    }
+  };
+
+  // 4. Ekspor Google Docs (.docx)
+  const handleExportGDocs = async () => {
+    if (filteredResults.length === 0) {
+      alert(isEn ? 'No data available to export.' : 'Tidak ada data untuk diekspor.');
+      return;
+    }
+
+    setIsExportingGDocs(true);
+    try {
+      const payload = buildExportPayload();
+      await exportResultsToDocxFile(payload, true);
+      setMessage({
+        type: 'success',
+        text: isEn
+          ? 'Google Docs (.docx) file exported! You can directly upload & edit it in Google Docs.'
+          : 'File Google Docs (.docx) berhasil diunduh! Siap diunggah dan diedit langsung di Google Docs.'
+      });
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: isEn ? 'Failed to export Google Docs file: ' + err.message : 'Gagal membuat file Google Docs: ' + (err?.message || '')
+      });
+    } finally {
+      setIsExportingGDocs(false);
+    }
+  };
+
+  // 5. Ekspor CSV Dinamis (.csv)
+  const handleExportCSV = () => {
+    if (filteredResults.length === 0) {
+      alert(isEn ? 'No data available to export.' : 'Tidak ada data untuk diekspor.');
+      return;
+    }
+
+    try {
+      const payload = buildExportPayload();
+      exportResultsToCSVFile(payload);
+      setMessage({
+        type: 'success',
+        text: isEn
+          ? `CSV file successfully exported with ${displayIndicatorItems.length} indicator columns!`
+          : `Berkas CSV berhasil diunduh dengan ${displayIndicatorItems.length} kolom indikator dinamis!`
+      });
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: isEn ? 'Failed to export CSV: ' + err.message : 'Gagal mengekspor file CSV: ' + (err?.message || '')
+      });
+    }
+  };
 
   return (
     <div>
@@ -484,13 +612,65 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
             <button
               className="btn btn-primary btn-sm"
               onClick={handleCopyAllTable}
-              title={isEn ? 'Copy all rows to paste into Google Sheets' : 'Salin seluruh baris tabel untuk di-paste langsung ke Google Sheets'}
+              title={isEn ? 'Copy formatted table to paste into Google Sheets / Excel' : 'Salin tabel berformat rapi (HTML + TSV) untuk langsung di-paste ke Google Sheets / Excel'}
             >
               {copiedAll ? <Check size={14} /> : <Copy size={14} />}
-              <span>{copiedAll ? (isEn ? 'Copied! ✅' : 'Tersalin! ✅') : isEn ? 'Copy All (Spreadsheet)' : 'Salin Semua (Spreadsheet)'}</span>
+              <span>{copiedAll ? (isEn ? 'Copied! ✅' : 'Tersalin! ✅') : isEn ? 'Copy (Spreadsheet)' : 'Salin Semua (Spreadsheet)'}</span>
             </button>
 
-            <button className="btn btn-accent btn-sm" onClick={handleExportCSV}>
+            <button
+              className="btn btn-sm"
+              style={{
+                background: 'rgba(16, 185, 129, 0.16)',
+                color: '#10b981',
+                border: '1px solid rgba(16, 185, 129, 0.45)',
+                fontWeight: 700
+              }}
+              onClick={handleExportExcel}
+              disabled={isExportingExcel}
+              title={isEn ? 'Export multi-sheet Excel (.xlsx) with dynamic indicators & glossary' : 'Unduh berkas Excel (.xlsx) rapi dengan seluruh kolom indikator & kamus glosarium'}
+            >
+              <FileSpreadsheet size={13} />
+              <span>{isExportingExcel ? 'Excel...' : 'Excel (.xlsx)'}</span>
+            </button>
+
+            <button
+              className="btn btn-sm"
+              style={{
+                background: 'rgba(59, 130, 246, 0.16)',
+                color: '#3b82f6',
+                border: '1px solid rgba(59, 130, 246, 0.45)',
+                fontWeight: 700
+              }}
+              onClick={handleExportWord}
+              disabled={isExportingDocx}
+              title={isEn ? 'Export formal landscape Word (.docx) document' : 'Unduh dokumen Word (.docx) formal landscape dengan tabel indikator'}
+            >
+              <FileText size={13} />
+              <span>{isExportingDocx ? 'Word...' : 'Word (.docx)'}</span>
+            </button>
+
+            <button
+              className="btn btn-sm"
+              style={{
+                background: 'rgba(6, 182, 212, 0.16)',
+                color: '#06b6d4',
+                border: '1px solid rgba(6, 182, 212, 0.45)',
+                fontWeight: 700
+              }}
+              onClick={handleExportGDocs}
+              disabled={isExportingGDocs}
+              title={isEn ? 'Download OpenXML .docx optimized for Google Docs' : 'Unduh berkas .docx siap buka & edit langsung di Google Docs'}
+            >
+              <FileText size={13} />
+              <span>{isExportingGDocs ? 'GDocs...' : 'Google Docs'}</span>
+            </button>
+
+            <button
+              className="btn btn-accent btn-sm"
+              onClick={handleExportCSV}
+              title={isEn ? 'Export CSV with dynamic indicator columns' : 'Unduh berkas CSV dengan nama kolom sesuai indikator'}
+            >
               <Download size={13} />
               <span>CSV</span>
             </button>
