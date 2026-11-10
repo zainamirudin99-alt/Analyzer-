@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Download, Search, Trash2, Printer, Copy, Check, Table, FileSpreadsheet, FileText } from 'lucide-react';
+import { RefreshCw, Download, Search, Trash2, Printer, Copy, Check, Table, FileSpreadsheet, FileText, ExternalLink, X } from 'lucide-react';
 import {
   exportResultsToExcelFile,
   exportResultsToDocxFile,
   exportResultsToCSVFile,
   copyResultsToSpreadsheetClipboard,
+  copyResultsToGoogleDocsClipboard,
+  openInGoogleDocs,
   ResultsExportOptions,
   ResultsExportIndicator,
   ResultsExportRow
@@ -59,6 +61,8 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
   const [isExportingDocx, setIsExportingDocx] = useState(false);
   const [isExportingGDocs, setIsExportingGDocs] = useState(false);
   const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [showGDocsModal, setShowGDocsModal] = useState(false);
+  const [copiedGDocsModal, setCopiedGDocsModal] = useState(false);
 
   const fetchResults = async () => {
     setIsLoading(true);
@@ -482,7 +486,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     }
   };
 
-  // 4. Ekspor Google Docs (.docx)
+  // 4. Ekspor ke Google Docs (Buka docs.new + Salin Dokumen HTML Lengkap)
   const handleExportGDocs = async () => {
     if (filteredResults.length === 0) {
       alert(isEn ? 'No data available to export.' : 'Tidak ada data untuk diekspor.');
@@ -492,21 +496,36 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
     setIsExportingGDocs(true);
     try {
       const payload = buildExportPayload();
-      await exportResultsToDocxFile(payload, true);
+      await openInGoogleDocs(payload);
+      setShowGDocsModal(true);
       setMessage({
         type: 'success',
         text: isEn
-          ? 'Google Docs (.docx) file exported! You can directly upload & edit it in Google Docs.'
-          : 'File Google Docs (.docx) berhasil diunduh! Siap diunggah dan diedit langsung di Google Docs.'
+          ? 'Google Docs opened in a new tab! Press Ctrl + V in the document to paste the complete report.'
+          : 'Google Docs berhasil dibuka di tab baru! Tekan Ctrl + V di dokumen tersebut untuk menempelkan seluruh laporan.'
       });
     } catch (err: any) {
       setMessage({
         type: 'error',
-        text: isEn ? 'Failed to export Google Docs file: ' + err.message : 'Gagal membuat file Google Docs: ' + (err?.message || '')
+        text: isEn ? 'Failed to open Google Docs: ' + err.message : 'Gagal membuka Google Docs: ' + (err?.message || '')
       });
     } finally {
       setIsExportingGDocs(false);
     }
+  };
+
+  const handleCopyGDocsContentAgain = async () => {
+    const payload = buildExportPayload();
+    const ok = await copyResultsToGoogleDocsClipboard(payload);
+    if (ok) {
+      setCopiedGDocsModal(true);
+      setTimeout(() => setCopiedGDocsModal(false), 2500);
+    }
+  };
+
+  const handleDownloadDocxBackup = async () => {
+    const payload = buildExportPayload();
+    await exportResultsToDocxFile(payload, true);
   };
 
   // 5. Ekspor CSV Dinamis (.csv)
@@ -660,10 +679,10 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
               }}
               onClick={handleExportGDocs}
               disabled={isExportingGDocs}
-              title={isEn ? 'Download OpenXML .docx optimized for Google Docs' : 'Unduh berkas .docx siap buka & edit langsung di Google Docs'}
+              title={isEn ? 'Open new Google Docs tab & copy formatted table (ready to Ctrl+V)' : 'Buka Google Docs di tab baru & salin seluruh isi laporan berformat rapi (tinggal Ctrl+V)'}
             >
-              <FileText size={13} />
-              <span>{isExportingGDocs ? 'GDocs...' : 'Google Docs'}</span>
+              <ExternalLink size={13} />
+              <span>{isExportingGDocs ? 'Opening Docs...' : 'Google Docs'}</span>
             </button>
 
             <button
@@ -942,6 +961,171 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ refreshTrigger }) => {
           </table>
         </div>
       </div>
+
+      {/* MODAL PANDUAN & AKSI GOOGLE DOCS */}
+      {showGDocsModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.72)',
+            backdropFilter: 'blur(5px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px'
+          }}
+          onClick={() => setShowGDocsModal(false)}
+        >
+          <div
+            style={{
+              background: 'var(--surface)',
+              border: '1.5px solid var(--border)',
+              borderRadius: '14px',
+              padding: '24px',
+              maxWidth: '540px',
+              width: '100%',
+              boxShadow: '0 20px 48px rgba(0, 0, 0, 0.45)',
+              position: 'relative'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '9px',
+                    background: 'rgba(6, 182, 212, 0.16)',
+                    color: '#06b6d4',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <ExternalLink size={20} />
+                </div>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text)' }}>
+                  {isEn ? 'Google Docs Opened in New Tab! 🚀' : 'Google Docs Dibuka di Tab Baru! 🚀'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '4px'
+                }}
+                onClick={() => setShowGDocsModal(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div
+              style={{
+                background: 'rgba(16, 185, 129, 0.12)',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                color: '#10b981',
+                borderRadius: '8px',
+                padding: '10px 14px',
+                fontSize: '12.5px',
+                fontWeight: 700,
+                marginBottom: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <span>✅</span>
+              <span>
+                {isEn
+                  ? 'Complete report layout is copied to your clipboard!'
+                  : 'Seluruh isi laporan lengkap telah disalin ke clipboard Anda!'}
+              </span>
+            </div>
+
+            <div style={{ fontSize: '13px', color: 'var(--text)', lineHeight: 1.6, marginBottom: '20px' }}>
+              <p style={{ margin: '0 0 8px 0', fontWeight: 600 }}>
+                {isEn ? 'Next simple steps:' : 'Langkah mudah selanjutnya:'}
+              </p>
+              <ol style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <li>
+                  {isEn ? (
+                    <>Switch to the newly opened <strong>docs.new</strong> tab in your browser.</>
+                  ) : (
+                    <>Beralih ke tab <strong>docs.new</strong> yang baru saja dibuka oleh sistem.</>
+                  )}
+                </li>
+                <li>
+                  {isEn ? (
+                    <>Press <strong>Ctrl + V</strong> (or right-click → <em>Paste</em>).</>
+                  ) : (
+                    <>Tekan <strong>Ctrl + V</strong> (atau klik kanan → <em>Tempel / Paste</em>).</>
+                  )}
+                </li>
+                <li>
+                  {isEn ? (
+                    <>The formal report with Kop, Summary, Analysis Table, and Glossary will appear instantly with neat styling!</>
+                  ) : (
+                    <>Kop laporan resmi, ringkasan, tabel hasil analisis, dan kamus indikator akan langsung tertata rapi seketika!</>
+                  )}
+                </li>
+              </ol>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={handleCopyGDocsContentAgain}
+                title={isEn ? 'Copy formatted report again' : 'Salin ulang format dokumen ke clipboard'}
+              >
+                {copiedGDocsModal ? <Check size={13} /> : <Copy size={13} />}
+                <span>{copiedGDocsModal ? (isEn ? 'Copied! ✅' : 'Tersalin! ✅') : (isEn ? 'Copy Again' : 'Salin Ulang')}</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-sm"
+                style={{
+                  background: 'rgba(6, 182, 212, 0.16)',
+                  color: '#06b6d4',
+                  border: '1px solid rgba(6, 182, 212, 0.45)',
+                  fontWeight: 700
+                }}
+                onClick={() => window.open('https://docs.new', '_blank')}
+                title={isEn ? 'Reopen docs.new in tab' : 'Buka tab baru Google Docs lagi'}
+              >
+                <ExternalLink size={13} />
+                <span>{isEn ? 'Open docs.new' : 'Buka docs.new'}</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={handleDownloadDocxBackup}
+                title={isEn ? 'Download .docx as offline backup' : 'Unduh file .docx jika ingin upload manual via Drive'}
+              >
+                <Download size={13} />
+                <span>{isEn ? 'Download .docx' : 'Unduh .docx'}</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => setShowGDocsModal(false)}
+              >
+                <span>{isEn ? 'Done' : 'Selesai'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

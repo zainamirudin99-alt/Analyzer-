@@ -622,6 +622,134 @@ export function generateResultsSpreadsheetClipboard(options: ResultsExportOption
 }
 
 // ------------------------------------------------------------
+// 3B. GENERATOR DOKUMEN HTML KHUSUS GOOGLE DOCS
+// ------------------------------------------------------------
+export function generateResultsGoogleDocsHtml(options: ResultsExportOptions): string {
+  const isEn = options.lang === 'en';
+  const dateStr = new Date().toLocaleDateString(isEn ? 'en-US' : 'id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
+
+  const tableHeaders = [
+    'No',
+    isEn ? 'Code' : 'Kode',
+    isEn ? 'Years' : 'Tahun',
+    ...options.indicators.map(i => i.code),
+    'TOTAL',
+    'Level'
+  ];
+
+  const headerThs = tableHeaders
+    .map(
+      h =>
+        `<th style="background-color:#0f766e; color:#ffffff; font-weight:bold; padding:8px 10px; border:1px solid #cbd5e1; text-align:center;">${h}</th>`
+    )
+    .join('');
+
+  const bodyTrs = options.rows
+    .map((r, idx) => {
+      const isZebra = idx % 2 === 1;
+      const bg = isZebra ? '#f8fafc' : '#ffffff';
+      const scores = options.indicators
+        .map(
+          ind =>
+            `<td style="padding:6px 10px; border:1px solid #cbd5e1; text-align:center;">${
+              r.scores[ind.code] ?? r.scores[ind.code.toLowerCase()] ?? '-'
+            }</td>`
+        )
+        .join('');
+
+      return `<tr style="background-color:${bg};">
+        <td style="padding:6px 10px; border:1px solid #cbd5e1; text-align:center;">${idx + 1}</td>
+        <td style="padding:6px 10px; border:1px solid #cbd5e1; text-align:center; font-weight:bold;">${r.company_code}</td>
+        <td style="padding:6px 10px; border:1px solid #cbd5e1; text-align:center;">${r.fiscal_year}</td>
+        ${scores}
+        <td style="padding:6px 10px; border:1px solid #cbd5e1; text-align:center; font-weight:bold; color:#0f766e;">${r.total_score}</td>
+        <td style="padding:6px 10px; border:1px solid #cbd5e1; text-align:center;">${r.disclosure_level || '-'}</td>
+      </tr>`;
+    })
+    .join('');
+
+  // Glosarium Baris
+  const glossaryTrs = options.indicators
+    .map((ind, idx) => {
+      const isZebra = idx % 2 === 1;
+      const bg = isZebra ? '#f8fafc' : '#ffffff';
+      return `<tr style="background-color:${bg};">
+        <td style="padding:6px 10px; border:1px solid #cbd5e1; text-align:center;">${idx + 1}</td>
+        <td style="padding:6px 10px; border:1px solid #cbd5e1; text-align:center; font-weight:bold;">${ind.code}</td>
+        <td style="padding:6px 10px; border:1px solid #cbd5e1; text-align:left;">${ind.group || (isEn ? 'General' : 'Umum')}</td>
+        <td style="padding:6px 10px; border:1px solid #cbd5e1; text-align:left;">
+          <strong>${ind.title}</strong>
+          ${ind.fullDesc ? `<br><span style="color:#64748b; font-size:9.5pt;">${ind.fullDesc}</span>` : ''}
+        </td>
+      </tr>`;
+    })
+    .join('');
+
+  return `<meta charset="utf-8">
+<div style="font-family: Arial, Calibri, sans-serif; font-size: 11pt; color: #1e293b; max-width: 960px; margin: 0 auto; line-height: 1.5;">
+  <h1 style="color: #0f766e; text-align: center; margin-bottom: 4px; font-size: 18pt;">
+    ${isEn ? 'DISCLOSURE ANALYSIS RESULTS REPORT' : 'LAPORAN HASIL ANALISIS PENGUNGKAPAN'}
+  </h1>
+  <p style="text-align: center; color: #64748b; font-size: 10.5pt; margin-top: 0; margin-bottom: 18px;">
+    ANALYZER(?) — AI Document & Indicator Assessment
+  </p>
+
+  <!-- Summary Box Table -->
+  <table style="width: 100%; border-collapse: collapse; margin-bottom: 22px; background-color: #f0fdf4; border: 1.5px solid #86efac; border-radius: 6px;">
+    <tr>
+      <td style="padding: 10px 14px; border-right: 1px solid #bbf7d0; vertical-align: top; width: 50%;">
+        <p style="margin: 0 0 5px 0; font-size: 10.5pt;"><strong>${isEn ? 'Standard Indicator Preset' : 'Standar Pilihan Indikator'}:</strong> ${options.presetName} (${options.indicators.length} ${isEn ? 'Indicators' : 'Indikator'})</p>
+        <p style="margin: 0; font-size: 10pt; color: #334155;"><strong>${isEn ? 'Rubric Type' : 'Jenis Rubrik'}:</strong> ${options.rubricType || '-'}</p>
+      </td>
+      <td style="padding: 10px 14px; vertical-align: top; width: 50%;">
+        <p style="margin: 0 0 5px 0; font-size: 10.5pt;"><strong>${isEn ? 'Total Analyzed Reports' : 'Total Laporan Dianalisis'}:</strong> ${options.rows.length} ${isEn ? 'Reports' : 'Entri'}</p>
+        <p style="margin: 0; font-size: 10pt; color: #334155;"><strong>${isEn ? 'Average Score' : 'Rata-Rata Skor'}:</strong> ${options.stats?.avg ?? '-'} | <strong>${isEn ? 'Date' : 'Tanggal'}:</strong> ${dateStr}</p>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Section 1: Main Table -->
+  <h2 style="color: #0f766e; font-size: 13pt; margin-top: 22px; margin-bottom: 8px;">
+    ${isEn ? '1. Main Analysis Results Table' : '1. Tabel Utama Hasil Analisis'}
+  </h2>
+  <table border="1" style="width: 100%; border-collapse: collapse; font-size: 10pt; margin-bottom: 26px;">
+    <thead>
+      <tr>${headerThs}</tr>
+    </thead>
+    <tbody>
+      ${bodyTrs}
+    </tbody>
+  </table>
+
+  <!-- Section 2: Glossary Table -->
+  <h2 style="color: #0f766e; font-size: 13pt; margin-top: 22px; margin-bottom: 8px;">
+    ${isEn ? '2. Indicator Glossary & Criteria' : '2. Kamus Indikator Pengungkapan (Glosarium)'}
+  </h2>
+  <table border="1" style="width: 100%; border-collapse: collapse; font-size: 10pt; margin-bottom: 24px;">
+    <thead>
+      <tr style="background-color: #1e293b; color: #ffffff;">
+        <th style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: center; width: 6%;">No</th>
+        <th style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: center; width: 14%;">${isEn ? 'Code' : 'Kode'}</th>
+        <th style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: left; width: 22%;">${isEn ? 'Group' : 'Kelompok'}</th>
+        <th style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: left; width: 58%;">${isEn ? 'Indicator Title & Description' : 'Nama & Kriteria Indikator'}</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${glossaryTrs}
+    </tbody>
+  </table>
+
+  <p style="text-align: right; color: #94a3b8; font-size: 9pt; margin-top: 26px;">
+    ANALYZER(?) — AI Document & Indicator Assessment | ${dateStr}
+  </p>
+</div>`;
+}
+
+// ------------------------------------------------------------
 // 4. GENERATOR CSV FORMAT
 // ------------------------------------------------------------
 export function generateResultsCSVString(options: ResultsExportOptions): string {
@@ -733,4 +861,42 @@ export async function copyResultsToSpreadsheetClipboard(options: ResultsExportOp
     return false;
   }
 }
+
+export async function copyResultsToGoogleDocsClipboard(options: ResultsExportOptions): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  const html = generateResultsGoogleDocsHtml(options);
+  const tsv = generateResultsSpreadsheetClipboard(options).tsv;
+
+  try {
+    if (typeof ClipboardItem !== 'undefined' && navigator.clipboard && navigator.clipboard.write) {
+      const htmlBlob = new Blob([html], { type: 'text/html' });
+      const textBlob = new Blob([tsv], { type: 'text/plain' });
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/html': htmlBlob,
+          'text/plain': textBlob
+        })
+      ]);
+      return true;
+    }
+  } catch (err) {
+    console.warn('ClipboardItem rich HTML copy fallback:', err);
+  }
+
+  try {
+    await navigator.clipboard.writeText(tsv);
+    return true;
+  } catch (err) {
+    console.error('Failed to copy to clipboard:', err);
+    return false;
+  }
+}
+
+export async function openInGoogleDocs(options: ResultsExportOptions): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  await copyResultsToGoogleDocsClipboard(options);
+  window.open('https://docs.new', '_blank');
+  return true;
+}
+
 

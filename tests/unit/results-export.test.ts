@@ -3,6 +3,7 @@ import {
   generateResultsExcelWorkbook,
   generateResultsDocxDocument,
   generateResultsSpreadsheetClipboard,
+  generateResultsGoogleDocsHtml,
   generateResultsCSVString,
   ResultsExportOptions
 } from '../../src/lib/results-export-builder';
@@ -130,6 +131,30 @@ describe('Results Export Builder (Excel, Word, Google Docs, Spreadsheet & CSV)',
     expect(html).toContain('>WATER1</th>');
     expect(html).toContain('>AKRA</td>');
     expect(html).toContain('>1000000 liter</td>');
+  });
+
+  it('generates rich Google Docs document HTML with Kop, Summary Box, Main Table, and Glossary', () => {
+    const gdocsHtml = generateResultsGoogleDocsHtml(sampleOptions);
+
+    // Judul & Subjudul
+    expect(gdocsHtml).toContain('LAPORAN HASIL ANALISIS PENGUNGKAPAN');
+    expect(gdocsHtml).toContain('ANALYZER(?) — AI Document & Indicator Assessment');
+
+    // Summary Box
+    expect(gdocsHtml).toContain('Standar Pilihan Indikator');
+    expect(gdocsHtml).toContain('Standar Kualitas Perusahaan Hijau');
+
+    // Tabel Utama Hasil Analisis
+    expect(gdocsHtml).toContain('1. Tabel Utama Hasil Analisis');
+    expect(gdocsHtml).toContain('>GHG1</th>');
+    expect(gdocsHtml).toContain('>WATER1</th>');
+    expect(gdocsHtml).toContain('>AKRA</td>');
+    expect(gdocsHtml).toContain('>1000000 liter</td>');
+
+    // Glosarium Indikator
+    expect(gdocsHtml).toContain('2. Kamus Indikator Pengungkapan (Glosarium)');
+    expect(gdocsHtml).toContain('Inventarisasi & Reduksi Emisi GRK');
+    expect(gdocsHtml).toContain('Pengolahan Air Limbah');
   });
 
   it('generates sanitized RFC 4180 CSV string', () => {
