@@ -7,7 +7,7 @@
 import { CEDScores, IndicatorItem, RubricItem, RubricType } from './types';
 import { buildAnalysisPrompt, buildCEDPrompt, extractAndParseJSON, normalizeScores, preprocessTextForCED } from './gemini';
 
-export type ClaudeEffortLevel = 'low' | 'medium' | 'hard' | 'extra';
+export type ClaudeEffortLevel = 'low' | 'medium' | 'high' | 'hard' | 'extra';
 
 export interface ClaudeEffortConfig {
   id: ClaudeEffortLevel;
@@ -23,19 +23,26 @@ export const CLAUDE_EFFORT_CONFIGS: Record<ClaudeEffortLevel, ClaudeEffortConfig
     label: 'Low (1.024 tokens)',
     description: 'Cepat & hemat token reasoning untuk verifikasi ringkas.',
     budgetTokens: 1024,
-    maxTokens: 4096
+    maxTokens: 6144
   },
   medium: {
     id: 'medium',
     label: 'Medium (4.096 tokens)',
     description: 'Keseimbangan ideal antara kedalaman analisis ESG dan kecepatan.',
     budgetTokens: 4096,
-    maxTokens: 8192
+    maxTokens: 12288
+  },
+  high: {
+    id: 'high',
+    label: 'High (16.384 tokens)',
+    description: 'Penalaran mendalam untuk ekstraksi kuantitatif, tabel multi-halaman, dan audit kepatuhan ketat.',
+    budgetTokens: 16384,
+    maxTokens: 24576
   },
   hard: {
     id: 'hard',
-    label: 'Hard (16.384 tokens)',
-    description: 'Penalaran mendalam untuk laporan keberlanjutan yang kompleks.',
+    label: 'High / Hard (16.384 tokens)',
+    description: 'Penalaran mendalam untuk ekstraksi kuantitatif, tabel multi-halaman, dan audit kepatuhan ketat.',
     budgetTokens: 16384,
     maxTokens: 24576
   },
@@ -230,7 +237,13 @@ export async function analyzeWithClaude(options: ClaudeAnalysisOptions): Promise
     skillContent: options.skillContent
   });
   const customKeys = options.indicators?.map(i => i.code);
-  const processedText = options.pdfText ? preprocessTextForCED(options.pdfText, 45000, options.indicators, options.skillContent) : '';
+  const maxTextChars =
+    effortLevel === 'high' || effortLevel === 'hard' || effortLevel === 'extra'
+      ? 250000
+      : effortLevel === 'low'
+      ? 80000
+      : 180000;
+  const processedText = options.pdfText ? preprocessTextForCED(options.pdfText, maxTextChars, options.indicators, options.skillContent) : '';
 
   const userContent = processedText
     ? `${prompt}\n\n=== TEKS DOKUMEN LAPORAN (${options.companyCode} ${options.fiscalYear}) ===\n${processedText}`

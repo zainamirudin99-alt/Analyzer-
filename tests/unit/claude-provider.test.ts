@@ -55,7 +55,7 @@ describe('Anthropic Claude Provider Integration Tests', () => {
   });
 
   it('memverifikasi konfigurasi tingkat kerja (Extended Thinking Budget)', () => {
-    const levels: ClaudeEffortLevel[] = ['low', 'medium', 'hard', 'extra'];
+    const levels: ClaudeEffortLevel[] = ['low', 'medium', 'high', 'hard', 'extra'];
     levels.forEach(lvl => {
       expect(CLAUDE_EFFORT_CONFIGS[lvl]).toBeDefined();
       expect(CLAUDE_EFFORT_CONFIGS[lvl].budgetTokens).toBeGreaterThan(0);
@@ -64,6 +64,7 @@ describe('Anthropic Claude Provider Integration Tests', () => {
 
     expect(CLAUDE_EFFORT_CONFIGS.low.budgetTokens).toBe(1024);
     expect(CLAUDE_EFFORT_CONFIGS.medium.budgetTokens).toBe(4096);
+    expect(CLAUDE_EFFORT_CONFIGS.high.budgetTokens).toBe(16384);
     expect(CLAUDE_EFFORT_CONFIGS.hard.budgetTokens).toBe(16384);
     expect(CLAUDE_EFFORT_CONFIGS.extra.budgetTokens).toBe(32768);
   });

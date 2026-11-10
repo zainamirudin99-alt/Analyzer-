@@ -1338,9 +1338,9 @@ export const SettingsTab: React.FC = () => {
                   gap: '6px',
                   marginBottom: '8px'
                 }}>
-                  {(['low', 'medium', 'hard', 'extra'] as ClaudeEffortLevel[]).map(lvl => {
+                  {(['low', 'medium', 'high', 'extra'] as ClaudeEffortLevel[]).map(lvl => {
                     const cfg = CLAUDE_EFFORT_CONFIGS[lvl];
-                    const isSelected = claudeEffort === lvl;
+                    const isSelected = claudeEffort === lvl || (lvl === 'high' && claudeEffort === 'hard');
                     return (
                       <button
                         key={lvl}

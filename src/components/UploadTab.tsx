@@ -38,7 +38,7 @@ import {
 } from '@/lib/i18n';
 import { SUPPORTED_MODEL_CATEGORIES, ALL_SUPPORTED_MODELS } from '@/lib/gemini';
 import { DEFAULT_OPENAI_MODELS } from '@/lib/openai';
-import { CLAUDE_MODEL_CATEGORIES, ALL_CLAUDE_MODELS } from '@/lib/claude';
+import { CLAUDE_MODEL_CATEGORIES, ALL_CLAUDE_MODELS, CLAUDE_EFFORT_CONFIGS, ClaudeEffortLevel } from '@/lib/claude';
 import { getAuthHeaders, getCurrentAccountOwner, syncCurrentSnapshotToCloud } from '@/lib/account-sync';
 
 interface UploadTabProps {
@@ -93,6 +93,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
 
   const [activeProvider, setActiveProvider] = useState<'gemini' | 'openai' | 'claude'>('gemini');
   const [activeModel, setActiveModel] = useState<string>('gemini-3.7-flash');
+  const [claudeEffort, setClaudeEffort] = useState<ClaudeEffortLevel>('medium');
   const [openaiCustomModels, setOpenaiCustomModels] = useState<string[]>([]);
   const [claudeCustomModels, setClaudeCustomModels] = useState<string[]>([]);
 
@@ -117,8 +118,12 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
       setActiveModel(stored);
     }
 
-    // Load Custom OpenAI & Claude Models
+    // Load Custom OpenAI & Claude Models & Claude Effort
     if (typeof window !== 'undefined') {
+      const storedEffort = (localStorage.getItem('custom_claude_effort') || 'medium') as ClaudeEffortLevel;
+      if (storedEffort in CLAUDE_EFFORT_CONFIGS) {
+        setClaudeEffort(storedEffort);
+      }
       const storedOpenaiCustom = localStorage.getItem('custom_openai_custom_models');
       if (storedOpenaiCustom) {
         try {
@@ -206,6 +211,15 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
       } else {
         localStorage.setItem('custom_gemini_model', newModel);
       }
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('analyzer-settings-changed'));
+    }
+  };
+
+  const handleClaudeEffortChange = (lvl: ClaudeEffortLevel) => {
+    setClaudeEffort(lvl);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('custom_claude_effort', lvl);
       window.dispatchEvent(new Event('storage'));
       window.dispatchEvent(new Event('analyzer-settings-changed'));
     }
@@ -475,7 +489,7 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
       const storedKey = typeof window !== 'undefined' ? localStorage.getItem('custom_claude_key') : null;
       const storedModel = (typeof window !== 'undefined' ? localStorage.getItem('custom_claude_model') : null) || 'claude-3-7-sonnet-20250219';
       const storedBaseUrl = typeof window !== 'undefined' ? localStorage.getItem('custom_claude_base_url') : null;
-      const storedEffort = typeof window !== 'undefined' ? localStorage.getItem('custom_claude_effort') || 'medium' : 'medium';
+      const storedEffort = claudeEffort || (typeof window !== 'undefined' ? localStorage.getItem('custom_claude_effort') || 'medium' : 'medium');
       if (storedKey) formData.append('apiKey', storedKey.trim());
       if (storedModel) formData.append('model', storedModel.trim());
       if (storedBaseUrl) formData.append('baseUrl', storedBaseUrl.trim());
@@ -1212,7 +1226,86 @@ export const UploadTab: FC<UploadTabProps> = ({ onSuccessAnalysis, onNavigateToR
                   </>
                 )}
               </select>
+
+              {activeProvider === 'claude' && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: 'var(--surface)',
+                    border: '1.5px solid var(--border)',
+                    borderRadius: '8px',
+                    padding: '3px 8px'
+                  }}
+                >
+                  <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--primary)' }}>
+                    🧠 {isEn ? 'Effort:' : 'Penalaran:'}
+                  </span>
+                  <div style={{ display: 'inline-flex', gap: '3px' }}>
+                    {(['low', 'medium', 'high'] as const).map(lvl => {
+                      const isSelected = claudeEffort === lvl || (lvl === 'high' && claudeEffort === 'hard');
+                      const cfg = CLAUDE_EFFORT_CONFIGS[lvl];
+                      return (
+                        <button
+                          key={lvl}
+                          type="button"
+                          onClick={() => handleClaudeEffortChange(lvl)}
+                          disabled={isAnalyzing || isExtracting}
+                          style={{
+                            padding: '4px 8px',
+                            border: 'none',
+                            borderRadius: '5px',
+                            fontSize: '11px',
+                            fontWeight: isSelected ? 800 : 600,
+                            background: isSelected ? 'var(--primary)' : 'transparent',
+                            color: isSelected ? '#ffffff' : 'var(--text-muted)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                            boxShadow: isSelected ? '0 1px 4px rgba(0,0,0,0.15)' : 'none'
+                          }}
+                          title={cfg ? `${cfg.label} — ${cfg.description}` : lvl}
+                        >
+                          {lvl === 'low' ? '⚡ Low' : lvl === 'medium' ? '⚖️ Medium' : '🧠 High'}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
+
+            {activeProvider === 'claude' && (
+              <div
+                style={{
+                  marginTop: '8px',
+                  fontSize: '11.5px',
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  flexWrap: 'wrap'
+                }}
+              >
+                <span
+                  className="badge"
+                  style={{
+                    background: 'var(--dew)',
+                    color: 'var(--primary)',
+                    border: '1px solid var(--border)',
+                    fontSize: '11px',
+                    padding: '3px 8px',
+                    fontWeight: 800,
+                    borderRadius: '6px'
+                  }}
+                >
+                  Claude Reasoning: {CLAUDE_EFFORT_CONFIGS[claudeEffort]?.label || claudeEffort.toUpperCase()}
+                </span>
+                <span style={{ fontSize: '11px' }}>
+                  {CLAUDE_EFFORT_CONFIGS[claudeEffort]?.description || 'Penalaran adaptif Claude untuk evaluasi indikator.'}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
