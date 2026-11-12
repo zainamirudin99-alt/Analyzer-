@@ -191,33 +191,51 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
   } = activeResult;
 
   // Extract raw Y and X numbers for remedial computations
-  const validDataRows = allRows.filter(
-    (r) =>
-      r[yCol] !== undefined &&
-      r[yCol] !== null &&
-      r[yCol] !== '' &&
-      !isNaN(Number(r[yCol])) &&
-      xCols.every((col) => r[col] !== undefined && r[col] !== null && r[col] !== '' && !isNaN(Number(r[col])))
+  const validDataRows = useMemo(() => {
+    const rows = (allRows || []).filter(
+      (r) =>
+        r &&
+        r[yCol] !== undefined &&
+        r[yCol] !== null &&
+        r[yCol] !== '' &&
+        !isNaN(Number(r[yCol])) &&
+        isFinite(Number(r[yCol])) &&
+        (variables?.xCols || xCols).every(
+          (col) => r[col] !== undefined && r[col] !== null && r[col] !== '' && !isNaN(Number(r[col])) && isFinite(Number(r[col]))
+        )
+    );
+    if (isTimeSeries && timeCol) {
+      rows.sort((a, b) => {
+        const ta = a[timeCol];
+        const tb = b[timeCol];
+        return String(ta).localeCompare(String(tb));
+      });
+    }
+    return rows;
+  }, [allRows, yCol, variables?.xCols, xCols, isTimeSeries, timeCol]);
+
+  const rawY = useMemo(() => validDataRows.map((r) => Number(r[yCol])), [validDataRows, yCol]);
+  const rawX = useMemo(
+    () => validDataRows.map((r) => (variables?.xCols || xCols).map((col) => Number(r[col]))),
+    [validDataRows, variables?.xCols, xCols]
   );
-  const rawY = validDataRows.map((r) => Number(r[yCol]));
-  const rawX = validDataRows.map((r) => xCols.map((col) => Number(r[col])));
 
   // Descriptive statistics for Y and all X predictors
   const descStats = activeResult.descriptiveStatistics || [
     {
       variable: variables.yCol,
       n: rawY.length,
-      mean: rawY.reduce((a, b) => a + b, 0) / (rawY.length || 1),
+      mean: rawY.length > 0 ? rawY.reduce((a, b) => a + b, 0) / rawY.length : 0,
       stdDev: sampleStdDev(rawY),
       min: rawY.length > 0 ? Math.min(...rawY) : 0,
       max: rawY.length > 0 ? Math.max(...rawY) : 0
     },
-    ...variables.xCols.map((col, idx) => {
-      const vals = rawX.map((r) => r[idx]);
+    ...(variables?.xCols || []).map((col, idx) => {
+      const vals = rawX.map((r) => r?.[idx]).filter((v): v is number => typeof v === 'number' && !isNaN(v) && isFinite(v));
       return {
         variable: col,
         n: vals.length,
-        mean: vals.reduce((a, b) => a + b, 0) / (vals.length || 1),
+        mean: vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0,
         stdDev: sampleStdDev(vals),
         min: vals.length > 0 ? Math.min(...vals) : 0,
         max: vals.length > 0 ? Math.max(...vals) : 0
@@ -274,12 +292,25 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
   }, [allRows, yCol, variables.xCols]);
 
   // Detected outliers
-  const detectedOutliers = rawY.length > 0 && rawX.length > 0 ? detectOutliers(activeResult, rawY, rawX) : [];
+  const detectedOutliers = useMemo(() => {
+    try {
+      return rawY.length > 0 && rawX.length > 0 ? detectOutliers(activeResult, rawY, rawX) : [];
+    } catch {
+      return [];
+    }
+  }, [activeResult, rawY, rawX]);
+
   const eligibleOutliers = detectedOutliers.filter((o) => o.isEligible);
   const maxAllowedOutliers = Math.floor(0.05 * (allRows.length || activeResult.sampleSize.nInitial));
 
   // Box-Cox profile
-  const boxCoxProfile = rawY.length > 0 && rawX.length > 0 ? computeBoxCoxProfile(rawY, rawX) : null;
+  const boxCoxProfile = useMemo(() => {
+    try {
+      return rawY.length > 0 && rawX.length > 0 ? computeBoxCoxProfile(rawY, rawX) : null;
+    } catch {
+      return null;
+    }
+  }, [rawY, rawX]);
 
   // Tahap 2: State Validasi SPSS & Diagnostik Lanjutan
   const [showSpssValidation, setShowSpssValidation] = useState<boolean>(false);
@@ -296,57 +327,79 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
 
   // Advanced Assumptions (Jarque-Bera, White, Glejser, Goldfeld-Quandt, Ljung-Box)
   const advancedAssumptions = useMemo(() => {
-    const residuals = activeResult.plots.resVsFit.map(p => p.residual);
-    return computeAdvancedAssumptions(rawX, residuals);
+    try {
+      const residuals = activeResult?.plots?.resVsFit?.map((p) => p.residual) || [];
+      return computeAdvancedAssumptions(rawX, residuals);
+    } catch (err) {
+      console.warn('Advanced assumptions error:', err);
+      return null;
+    }
   }, [rawX, activeResult]);
 
   // Time Series Advanced Diagnostics (ADF, KPSS, Differencing, Engle-Granger, ARCH-LM)
   const tsDiagnostics = useMemo(() => {
     if (!isTimeSeries || rawY.length < 15) return null;
-    const residuals = activeResult.plots.resVsFit.map(p => p.residual);
-    return {
-      adf: computeADF(rawY, 'constant', 4),
-      kpss: computeKPSS(rawY, 'level', 4),
-      diff: applyDifferencing(rawY),
-      cointegration: computeEngleGrangerCointegration(rawY, rawX),
-      arch: computeARCHLM(residuals, 2)
-    };
+    try {
+      const residuals = activeResult?.plots?.resVsFit?.map((p) => p.residual) || [];
+      return {
+        adf: computeADF(rawY, 'constant', 4),
+        kpss: computeKPSS(rawY, 'level', 4),
+        diff: applyDifferencing(rawY),
+        cointegration: computeEngleGrangerCointegration(rawY, rawX),
+        arch: computeARCHLM(residuals, 2)
+      };
+    } catch (err) {
+      console.warn('Time series diagnostics error:', err);
+      return null;
+    }
   }, [isTimeSeries, rawY, rawX, activeResult]);
 
   // SPSS Validation Report
   const spssValidationReport = useMemo(() => {
-    return validateAgainstSPSS(activeResult, {
-      r: activeResult.modelSummary.r,
-      rSquared: activeResult.modelSummary.rSquared,
-      adjRSquared: activeResult.modelSummary.adjRSquared,
-      stdErrorEstimate: activeResult.modelSummary.stdErrorEstimate,
-      durbinWatson: activeResult.modelSummary.durbinWatson,
-      fStat: activeResult.anova.regression.f,
-      fSig: activeResult.anova.regression.sig,
-      ssRegression: activeResult.anova.regression.ss,
-      ssResidual: activeResult.anova.residual.ss,
-      dfRegression: activeResult.anova.regression.df,
-      dfResidual: activeResult.anova.residual.df,
-      coefficients: activeResult.coefficients.map(c => ({
-        variable: c.variable,
-        b: c.b,
-        stdError: c.stdError,
-        beta: c.beta,
-        t: c.t,
-        sig: c.sig,
-        vif: c.collinearity.vif
-      }))
-    });
+    if (!activeResult) return null;
+    try {
+      return validateAgainstSPSS(activeResult, {
+        r: activeResult.modelSummary?.r,
+        rSquared: activeResult.modelSummary?.rSquared,
+        adjRSquared: activeResult.modelSummary?.adjRSquared,
+        stdErrorEstimate: activeResult.modelSummary?.stdErrorEstimate,
+        durbinWatson: activeResult.modelSummary?.durbinWatson,
+        fStat: activeResult.anova?.regression?.f,
+        fSig: activeResult.anova?.regression?.sig,
+        ssRegression: activeResult.anova?.regression?.ss,
+        ssResidual: activeResult.anova?.residual?.ss,
+        dfRegression: activeResult.anova?.regression?.df,
+        dfResidual: activeResult.anova?.residual?.df,
+        coefficients:
+          activeResult.coefficients?.map((c) => ({
+            variable: c.variable,
+            b: c.b,
+            stdError: c.stdError,
+            beta: c.beta,
+            t: c.t,
+            sig: c.sig,
+            vif: c.collinearity?.vif ?? 1
+          })) || []
+      });
+    } catch (err) {
+      console.warn('SPSS validation error:', err);
+      return null;
+    }
   }, [activeResult]);
 
   // Tahap 3: Statistical Recommendations Engine
   const recommendationOutput = useMemo(() => {
-    return generateStatisticalRecommendations(activeResult, {
-      rawY,
-      rawX,
-      isTimeSeries,
-      alpha
-    });
+    try {
+      return generateStatisticalRecommendations(activeResult, {
+        rawY,
+        rawX,
+        isTimeSeries,
+        alpha
+      });
+    } catch (err) {
+      console.warn('Recommendation generation error:', err);
+      return null;
+    }
   }, [activeResult, rawY, rawX, isTimeSeries, alpha]);
 
   // Tahap 3: Model Comparison Report Matrix (AIC, BIC, RMSE, MAE)
@@ -2332,8 +2385,8 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
                   <td style={{ ...spssTdStyle, textAlign: 'right', fontWeight: 600 }}>{formatSig(row.sig)}</td>
                   <td style={{ ...spssTdStyle, textAlign: 'right' }}>{formatDec(row.ciLower)}</td>
                   <td style={{ ...spssTdStyle, textAlign: 'right' }}>{formatDec(row.ciUpper)}</td>
-                  <td style={{ ...spssTdStyle, textAlign: 'right' }}>{row.variable === '(Constant)' ? '' : formatDec(row.collinearity.tolerance)}</td>
-                  <td style={{ ...spssTdStyle, textAlign: 'right' }}>{row.variable === '(Constant)' ? '' : formatDec(row.collinearity.vif)}</td>
+                  <td style={{ ...spssTdStyle, textAlign: 'right' }}>{row.variable === '(Constant)' || !row.collinearity ? '' : formatDec(row.collinearity.tolerance)}</td>
+                  <td style={{ ...spssTdStyle, textAlign: 'right' }}>{row.variable === '(Constant)' || !row.collinearity ? '' : formatDec(row.collinearity.vif)}</td>
                 </tr>
               ))}
             </tbody>

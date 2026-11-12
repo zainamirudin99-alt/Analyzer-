@@ -545,7 +545,7 @@ export async function generateResultsDocxDocument(
   });
 
   const buffer = await Packer.toBuffer(doc);
-  return new Blob([buffer], {
+  return new Blob([new Uint8Array(buffer)], {
     type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   });
 }
@@ -807,7 +807,7 @@ export function downloadBlob(blob: Blob, filename: string): void {
 
 export function exportResultsToExcelFile(options: ResultsExportOptions, filename?: string): void {
   const uint8 = generateResultsExcelWorkbook(options);
-  const blob = new Blob([uint8], {
+  const blob = new Blob([new Uint8Array(uint8)], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
   });
   const defaultName = `Hasil_Analisis_${cleanFilenamePart(options.presetName)}_${new Date().toISOString().slice(0, 10)}.xlsx`;

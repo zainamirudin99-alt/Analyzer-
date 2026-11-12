@@ -793,7 +793,12 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
   const cleanRows = rows.filter(r => {
     return requiredCols.every(c => {
       const val = r[c];
-      return val !== null && val !== undefined && val !== '' && (typeof val !== 'number' || !isNaN(val));
+      if (val === null || val === undefined || val === '') return false;
+      if (isTimeSeries && timeCol && c === timeCol) {
+        return true;
+      }
+      const num = Number(val);
+      return !isNaN(num) && isFinite(num);
     });
   });
 

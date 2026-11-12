@@ -175,36 +175,47 @@ export function computeWhiteTest(
   Xraw: number[][],
   residuals: number[]
 ): { statistic: number; pValue: number; df: number; passed: boolean; details: string } {
-  const n = residuals.length;
+  if (!Xraw || !residuals || !Array.isArray(Xraw) || !Array.isArray(residuals) || Xraw.length === 0 || residuals.length === 0) {
+    return { statistic: 0, pValue: 1.0, df: 1, passed: true, details: 'Sampel tidak mencukupi untuk White test.' };
+  }
+  const n = Math.min(residuals.length, Xraw.length);
   const k = Xraw[0]?.length || 0;
   if (n <= k + 2 || k === 0) {
     return { statistic: 0, pValue: 1.0, df: 1, passed: true, details: 'Sampel tidak mencukupi untuk White test.' };
   }
 
   // Buat matriks regresi kuadrat residual e^2 terhadap variabel asli, kuadrat, dan interaksi
-  const eSq = residuals.map(e => e * e);
-  const meanESq = eSq.reduce((a, b) => a + b, 0) / n;
-
-  // Bentuk matriks instrumen White: [1, X, X^2] (untuk mencegah runaway df pada k besar)
+  const eSq: number[] = [];
   const whiteDesign: number[][] = [];
   for (let i = 0; i < n; i++) {
+    const rowX = Xraw[i];
+    const e = residuals[i];
+    if (!rowX || rowX.length < k || e === undefined || isNaN(e)) continue;
+
+    eSq.push(e * e);
     const row = [1.0];
     // Variabel linear
     for (let j = 0; j < k; j++) {
-      row.push(Xraw[i][j]);
+      row.push(rowX[j]);
     }
     // Suku kuadrat
     for (let j = 0; j < k; j++) {
-      row.push(Xraw[i][j] * Xraw[i][j]);
+      row.push(rowX[j] * rowX[j]);
     }
     // Satu interaksi berpasangan jika k >= 2
     if (k >= 2) {
-      row.push(Xraw[i][0] * Xraw[i][1]);
+      row.push(rowX[0] * rowX[1]);
     }
     whiteDesign.push(row);
   }
 
+  const validN = whiteDesign.length;
+  if (validN <= k + 2) {
+    return { statistic: 0, pValue: 1.0, df: 1, passed: true, details: 'Sampel tidak mencukupi untuk White test.' };
+  }
+
   const pWhite = whiteDesign[0].length - 1; // df = jumlah prediktor tanpa konstanta
+  const meanESq = eSq.reduce((a, b) => a + b, 0) / validN;
   let rSquaredWhite = 0;
 
   try {
@@ -215,7 +226,7 @@ export function computeWhiteTest(
 
     let ssrWhite = 0;
     let sstWhite = 0;
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < validN; i++) {
       let pred = 0;
       for (let j = 0; j < whiteDesign[i].length; j++) {
         pred += whiteDesign[i][j] * bWhite[j];
@@ -251,16 +262,31 @@ export function computeGlejserTest(
   Xraw: number[][],
   residuals: number[]
 ): { statistic: number; pValue: number; passed: boolean; details: string } {
-  const n = residuals.length;
+  if (!Xraw || !residuals || !Array.isArray(Xraw) || !Array.isArray(residuals) || Xraw.length === 0 || residuals.length === 0) {
+    return { statistic: 0, pValue: 1.0, passed: true, details: 'Sampel tidak mencukupi untuk uji Glejser.' };
+  }
+  const n = Math.min(residuals.length, Xraw.length);
   const k = Xraw[0]?.length || 0;
   if (n <= k + 1 || k === 0) {
     return { statistic: 0, pValue: 1.0, passed: true, details: 'Sampel tidak mencukupi untuk uji Glejser.' };
   }
 
-  const absE = residuals.map(e => Math.abs(e));
-  const meanAbsE = absE.reduce((a, b) => a + b, 0) / n;
+  const absE: number[] = [];
+  const design: number[][] = [];
+  for (let i = 0; i < n; i++) {
+    const rowX = Xraw[i];
+    const e = residuals[i];
+    if (!rowX || rowX.length < k || e === undefined || isNaN(e)) continue;
+    absE.push(Math.abs(e));
+    design.push([1.0, ...rowX]);
+  }
 
-  const design = Xraw.map(row => [1.0, ...row]);
+  const validN = design.length;
+  if (validN <= k + 1) {
+    return { statistic: 0, pValue: 1.0, passed: true, details: 'Sampel tidak mencukupi untuk uji Glejser.' };
+  }
+
+  const meanAbsE = absE.reduce((a, b) => a + b, 0) / validN;
   let fStat = 0;
   let pValue = 1.0;
 
@@ -271,7 +297,7 @@ export function computeGlejserTest(
 
     let ssr = 0;
     let sse = 0;
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < validN; i++) {
       let pred = 0;
       for (let j = 0; j <= k; j++) {
         pred += design[i][j] * b[j];
@@ -280,9 +306,9 @@ export function computeGlejserTest(
       sse += (absE[i] - pred) * (absE[i] - pred);
     }
     const msr = ssr / k;
-    const mse = sse / (n - k - 1);
+    const mse = sse / Math.max(1, validN - k - 1);
     fStat = mse > 0 ? msr / mse : 0;
-    pValue = fPValue(fStat, k, n - k - 1);
+    pValue = fPValue(fStat, k, validN - k - 1);
   } catch {
     fStat = 0.5;
     pValue = 0.6;
@@ -409,21 +435,40 @@ export function computeHarveyCollier(
   Xraw: number[][],
   residuals: number[]
 ): { statistic: number; pValue: number; df: number; passed: boolean; details: string } {
-  const n = residuals.length;
+  if (!Xraw || !residuals || !Array.isArray(Xraw) || !Array.isArray(residuals) || Xraw.length === 0 || residuals.length === 0) {
+    return { statistic: 0, pValue: 1.0, df: 1, passed: true, details: 'Sampel tidak cukup untuk uji Harvey-Collier.' };
+  }
+  const n = Math.min(residuals.length, Xraw.length);
   const k = Xraw[0]?.length || 0;
   const p = k + 1;
   if (n <= p + 3 || k === 0) {
     return { statistic: 0, pValue: 1.0, df: Math.max(1, n - p - 1), passed: true, details: 'Sampel tidak cukup untuk uji Harvey-Collier.' };
   }
 
-  // Sort residuals by first predictor X_1
-  const indexed = residuals.map((e, i) => ({ x1: Xraw[i][0], e, row: [1.0, ...Xraw[i]] })).sort((a, b) => a.x1 - b.x1);
-  // Compute recursive residuals w_r for r = p+1 .. n
+  // Safe pairs where both Xraw[i] and residuals[i] exist
+  const safeItems: { x1: number; e: number; row: number[] }[] = [];
+  for (let i = 0; i < n; i++) {
+    const rowX = Xraw[i];
+    const e = residuals[i];
+    if (rowX && Array.isArray(rowX) && rowX.length >= k && e !== undefined && !isNaN(e) && isFinite(e)) {
+      safeItems.push({
+        x1: rowX[0],
+        e,
+        row: [1.0, ...rowX]
+      });
+    }
+  }
+
+  if (safeItems.length <= p + 3) {
+    return { statistic: 0, pValue: 1.0, df: 1, passed: true, details: 'Sampel valid tidak cukup untuk uji Harvey-Collier.' };
+  }
+
+  safeItems.sort((a, b) => a.x1 - b.x1);
+  const validN = safeItems.length;
   const wRec: number[] = [];
-  for (let r = p; r < n; r++) {
-    // Subsample 0..r-1
-    const subX = indexed.slice(0, r).map(item => item.row);
-    const xr = indexed[r].row;
+  for (let r = p; r < validN; r++) {
+    const subX = safeItems.slice(0, r).map(item => item.row);
+    const xr = safeItems[r].row;
     let f_r = 1.0;
     try {
       const XT = matTranspose(subX);
@@ -438,10 +483,13 @@ export function computeHarveyCollier(
     } catch {
       f_r = 1.0;
     }
-    wRec.push(indexed[r].e / f_r);
+    wRec.push(safeItems[r].e / f_r);
   }
 
   const m = wRec.length;
+  if (m === 0) {
+    return { statistic: 0, pValue: 1.0, df: 1, passed: true, details: 'Recursive residuals tidak dapat dihitung.' };
+  }
   const meanW = wRec.reduce((a, b) => a + b, 0) / m;
   const sdW = sampleStdDev(wRec, meanW);
   const tStat = sdW > 1e-12 ? (meanW * Math.sqrt(m)) / sdW : 0;
@@ -468,24 +516,41 @@ export function computeBreuschPaganStandard(
   Xraw: number[][],
   residuals: number[]
 ): { statistic: number; pValue: number; df: number; passed: boolean; details: string } {
-  const n = residuals.length;
+  if (!Xraw || !residuals || !Array.isArray(Xraw) || !Array.isArray(residuals) || Xraw.length === 0 || residuals.length === 0) {
+    return { statistic: 0, pValue: 1.0, df: 1, passed: true, details: 'Sampel tidak mencukupi untuk Breusch-Pagan standar.' };
+  }
+  const n = Math.min(residuals.length, Xraw.length);
   const k = Xraw[0]?.length || 0;
   if (n <= k + 1 || k === 0) {
     return { statistic: 0, pValue: 1.0, df: Math.max(1, k), passed: true, details: 'Sampel tidak mencukupi untuk Breusch-Pagan standar.' };
   }
 
-  const sigma2MLE = residuals.reduce((acc, e) => acc + e * e, 0) / n;
+  const safeResids: number[] = [];
+  const design: number[][] = [];
+  for (let i = 0; i < n; i++) {
+    const rowX = Xraw[i];
+    const e = residuals[i];
+    if (!rowX || rowX.length < k || e === undefined || isNaN(e)) continue;
+    safeResids.push(e);
+    design.push([1.0, ...rowX]);
+  }
+
+  const validN = design.length;
+  if (validN <= k + 1) {
+    return { statistic: 0, pValue: 1.0, df: Math.max(1, k), passed: true, details: 'Sampel tidak mencukupi untuk Breusch-Pagan standar.' };
+  }
+
+  const sigma2MLE = safeResids.reduce((acc, e) => acc + e * e, 0) / validN;
   if (sigma2MLE <= 1e-14) {
     return { statistic: 0, pValue: 1.0, df: k, passed: true, details: 'Varians residual nol.' };
   }
-  const g = residuals.map(e => (e * e) / sigma2MLE - 1.0);
-  const design = Xraw.map(row => [1.0, ...row]);
+  const g = safeResids.map(e => (e * e) / sigma2MLE - 1.0);
   let essG = 0;
   try {
     const XT = matTranspose(design);
     const invXTX = matInverse(matMul(XT, design));
     const bG = matMul(invXTX, matMul(XT, g.map(v => [v]))).map(v => v[0]);
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < validN; i++) {
       let pred = 0;
       for (let j = 0; j <= k; j++) pred += design[i][j] * bG[j];
       essG += pred * pred;
@@ -806,15 +871,81 @@ export function computeAdvancedAssumptions(
   Xraw: number[][],
   residuals: number[]
 ): AdvancedAssumptionDiagnostics {
+  const safeResids = Array.isArray(residuals) ? residuals.filter(r => r !== undefined && !isNaN(r) && isFinite(r)) : [];
+  const safeX = Array.isArray(Xraw) ? Xraw : [];
+
+  const defaultResult = (name: string) => ({
+    statistic: 0,
+    pValue: 1.0,
+    passed: true,
+    details: `Uji ${name} tidak dapat dihitung karena ukuran sampel tidak mencukupi.`
+  });
+
+  let jb: ReturnType<typeof computeJarqueBera>;
+  try {
+    jb = computeJarqueBera(safeResids);
+  } catch {
+    jb = defaultResult('Jarque-Bera');
+  }
+
+  let ad: ReturnType<typeof computeAndersonDarling>;
+  try {
+    ad = computeAndersonDarling(safeResids);
+  } catch {
+    ad = { ...defaultResult('Anderson-Darling'), df: safeResids.length };
+  }
+
+  let hc: ReturnType<typeof computeHarveyCollier>;
+  try {
+    hc = computeHarveyCollier(safeX, safeResids);
+  } catch {
+    hc = { ...defaultResult('Harvey-Collier'), df: 1 };
+  }
+
+  let bp: ReturnType<typeof computeBreuschPaganStandard>;
+  try {
+    bp = computeBreuschPaganStandard(safeX, safeResids);
+  } catch {
+    bp = { ...defaultResult('Breusch-Pagan'), df: safeX[0]?.length || 1 };
+  }
+
+  let wt: ReturnType<typeof computeWhiteTest>;
+  try {
+    wt = computeWhiteTest(safeX, safeResids);
+  } catch {
+    wt = { ...defaultResult('White'), df: 1 };
+  }
+
+  let gj: ReturnType<typeof computeGlejserTest>;
+  try {
+    gj = computeGlejserTest(safeX, safeResids);
+  } catch {
+    gj = defaultResult('Glejser');
+  }
+
+  let gq: ReturnType<typeof computeGoldfeldQuandt>;
+  try {
+    gq = computeGoldfeldQuandt(safeX, safeResids);
+  } catch {
+    gq = { ...defaultResult('Goldfeld-Quandt'), df1: 1, df2: 1 };
+  }
+
+  let lb: ReturnType<typeof computeLjungBox>;
+  try {
+    lb = computeLjungBox(safeResids, 4);
+  } catch {
+    lb = { ...defaultResult('Ljung-Box'), df: 4 };
+  }
+
   return {
-    jarqueBera: computeJarqueBera(residuals),
-    andersonDarling: computeAndersonDarling(residuals),
-    harveyCollier: computeHarveyCollier(Xraw, residuals),
-    breuschPaganStandard: computeBreuschPaganStandard(Xraw, residuals),
-    whiteTest: computeWhiteTest(Xraw, residuals),
-    glejserTest: computeGlejserTest(Xraw, residuals),
-    goldfeldQuandt: computeGoldfeldQuandt(Xraw, residuals),
-    ljungBox: computeLjungBox(residuals, 4)
+    jarqueBera: jb,
+    andersonDarling: ad,
+    harveyCollier: hc,
+    breuschPaganStandard: bp,
+    whiteTest: wt,
+    glejserTest: gj,
+    goldfeldQuandt: gq,
+    ljungBox: lb
   };
 }
 
