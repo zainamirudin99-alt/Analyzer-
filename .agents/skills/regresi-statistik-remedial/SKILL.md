@@ -87,3 +87,13 @@ Semua angka diisi dari hasil komputasi. Tidak ada angka diketik bebas.
 - R2 rendah: "Model menjelaskan {R2_persen} persen variasi. Pada n = {n}, efek terkecil yang dapat dideteksi adalah f2 = {mdes}. Hasil ini tidak menunjukkan hubungan linear yang kuat, dan bukan bukti ketiadaan hubungan nonlinear."
 - Perbaikan: "Opsi {nama} dicoba pada {tanggal}. Normality Pass Rate {PR} persen (CI 95 persen {lo} sampai {hi}) dibanding {PR_awal} persen sebelum perbaikan. Semua opsi yang dicoba tercantum pada Tabel {no}."
 - Status: "Laporan ini berstatus {Konfirmatori atau Eksploratori}. Jumlah spesifikasi yang dicoba: {K}."
+
+## 8. Ekspansi Remedial & Interpretasi Akademik 10 Elemen (Points 06 & 15)
+- **Keluarga Estimator Kovarians Robust (HC0–HC4)**:
+  - `HC0` (White, 1980), `HC1` (koreksi derajat bebas $n/(n-k-1)$), `HC2` (koreksi leverage $1/(1-h_i)$), `HC3` (jackknife $1/(1-h_i)^2$ — default), dan `HC4` (Cribari-Neto $1/(1-h_i)^{\delta_i}$ dengan $\delta_i = \min(4, n h_i / (k+1))$).
+- **Regresi Robust IRLS (`fitRobustRLM`)**:
+  - Mendukung bobot **Huber M-estimator** ($c = 1.345$) dan **Tukey Bisquare** ($c = 4.685$) dengan skala dispersi tahan-pencilan $\text{MAD} / 0.6745$.
+- **Koreksi Autokorelasi AR(1)**:
+  - Membedakan secara eksplisit **Prais-Winsten FGLS** (`applyPraisWinstenAR1` yang mempertahankan observasi pertama $t=1$ dengan $\sqrt{1-\rho^2}$) dan **Cochrane-Orcutt Strict** (`applyCochraneOrcuttStrictAR1` yang menggunakan $n-1$ observasi $t=2\dots n$).
+- **Struktur Interpretasi Akademik 10 Elemen (`generateTenElementAcademicInterpretation`)**:
+  - Setiap hasil uji utama wajib memuat: (1) Tujuan pengujian, (2) Hipotesis $H_0$ & $H_1$, (3) Nilai statistik uji, (4) Nilai signifikansi $p$-value, (5) Kriteria keputusan, (6) Keputusan terhadap $H_0$, (7) Arah hubungan, (8) Kekuatan hubungan / Effect size, (9) Makna statistik, dan (10) Implikasi praktis penelitian.

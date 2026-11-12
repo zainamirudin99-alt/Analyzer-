@@ -148,3 +148,14 @@ Dokumen ini memuat daftar tugas operasional dari Tahap 1 hingga Tahap 3 beserta 
 - [x] **T4.16**: Branding **ANALYZER(?)** dengan `new logo.png` untuk seluruh logo, favicon, ikon drawer, dan maskot.
 - [x] **T4.17**: Perapian tabel output regresi data panel gaya Stata (lebar kolom dinamis, pemisah sejajar).
 - [x] **T4.18**: Model `gemini-3.8-flash` & `gemini-argon` + perisai error HTTP (404/403/405/429/5xx, timeout, retry, fallback endpoint).
+
+
+---
+
+## Tahap 5: Implementasi 21 Poin Master Smartprompt — Advanced Statistical Analysis Engine
+- [ ] **Fase 1**: Perbaikan Akurasi Mesin Inti OLS, Distribusi Eksak ($t, F, \chi^2$, Shapiro-Wilk Royston, Lilliefors, Belsley SVD, Ramsey RESET, Stepwise/Forward/Backward, HC0–HC4, IRLS Robust, Bootstrap CI, Deskriptif Kategorik & Modus/Range) & Perbaikan Kontras Dark Mode (Poin 01–06, 16, 21).
+- [ ] **Fase 2**: Modul Moderated Regression Analysis (MRA) 3-Model Hierarkis & Advanced Moderation (Simple Slope, Johnson-Neyman, Klasifikasi Moderator) (Poin 07 & 08).
+- [ ] **Fase 3**: Modul Contingency Analysis (Crosstabulation), Chi-Square & Exact Tests, Effect Size/Risk, & Korelasi Lengkap (Kendall's Tau-b, Partial Correlation, Point-Biserial) (Poin 09, 10, 11).
+- [ ] **Fase 4**: Modul Advanced Regression Models (Binary/Multinomial/Ordinal Logistic, Poisson, Negative Binomial, Quantile, GLM) & $k$-Fold Cross-Validation (Poin 12 & 13).
+- [ ] **Fase 5**: Visualisasi Statistik Lengkap, Mesin Interpretasi Akademik 10-Elemen, Dokumentasi Skill Ilmiah, & Ekspor Laporan Word (`.docx`) / Excel (`.xlsx`) (Poin 14, 15, 17, 18).
+- [ ] **Fase 6**: Pengujian Unit/Integrasi Komprehensif & Benchmark IBM SPSS / NIST StRD (Poin 19 & 20).

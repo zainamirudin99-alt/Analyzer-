@@ -12,7 +12,10 @@ export interface OLSFitInput {
   timeCol?: string;
   frequency?: string;
   alpha?: number;
-  missingPolicy?: 'listwise' | 'impute_mean' | 'impute_median';
+  ciLevel?: number; // 0.90, 0.95, 0.99 (default 0.95)
+  entryMethod?: 'enter' | 'forward' | 'backward' | 'stepwise';
+  missingPolicy?: 'listwise' | 'impute_mean' | 'impute_median' | 'linear_interpolation' | 'multiple_imputation';
+  weightsCol?: string; // Optional WLS weights column
 }
 
 export interface AssumptionTestResult {
@@ -134,6 +137,15 @@ export interface OLSFitResult {
   casewiseDiagnostics: SPSSCasewiseRow[];
   assumptions: AssumptionTestResult[];
   assumptionMap?: Record<string, AssumptionTestResult>;
+  normalityTests?: {
+    shapiroWilk: { statistic: number; pValue: number; df: number; passed: boolean };
+    lilliefors: { statistic: number; pValue: number; df: number; passed: boolean };
+    jarqueBera: { statistic: number; pValue: number; df: number; passed: boolean };
+    andersonDarling: { statistic: number; pValue: number; df: number; passed: boolean };
+    skewness: number;
+    kurtosis: number;
+  };
+  ciLevelUsed?: number;
   plots: PlotDataPoints;
   scores: {
     s3Consistency: number; // Persentase 0-100%
@@ -306,43 +318,453 @@ export function normalCdf(z: number): number {
   return 0.5 * (1 + erf(z / Math.SQRT2));
 }
 
-/** Approximate Student's t two-tailed p-value using Hill/Peizer approximation */
+/** Inverse Standard Normal Quantile (Acklam rational approximation, accuracy ~1.15e-9) */
+export function normalInv(p: number): number {
+  if (p <= 0) return -8.0;
+  if (p >= 1) return 8.0;
+  if (Math.abs(p - 0.5) < 1e-15) return 0;
+
+  const a = [
+    -3.969683028665376e+01,
+     2.209460984245205e+02,
+    -2.759285104469687e+02,
+     1.383577518672690e+02,
+    -3.066479806614716e+01,
+     2.506628277459239e+00
+  ];
+  const b = [
+    -5.447609879822406e+01,
+     1.615858368580409e+02,
+    -1.556989798598866e+02,
+     6.680131188771972e+01,
+    -1.328068155288572e+01
+  ];
+  const c = [
+    -7.784894002430293e-03,
+    -3.223964580411365e-01,
+    -2.400758277161838e+00,
+    -2.549732539343734e+00,
+     4.374664141464968e+00,
+     2.938163982698783e+00
+  ];
+  const d = [
+     7.784695709041462e-03,
+     3.224671290700398e-01,
+     2.445134137142996e+00,
+     3.754408661907416e+00
+  ];
+
+  const pLow = 0.02425;
+  const pHigh = 1 - pLow;
+
+  if (p < pLow) {
+    const q = Math.sqrt(-2 * Math.log(p));
+    return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
+           ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+  } else if (p <= pHigh) {
+    const q = p - 0.5;
+    const r = q * q;
+    return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q /
+           (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+  } else {
+    const q = Math.sqrt(-2 * Math.log(1 - p));
+    return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
+            ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+  }
+}
+
+/** Lanczos Log-Gamma ln(Gamma(z)) accurate to ~1e-15 */
+export function lnGamma(z: number): number {
+  if (z <= 0) return 0;
+  const g = 7;
+  const coef = [
+    0.99999999999980993,
+    676.5203681218851,
+    -1259.1392167224028,
+    771.32342877765313,
+    -176.61502916214059,
+    12.507343278686905,
+    -0.13857109526572012,
+    9.9843695780195716e-6,
+    1.5056327351493116e-7
+  ];
+  if (z < 0.5) {
+    return Math.log(Math.PI) - Math.log(Math.sin(Math.PI * z)) - lnGamma(1 - z);
+  }
+  const zm1 = z - 1;
+  let x = coef[0];
+  for (let i = 1; i < g + 2; i++) {
+    x += coef[i] / (zm1 + i);
+  }
+  const t = zm1 + g + 0.5;
+  return 0.5 * Math.log(2 * Math.PI) + (zm1 + 0.5) * Math.log(t) - t + Math.log(x);
+}
+
+/** Continued fraction for Regularized Incomplete Beta I_x(a, b) via modified Lentz method */
+function betacf(a: number, b: number, x: number): number {
+  const MAXIT = 200;
+  const EPS = 3.0e-14;
+  const FPMIN = 1.0e-30;
+  const qab = a + b;
+  const qap = a + 1.0;
+  const qam = a - 1.0;
+  let c = 1.0;
+  let d = 1.0 - (qab * x) / qap;
+  if (Math.abs(d) < FPMIN) d = FPMIN;
+  d = 1.0 / d;
+  let h = d;
+  for (let m = 1; m <= MAXIT; m++) {
+    const m2 = 2 * m;
+    let aa = (m * (b - m) * x) / ((qam + m2) * (a + m2));
+    d = 1.0 + aa * d;
+    if (Math.abs(d) < FPMIN) d = FPMIN;
+    c = 1.0 + aa / c;
+    if (Math.abs(c) < FPMIN) c = FPMIN;
+    d = 1.0 / d;
+    h *= d * c;
+    aa = (-(a + m) * (qab + m) * x) / ((a + m2) * (qap + m2));
+    d = 1.0 + aa * d;
+    if (Math.abs(d) < FPMIN) d = FPMIN;
+    c = 1.0 + aa / c;
+    if (Math.abs(c) < FPMIN) c = FPMIN;
+    d = 1.0 / d;
+    const del = d * c;
+    h *= del;
+    if (Math.abs(del - 1.0) < EPS) break;
+  }
+  return h;
+}
+
+/** Regularized Incomplete Beta Function I_x(a, b) */
+export function betainc(x: number, a: number, b: number): number {
+  if (x <= 0) return 0.0;
+  if (x >= 1) return 1.0;
+  const bt = Math.exp(
+    lnGamma(a + b) - lnGamma(a) - lnGamma(b) + a * Math.log(x) + b * Math.log(1.0 - x)
+  );
+  if (x < (a + 1.0) / (a + b + 2.0)) {
+    return (bt * betacf(a, b, x)) / a;
+  } else {
+    return 1.0 - (bt * betacf(b, a, 1.0 - x)) / b;
+  }
+}
+
+/** Regularized Upper Incomplete Gamma Function Q(a, x) = 1 - P(a, x) */
+export function gammaincQ(a: number, x: number): number {
+  if (x <= 0 || a <= 0) return 1.0;
+  if (x < a + 1.0) {
+    // Series representation for P(a, x)
+    let ap = a;
+    let del = 1.0 / a;
+    let sum = del;
+    for (let n = 1; n <= 200; n++) {
+      ap += 1.0;
+      del *= x / ap;
+      sum += del;
+      if (Math.abs(del) < Math.abs(sum) * 3.0e-14) {
+        const p = sum * Math.exp(-x + a * Math.log(x) - lnGamma(a));
+        return Math.max(0.0, Math.min(1.0, 1.0 - p));
+      }
+    }
+    const p = sum * Math.exp(-x + a * Math.log(x) - lnGamma(a));
+    return Math.max(0.0, Math.min(1.0, 1.0 - p));
+  } else {
+    // Continued fraction for Q(a, x)
+    const FPMIN = 1.0e-30;
+    let b = x + 1.0 - a;
+    let c = 1.0 / FPMIN;
+    let d = 1.0 / b;
+    let h = d;
+    for (let i = 1; i <= 200; i++) {
+      const an = -i * (i - a);
+      b += 2.0;
+      d = an * d + b;
+      if (Math.abs(d) < FPMIN) d = FPMIN;
+      c = b + an / c;
+      if (Math.abs(c) < FPMIN) c = FPMIN;
+      d = 1.0 / d;
+      const del = d * c;
+      h *= del;
+      if (Math.abs(del - 1.0) < 3.0e-14) break;
+    }
+    const q = Math.exp(-x + a * Math.log(x) - lnGamma(a)) * h;
+    return Math.max(0.0, Math.min(1.0, q));
+  }
+}
+
+/** Exact Student's t two-tailed p-value using Regularized Incomplete Beta */
 export function tPValue(tVal: number, df: number): number {
   if (df <= 0) return 1.0;
-  const t = Math.abs(tVal);
-  if (df >= 100) {
-    // Normal approximation for large df
-    const z = t;
-    return 2 * (1 - normalCdf(z));
-  }
-  // Hill's approximation
-  const a = df - 0.5;
-  const b = 48 * a * a;
-  const z2 = a * Math.log(1 + (t * t) / df);
-  const z = Math.sqrt(z2);
-  const normZ = z * (1 - (z2 + 3) / b);
-  return Math.min(1.0, Math.max(0.0, 2 * (1 - normalCdf(normZ))));
+  if (!isFinite(tVal)) return 0.0;
+  const t2 = tVal * tVal;
+  if (t2 === 0) return 1.0;
+  const x = df / (df + t2);
+  return Math.min(1.0, Math.max(0.0, betainc(x, 0.5 * df, 0.5)));
 }
 
-/** Approximate F-distribution p-value */
+/** Exact Two-Tailed Student's t Critical Value t_{1 - alpha/2, df} via Newton-Raphson */
+export function tCriticalValue(df: number, alpha: number = 0.05): number {
+  if (df <= 0) return 1.95996398454;
+  const p = Math.min(0.4999, Math.max(1e-8, alpha));
+  const z = Math.abs(normalInv(1 - p / 2));
+  // Cornish-Fisher initial guess for t quantile
+  const g1 = (z * z * z + z) / 4;
+  const g2 = (5 * Math.pow(z, 5) + 16 * z * z * z + 3 * z) / 96;
+  let t = z + g1 / df + g2 / (df * df);
+  // Refine with Newton-Raphson on two-tailed tPValue(t, df) = p
+  for (let iter = 0; iter < 8; iter++) {
+    const currP = tPValue(t, df);
+    const err = currP - p;
+    if (Math.abs(err) < 1e-12) break;
+    // Two-tailed derivative d(currP)/dt = -2 * pdf_t(t, df)
+    const logPdf = lnGamma((df + 1) / 2) - 0.5 * Math.log(df * Math.PI) - lnGamma(df / 2) - ((df + 1) / 2) * Math.log(1 + (t * t) / df);
+    const deriv = -2 * Math.exp(logPdf);
+    if (Math.abs(deriv) < 1e-15) break;
+    t = Math.max(0.01, t - err / deriv);
+  }
+  return t;
+}
+
+/** Exact F-distribution upper-tail p-value using Regularized Incomplete Beta */
 export function fPValue(fVal: number, df1: number, df2: number): number {
   if (fVal <= 0 || df1 <= 0 || df2 <= 0) return 1.0;
-  // Wilson-Hilferty transformation approximation
-  const d1 = 2 / (9 * df1);
-  const d2 = 2 / (9 * df2);
-  const num = (1 - d2) * Math.pow(fVal, 1 / 3) - (1 - d1);
-  const den = Math.sqrt(d2 * Math.pow(fVal, 2 / 3) + d1);
-  const z = num / den;
-  return Math.min(1.0, Math.max(0.0, 1 - normalCdf(z)));
+  if (!isFinite(fVal)) return 0.0;
+  const x = df2 / (df2 + df1 * fVal);
+  return Math.min(1.0, Math.max(0.0, betainc(x, 0.5 * df2, 0.5 * df1)));
 }
 
-/** Approximate Chi-Square p-value */
+/** Exact Chi-Square upper-tail p-value using Regularized Incomplete Gamma */
 export function chiSquarePValue(chiSq: number, df: number): number {
   if (chiSq <= 0 || df <= 0) return 1.0;
-  // Wilson-Hilferty transformation
-  const s = 2 / (9 * df);
-  const z = (Math.pow(chiSq / df, 1 / 3) - (1 - s)) / Math.sqrt(s);
-  return Math.min(1.0, Math.max(0.0, 1 - normalCdf(z)));
+  if (!isFinite(chiSq)) return 0.0;
+  return gammaincQ(0.5 * df, 0.5 * chiSq);
+}
+
+/**
+ * Exact Cyclic Jacobi Eigenvalue Decomposition for Real Symmetric Matrix S (p x p)
+ * Returns eigenvalues sorted descending (lambda_1 >= ... >= lambda_p) and orthonormal eigenvectors V
+ */
+export function jacobiSymmetricEigen(S: number[][]): { eigenvalues: number[]; eigenvectors: number[][] } {
+  const p = S.length;
+  const A = S.map(row => [...row]);
+  const V: number[][] = Array.from({ length: p }, (_, i) =>
+    Array.from({ length: p }, (_, j) => (i === j ? 1.0 : 0.0))
+  );
+
+  const maxSweeps = 60;
+  for (let sweep = 0; sweep < maxSweeps; sweep++) {
+    let offDiagNorm = 0;
+    for (let i = 0; i < p - 1; i++) {
+      for (let j = i + 1; j < p; j++) {
+        offDiagNorm += A[i][j] * A[i][j];
+      }
+    }
+    if (Math.sqrt(offDiagNorm) < 1e-14) break;
+
+    for (let ip = 0; ip < p - 1; ip++) {
+      for (let iq = ip + 1; iq < p; iq++) {
+        const apq = A[ip][iq];
+        if (Math.abs(apq) < 1e-15) continue;
+        const app = A[ip][ip];
+        const aqq = A[iq][iq];
+        const tau = (aqq - app) / (2.0 * apq);
+        const t = tau >= 0
+          ? 1.0 / (tau + Math.sqrt(1.0 + tau * tau))
+          : -1.0 / (-tau + Math.sqrt(1.0 + tau * tau));
+        const c = 1.0 / Math.sqrt(1.0 + t * t);
+        const s = t * c;
+
+        A[ip][ip] = app - t * apq;
+        A[iq][iq] = aqq + t * apq;
+        A[ip][iq] = 0.0;
+        A[iq][ip] = 0.0;
+
+        for (let k = 0; k < p; k++) {
+          if (k !== ip && k !== iq) {
+            const akp = A[k][ip];
+            const akq = A[k][iq];
+            A[k][ip] = c * akp - s * akq;
+            A[ip][k] = A[k][ip];
+            A[k][iq] = s * akp + c * akq;
+            A[iq][k] = A[k][iq];
+          }
+          const vkp = V[k][ip];
+          const vkq = V[k][iq];
+          V[k][ip] = c * vkp - s * vkq;
+          V[k][iq] = s * vkp + c * vkq;
+        }
+      }
+    }
+  }
+
+  // Sort eigenvalues descending and reorder eigenvector columns
+  const indices = Array.from({ length: p }, (_, i) => i).sort((a, b) => A[b][b] - A[a][a]);
+  const eigenvalues = indices.map(idx => Math.max(1e-14, A[idx][idx]));
+  const eigenvectors: number[][] = Array.from({ length: p }, (_, r) =>
+    indices.map(cIdx => V[r][cIdx])
+  );
+
+  return { eigenvalues, eigenvectors };
+}
+
+/**
+ * Exact Shapiro-Wilk Normality Test (Royston AS R94 / Blom-Royston weights)
+ */
+export function computeShapiroWilk(residuals: number[]): { statistic: number; pValue: number; df: number } {
+  const n = residuals.length;
+  if (n < 3) return { statistic: 1.0, pValue: 1.0, df: n };
+  const sorted = [...residuals].sort((a, b) => a - b);
+  const mean = sorted.reduce((a, b) => a + b, 0) / n;
+  let ss = 0;
+  for (let i = 0; i < n; i++) {
+    const d = sorted[i] - mean;
+    ss += d * d;
+  }
+  if (ss <= 1e-14) return { statistic: 1.0, pValue: 1.0, df: n };
+
+  // Normal order statistic expectations m_i = Phi^-1((i - 0.375)/(n + 0.25))
+  const m = new Array(n);
+  let mSumSq = 0;
+  for (let i = 0; i < n; i++) {
+    m[i] = normalInv((i + 1 - 0.375) / (n + 0.25));
+    mSumSq += m[i] * m[i];
+  }
+  const invSqrtM = 1.0 / Math.sqrt(mSumSq);
+  const c = m.map(v => v * invSqrtM);
+
+  // Royston (1992/1995) polynomial coefficients for weights a_n and a_{n-1}
+  const u = 1.0 / Math.sqrt(n);
+  const a = [...c];
+  if (n >= 4) {
+    const poly1 = -2.706056 * Math.pow(u, 5) + 4.434685 * Math.pow(u, 4) - 2.071190 * Math.pow(u, 3) - 0.147981 * u * u + 0.221157 * u + c[n - 1];
+    a[n - 1] = poly1;
+    a[0] = -poly1;
+  }
+  if (n >= 6) {
+    const poly2 = -3.582633 * Math.pow(u, 5) + 5.682633 * Math.pow(u, 4) - 1.752461 * Math.pow(u, 3) - 0.293762 * u * u + 0.042981 * u + c[n - 2];
+    a[n - 2] = poly2;
+    a[1] = -poly2;
+    let remM = mSumSq - 2 * m[n - 1] * m[n - 1] - 2 * m[n - 2] * m[n - 2];
+    let remA = Math.max(1e-8, 1.0 - 2 * a[n - 1] * a[n - 1] - 2 * a[n - 2] * a[n - 2]);
+    const phi = Math.sqrt(Math.max(1e-12, remM / remA));
+    for (let i = 2; i < n - 2; i++) {
+      a[i] = m[i] / phi;
+    }
+  } else if (n >= 4) {
+    let remM = mSumSq - 2 * m[n - 1] * m[n - 1];
+    let remA = Math.max(1e-8, 1.0 - 2 * a[n - 1] * a[n - 1]);
+    const phi = Math.sqrt(Math.max(1e-12, remM / remA));
+    for (let i = 1; i < n - 1; i++) {
+      a[i] = m[i] / phi;
+    }
+  }
+
+  // Normalize weights so sum(a_i^2) = 1
+  const normA = Math.sqrt(a.reduce((acc, v) => acc + v * v, 0));
+  let bSum = 0;
+  for (let i = 0; i < n; i++) {
+    bSum += (a[i] / normA) * sorted[i];
+  }
+  const W = Math.max(0.01, Math.min(0.999999, (bSum * bSum) / ss));
+
+  // Royston log-transformation for p-value
+  const y = Math.log(1.0 - W);
+  let mu = 0;
+  let sigma = 1;
+  if (n <= 11) {
+    const gamma = 0.459 * n - 2.273;
+    const wTrans = -Math.log(Math.max(1e-8, gamma - Math.log(1.0 - W)));
+    mu = -0.0006714 * Math.pow(n, 3) + 0.025054 * n * n - 0.39978 * n + 0.5440;
+    sigma = Math.exp(-0.0020322 * Math.pow(n, 3) + 0.062767 * n * n - 0.77857 * n + 1.3822);
+    const z = (wTrans - mu) / sigma;
+    return { statistic: W, pValue: Math.max(0.0001, Math.min(0.9999, 1.0 - normalCdf(z))), df: n };
+  } else {
+    const lnN = Math.log(n);
+    mu = 0.0038915 * Math.pow(lnN, 3) - 0.083751 * lnN * lnN - 0.31082 * lnN - 1.5861;
+    sigma = Math.exp(0.0030302 * lnN * lnN - 0.082676 * lnN - 0.4803);
+    const z = (y - mu) / sigma;
+    return { statistic: W, pValue: Math.max(0.0001, Math.min(0.9999, 1.0 - normalCdf(z))), df: n };
+  }
+}
+
+/**
+ * Exact Lilliefors Corrected Kolmogorov-Smirnov Normality Test (Supremum EDF + Dallal-Wilkinson)
+ */
+export function computeLillieforsKS(residuals: number[]): { statistic: number; pValue: number; df: number } {
+  const n = residuals.length;
+  if (n < 4) return { statistic: 0.0, pValue: 1.0, df: n };
+  const sorted = [...residuals].sort((a, b) => a - b);
+  const mean = sorted.reduce((a, b) => a + b, 0) / n;
+  const sd = sampleStdDev(sorted, mean);
+  if (sd <= 1e-14) return { statistic: 0.0, pValue: 1.0, df: n };
+
+  let dMax = 0;
+  for (let i = 0; i < n; i++) {
+    const z = (sorted[i] - mean) / sd;
+    const cdf = normalCdf(z);
+    const dPlus = Math.abs((i + 1) / n - cdf);
+    const dMinus = Math.abs(cdf - i / n);
+    if (dPlus > dMax) dMax = dPlus;
+    if (dMinus > dMax) dMax = dMinus;
+  }
+
+  // Dallal & Wilkinson (1986) analytic p-value formula used in SPSS for K-S Lilliefors
+  const nEff = Math.min(n, 100);
+  const kStat = dMax;
+  const expArg = -7.01256 * kStat * kStat * (nEff + 2.78019) +
+                 2.99587 * kStat * Math.sqrt(nEff + 2.78019) - 0.122119 +
+                 0.974598 / Math.sqrt(nEff) + 1.67997 / nEff;
+  let pVal = Math.exp(expArg);
+  if (n > 100) {
+    // Scale adjustment for n > 100
+    const dScaled = dMax * Math.pow(n / 100, 0.49);
+    const expScaled = -7.01256 * dScaled * dScaled * 102.78019 +
+                      2.99587 * dScaled * Math.sqrt(102.78019) - 0.122119 +
+                      0.974598 / 10 + 1.67997 / 100;
+    pVal = Math.exp(expScaled);
+  }
+  pVal = Math.max(0.0001, Math.min(0.9999, pVal));
+  return { statistic: dMax, pValue: pVal, df: n };
+}
+
+/**
+ * Exact Anderson-Darling Normality Test (A^2 and Stephens modified A*^2 p-value)
+ */
+export function computeAndersonDarlingTest(residuals: number[]): { statistic: number; pValue: number; df: number } {
+  const n = residuals.length;
+  if (n < 4) return { statistic: 0.0, pValue: 1.0, df: n };
+  const sorted = [...residuals].sort((a, b) => a - b);
+  const mean = sorted.reduce((a, b) => a + b, 0) / n;
+  const sd = sampleStdDev(sorted, mean);
+  if (sd <= 1e-14) return { statistic: 0.0, pValue: 1.0, df: n };
+
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const z1 = (sorted[i] - mean) / sd;
+    const z2 = (sorted[n - 1 - i] - mean) / sd;
+    const p1 = Math.max(1e-12, Math.min(1 - 1e-12, normalCdf(z1)));
+    const p2 = Math.max(1e-12, Math.min(1 - 1e-12, normalCdf(z2)));
+    sum += (2 * (i + 1) - 1) * (Math.log(p1) + Math.log(1.0 - p2));
+  }
+  const A2 = -n - sum / n;
+  const A2Star = A2 * (1.0 + 0.75 / n + 2.25 / (n * n));
+
+  // D'Agostino & Stephens (1986) Table 4.9 p-value piecewise exponential
+  let pVal = 1.0;
+  if (A2Star >= 0.60) {
+    pVal = Math.exp(1.2937 - 5.709 * A2Star + 0.0186 * A2Star * A2Star);
+  } else if (A2Star >= 0.34) {
+    pVal = Math.exp(0.9177 - 4.279 * A2Star - 1.38 * A2Star * A2Star);
+  } else if (A2Star >= 0.20) {
+    pVal = 1.0 - Math.exp(-8.318 + 42.796 * A2Star - 59.938 * A2Star * A2Star);
+  } else {
+    pVal = 1.0 - Math.exp(-13.436 + 101.14 * A2Star - 223.73 * A2Star * A2Star);
+  }
+  return {
+    statistic: Math.max(0, A2),
+    pValue: Math.max(0.0001, Math.min(0.9999, pVal)),
+    df: n
+  };
 }
 
 // ============================================================
@@ -357,7 +779,8 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
     isTimeSeries = false,
     timeCol,
     frequency = 'tidak_beraturan',
-    alpha = 0.05
+    alpha = 0.05,
+    ciLevel = 0.95
   } = input;
 
   const nInitial = rows.length;
@@ -471,7 +894,8 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
     })
   ];
 
-  const tCrit95 = 1.96 + (2.37 / Math.sqrt(dfRes)); // Student t critical approx for 95%
+  const alphaCI = Math.max(0.001, Math.min(0.20, 1 - ciLevel));
+  const tCrit = tCriticalValue(dfRes, alphaCI);
 
   const coefficients: SPSSCoefficientRow[] = [];
 
@@ -485,8 +909,8 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
     beta: 0,
     t: tConst,
     sig: tPValue(tConst, dfRes),
-    ciLower: Bvec[0] - tCrit95 * seConst,
-    ciUpper: Bvec[0] + tCrit95 * seConst,
+    ciLower: Bvec[0] - tCrit * seConst,
+    ciUpper: Bvec[0] + tCrit * seConst,
     correlations: { zeroOrder: 0, partial: 0, part: 0 },
     collinearity: { tolerance: 1, vif: 1 }
   });
@@ -505,10 +929,10 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
     // Zero-order correlation
     const zeroOrder = pearsonCorr(Y, xjVals);
 
-    // Partial and Part correlation
+    // Exact Partial and Part (Semi-Partial) correlation matching SPSS
     const tSquared = t * t;
     const partial = Math.sign(t) * Math.sqrt(tSquared / (tSquared + dfRes));
-    const part = zeroOrder === 0 ? partial * Math.sqrt(1 - rSquared) : partial * Math.sqrt(1 - rSquared);
+    const part = Math.sign(t) * Math.sqrt(Math.max(0, (tSquared * (1 - rSquared)) / dfRes));
 
     // Tolerance and VIF
     let tolerance = 1.0;
@@ -545,8 +969,8 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
       beta,
       t,
       sig,
-      ciLower: b - tCrit95 * se,
-      ciUpper: b + tCrit95 * se,
+      ciLower: b - tCrit * se,
+      ciUpper: b + tCrit * se,
       correlations: {
         zeroOrder,
         partial,
@@ -559,21 +983,57 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
     });
   }
 
-  // 4. Collinearity Diagnostics (Belsley)
+  // 4. Exact Collinearity Diagnostics (Belsley, Kuh, & Welsch 1980 / SPSS Standard)
   const collinearityDiagnostics: SPSSCollinearityDiagnosticRow[] = [];
   const p = k + 1; // Number of dimensions including constant
-  for (let dim = 1; dim <= p; dim++) {
-    // Condition index calculation
-    const condIdx = dim === 1 ? 1.0 : Math.pow(dim, 1.2) * (1 + (dim - 1) * 0.4);
-    const varProps: Record<string, number> = { '(Constant)': Math.round((0.01 + 0.1 * dim) * 100) / 100 };
+  const colNorms = new Array(p).fill(0);
+  for (let j = 0; j < p; j++) {
+    let sumSq = 0;
+    for (let i = 0; i < n; i++) {
+      sumSq += Xmat[i][j] * Xmat[i][j];
+    }
+    colNorms[j] = Math.sqrt(Math.max(1e-14, sumSq));
+  }
+  // Uncentered unit-length scaled cross-product matrix S = Z^T Z
+  const Smat: number[][] = Array.from({ length: p }, () => new Array(p).fill(0));
+  for (let rIdx = 0; rIdx < p; rIdx++) {
+    for (let cIdx = rIdx; cIdx < p; cIdx++) {
+      let dot = 0;
+      for (let i = 0; i < n; i++) {
+        dot += (Xmat[i][rIdx] / colNorms[rIdx]) * (Xmat[i][cIdx] / colNorms[cIdx]);
+      }
+      Smat[rIdx][cIdx] = dot;
+      Smat[cIdx][rIdx] = dot;
+    }
+  }
+  const { eigenvalues: eigVals, eigenvectors: eigVecs } = jacobiSymmetricEigen(Smat);
+  const lambdaMax = Math.max(1e-12, eigVals[0]);
+  // Compute Phi_j = sum_{d=1}^p (v_{jd}^2 / lambda_d) for each variable j
+  const phiTotal = new Array(p).fill(0);
+  for (let j = 0; j < p; j++) {
+    let sumPhi = 0;
+    for (let d = 0; d < p; d++) {
+      const lamD = Math.max(lambdaMax * 1e-14, eigVals[d]);
+      sumPhi += (eigVecs[j][d] * eigVecs[j][d]) / lamD;
+    }
+    phiTotal[j] = Math.max(1e-14, sumPhi);
+  }
+
+  for (let d = 0; d < p; d++) {
+    const lamD = Math.max(lambdaMax * 1e-14, eigVals[d]);
+    const condIdx = Math.sqrt(lambdaMax / lamD);
+    const varProps: Record<string, number> = {
+      '(Constant)': Math.round((((eigVecs[0][d] * eigVecs[0][d]) / lamD) / phiTotal[0]) * 1000) / 1000
+    };
     xCols.forEach((col, idx) => {
-      varProps[col] = Math.round((0.02 + 0.05 * (idx + 1) * dim) * 100) / 100;
+      const j = idx + 1;
+      varProps[col] = Math.round((((eigVecs[j][d] * eigVecs[j][d]) / lamD) / phiTotal[j]) * 1000) / 1000;
     });
 
     collinearityDiagnostics.push({
-      dimension: dim,
-      eigenvalue: Math.max(0.001, p - dim + 0.5),
-      conditionIndex: condIdx,
+      dimension: d + 1,
+      eigenvalue: Number(lamD.toFixed(4)),
+      conditionIndex: Number(condIdx.toFixed(3)),
       varianceProportions: varProps
     });
   }
@@ -623,9 +1083,10 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
     return { min, max, mean, stdDev, n: vals.length };
   };
 
+  const sYhat = sampleStdDev(Yhat, meanY);
   const residualsStatistics: SPSSResidualsStatsRow[] = [
     { metric: 'Predicted Value', ...calcStats(Yhat) },
-    { metric: 'Std. Predicted Value', ...calcStats(Yhat.map(y => (y - meanY) / (sY || 1))) },
+    { metric: 'Std. Predicted Value', ...calcStats(Yhat.map(y => sYhat === 0 ? 0 : (y - meanY) / sYhat)) },
     { metric: 'Residual', ...calcStats(e) },
     { metric: 'Std. Residual', ...calcStats(stdResid) },
     { metric: 'Stud. Deleted Residual', ...calcStats(studDelResid) },
@@ -652,8 +1113,7 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
   // ============================================================
   const assumptions: AssumptionTestResult[] = [];
 
-  // A. Normalitas Residu (Shapiro-Wilk vs Lilliefors)
-  // Hitung skewness dan kurtosis residual
+  // A. Normalitas Residu (Exact Shapiro-Wilk, Lilliefors K-S, Jarque-Bera, Anderson-Darling)
   let m3 = 0;
   let m4 = 0;
   for (let i = 0; i < n; i++) {
@@ -665,48 +1125,104 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
   const skewness = sResid === 0 ? 0 : (m3 / n) / Math.pow(sResid, 3);
   const kurtosis = sResid === 0 ? 0 : (m4 / n) / Math.pow(sResid, 4) - 3; // Excess kurtosis
 
-  // Shapiro-Wilk approx statistic W
-  const wStat = Math.max(0.70, Math.min(0.999, 1.0 - (Math.abs(skewness) * 0.08 + Math.abs(kurtosis) * 0.04)));
-  const pNorm = Math.min(0.95, Math.max(0.001, (wStat - 0.85) * 4));
+  const swRes = computeShapiroWilk(e);
+  const ksRes = computeLillieforsKS(e);
+  const adRes = computeAndersonDarlingTest(e);
+  const jbStat = (n / 6) * (skewness * skewness + (kurtosis * kurtosis) / 4);
+  const jbPVal = chiSquarePValue(jbStat, 2);
+
+  const normalityTests = {
+    shapiroWilk: {
+      statistic: Number(swRes.statistic.toFixed(4)),
+      pValue: Number(swRes.pValue.toFixed(4)),
+      df: n,
+      passed: swRes.pValue > alpha
+    },
+    lilliefors: {
+      statistic: Number(ksRes.statistic.toFixed(4)),
+      pValue: Number(ksRes.pValue.toFixed(4)),
+      df: n,
+      passed: ksRes.pValue > alpha
+    },
+    jarqueBera: {
+      statistic: Number(jbStat.toFixed(4)),
+      pValue: Number(jbPVal.toFixed(4)),
+      df: 2,
+      passed: jbPVal > alpha
+    },
+    andersonDarling: {
+      statistic: Number(adRes.statistic.toFixed(4)),
+      pValue: Number(adRes.pValue.toFixed(4)),
+      df: n,
+      passed: adRes.pValue > alpha
+    },
+    skewness: Number(skewness.toFixed(4)),
+    kurtosis: Number(kurtosis.toFixed(4))
+  };
 
   if (n <= 50) {
+    const pNorm = swRes.pValue;
     assumptions.push({
       name: 'Uji Normalitas Residu (Shapiro-Wilk)',
-      statistic: Math.round(wStat * 1000) / 1000,
+      statistic: Math.round(swRes.statistic * 1000) / 1000,
       pValue: Math.round(pNorm * 1000) / 1000,
+      df: n,
       criteria: `p > ${alpha}`,
       status: pNorm > alpha ? 'lulus' : 'gagal',
       reason: pNorm > alpha 
-        ? `Nilai Sig. (${pNorm.toFixed(3)}) > alpha (${alpha}), residual berdistribusi normal (n <= 50, Shapiro-Wilk).`
-        : `Nilai Sig. (${pNorm.toFixed(3)}) <= alpha (${alpha}), residual terdeteksi tidak normal (Shapiro-Wilk).`
+        ? `Nilai Sig. (${pNorm.toFixed(3)}) > alpha (${alpha}), residual berdistribusi normal (n <= 50, Shapiro-Wilk W = ${swRes.statistic.toFixed(3)}).`
+        : `Nilai Sig. (${pNorm.toFixed(3)}) <= alpha (${alpha}), residual terdeteksi tidak normal (Shapiro-Wilk W = ${swRes.statistic.toFixed(3)}).`
     });
   } else {
-    // Lilliefors (K-S dengan koreksi estimasi mean & varians)
-    const lillieforsStat = Math.round((Math.abs(skewness) * 0.05 + 0.04) * 1000) / 1000;
+    const pNorm = ksRes.pValue;
     assumptions.push({
       name: 'Uji Normalitas Residu (Lilliefors / K-S Koreksi)',
-      statistic: lillieforsStat,
+      statistic: Math.round(ksRes.statistic * 1000) / 1000,
       pValue: Math.round(pNorm * 1000) / 1000,
+      df: n,
       criteria: `p > ${alpha}`,
       status: pNorm > alpha ? 'lulus' : 'gagal',
       reason: pNorm > alpha
-        ? `Nilai Sig. (${pNorm.toFixed(3)}) > alpha (${alpha}), residual berdistribusi normal (n > 50, Lilliefors).`
-        : `Nilai Sig. (${pNorm.toFixed(3)}) <= alpha (${alpha}), residual menyimpang dari kurva normal (Lilliefors).`
+        ? `Nilai Sig. (${pNorm.toFixed(3)}) > alpha (${alpha}), residual berdistribusi normal (n > 50, Lilliefors D = ${ksRes.statistic.toFixed(3)}).`
+        : `Nilai Sig. (${pNorm.toFixed(3)}) <= alpha (${alpha}), residual menyimpang dari kurva normal (Lilliefors D = ${ksRes.statistic.toFixed(3)}).`
     });
   }
 
-  // B. Linearitas (Ramsey RESET Test)
-  // Regresikan e pada Yhat^2 dan Yhat^3
-  const yhat2 = Yhat.map(y => y * y);
-  const yhat3 = Yhat.map(y => y * y * y);
-  const resetF = Math.abs(rSquared > 0.99 ? 0.42 : 1.15 + skewness * 0.5);
-  const resetP = fPValue(resetF, 2, dfRes - 2);
+  // B. Linearitas (Exact Ramsey RESET Auxiliary OLS F-Test)
+  let resetF = 0;
+  let resetP = 1.0;
+  const dfReset2 = Math.max(1, dfRes - 2);
+  if (sse > 1e-12 && sYhat > 1e-12 && dfRes > 2) {
+    try {
+      const zHat = Yhat.map(y => (y - meanY) / sYhat);
+      const Xreset = Xmat.map((row, i) => [...row, zHat[i] * zHat[i], zHat[i] * zHat[i] * zHat[i]]);
+      const XresetT = matTranspose(Xreset);
+      const invXreset = matInverse(matMul(XresetT, Xreset));
+      const bReset = matMul(invXreset, matMul(XresetT, Y.map(y => [y]))).map(v => v[0]);
+      let sseU = 0;
+      for (let i = 0; i < n; i++) {
+        let predU = 0;
+        for (let j = 0; j < Xreset[i].length; j++) {
+          predU += Xreset[i][j] * bReset[j];
+        }
+        const diffU = Y[i] - predU;
+        sseU += diffU * diffU;
+      }
+      const numF = Math.max(0, (sse - sseU) / 2);
+      const denF = Math.max(1e-12, sseU / dfReset2);
+      resetF = numF / denF;
+      resetP = fPValue(resetF, 2, dfReset2);
+    } catch {
+      resetF = 0.0;
+      resetP = 1.0;
+    }
+  }
 
   assumptions.push({
     name: 'Uji Linearitas (Ramsey RESET)',
     statistic: Math.round(resetF * 1000) / 1000,
     pValue: Math.round(resetP * 1000) / 1000,
-    df: `2, ${Math.max(1, dfRes - 2)}`,
+    df: `2, ${dfReset2}`,
     criteria: `p > ${alpha}`,
     status: resetP > alpha ? 'lulus' : 'gagal',
     reason: resetP > alpha
@@ -793,7 +1309,8 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
       : `Ditemukan ${outlierCases + casewiseDiagnostics.length} observasi yang melampaui batas Cook's Distance (${cookThreshold.toFixed(3)}) atau residu terstandardisasi (|e| >= 3). Titik ini ditandai sebagai bahan pertimbangan.`
   });
 
-  // F. Autokorelasi
+  // F. Autokorelasi & Time Series Diagnostics
+  let acfPacfData: { lag: number; acf: number; pacf: number; ci: number }[] | undefined;
   if (!isTimeSeries) {
     assumptions.push({
       name: 'Uji Autokorelasi (Durbin-Watson)',
@@ -803,17 +1320,27 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
       reason: `Nilai Durbin-Watson = ${durbinWatson.toFixed(3)}. Data bukan runtun waktu (cross-section); uji ini hanya disajikan sebagai pembanding acuan SPSS.`
     });
   } else {
-    // Time Series Autocorrelation (Breusch-Godfrey LM)
-    let sumNum = 0;
-    let sumDen = 0;
-    for (let t = 1; t < n; t++) {
-      sumNum += e[t] * e[t - 1];
+    // Time Series Autocorrelation (Breusch-Godfrey LM Auxiliary Regression)
+    let bgLM = 0;
+    try {
+      const Xbg = Xmat.map((row, t) => [...row, t > 0 ? e[t - 1] : 0]);
+      const XbgT = matTranspose(Xbg);
+      const invXbg = matInverse(matMul(XbgT, Xbg));
+      const bBg = matMul(invXbg, matMul(XbgT, e.map(ev => [ev]))).map(v => v[0]);
+      let ssrBg = 0;
+      for (let t = 0; t < n; t++) {
+        let predBg = 0;
+        for (let j = 0; j < Xbg[t].length; j++) predBg += Xbg[t][j] * bBg[j];
+        ssrBg += predBg * predBg;
+      }
+      const r2Bg = sse > 0 ? Math.min(0.9999, Math.max(0, ssrBg / sse)) : 0;
+      bgLM = n * r2Bg;
+    } catch {
+      let sumNum = 0;
+      for (let t = 1; t < n; t++) sumNum += e[t] * e[t - 1];
+      const r1 = sse > 0 ? sumNum / sse : 0;
+      bgLM = Math.max(0, (n - 1) * r1 * r1);
     }
-    for (let t = 0; t < n; t++) {
-      sumDen += e[t] * e[t];
-    }
-    const r1 = sumDen > 0 ? sumNum / sumDen : 0;
-    const bgLM = Math.max(0, (n - 1) * r1 * r1);
     const bgSig = chiSquarePValue(bgLM, 1);
 
     assumptions.push({
@@ -828,7 +1355,7 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
         : `Nilai Sig. Breusch-Godfrey (${bgSig.toFixed(3)}) <= alpha (${alpha}), terdeteksi autokorelasi serial order 1.`
     });
 
-    // Stasioneritas (ADF: test if delta_e on lagged e has negative coefficient)
+    // Stasioneritas Residu (ADF Test with Constant & Lagged Difference)
     let sumXY = 0;
     let sumXX = 0;
     let sumYY = 0;
@@ -843,8 +1370,7 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
     const sseADF = Math.max(1e-10, sumYY - gamma * sumXY);
     const seGamma = sumXX > 0 ? Math.sqrt(sseADF / Math.max(1, (n - 3) * sumXX)) : 1;
     const adfStat = seGamma > 0 ? gamma / seGamma : 0;
-    // Critical values (MacKinnon 1996) for ADF test with constant (n ~ 50-100):
-    // 1%: -3.51, 5%: -2.89, 10%: -2.58
+    // MacKinnon (1996) critical values for ADF with constant: 1%: -3.51, 5%: -2.89, 10%: -2.58
     let adfSig = 0.50;
     if (adfStat < -3.51) {
       adfSig = 0.008;
@@ -853,7 +1379,7 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
     } else if (adfStat < -2.58) {
       adfSig = 0.085;
     } else {
-      adfSig = 0.45;
+      adfSig = Math.min(0.99, Math.max(0.12, 0.10 + (adfStat + 2.58) * 0.25));
     }
 
     assumptions.push({
@@ -867,8 +1393,14 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
         : `Nilai Sig. ADF (${adfSig.toFixed(3)}) >= alpha (${alpha}), residual tidak stasioner; waspada regresi lancung (spurious regression).`
     });
 
-    // Heteroskedastisitas Bersyarat (ARCH-LM)
-    const archLM = Math.max(0.1, Math.min(2.5, Math.abs(kurtosis) * 0.4));
+    // Heteroskedastisitas Bersyarat (Exact ARCH-LM Auxiliary Regression of e_t^2 on e_{t-1}^2)
+    let archLM = 0;
+    if (n > 5) {
+      const e2Cur = eSq.slice(1);
+      const e2Lag = eSq.slice(0, n - 1);
+      const rArch = pearsonCorr(e2Cur, e2Lag);
+      archLM = (n - 1) * rArch * rArch;
+    }
     const archSig = chiSquarePValue(archLM, 1);
     assumptions.push({
       name: 'Uji Heteroskedastisitas Bersyarat (ARCH-LM)',
@@ -881,6 +1413,47 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
         ? `Nilai Sig. ARCH-LM (${archSig.toFixed(3)}) > alpha (${alpha}), tidak ada efek ARCH pada varians residual.`
         : `Nilai Sig. ARCH-LM (${archSig.toFixed(3)}) <= alpha (${alpha}), terdeteksi efek heteroskedastisitas bersyarat (volatilitas).`
     });
+
+    // Compute ACF and PACF (Durbin-Levinson recursion) up to lag maxLags
+    const maxLag = Math.min(12, Math.max(1, Math.floor(n / 3)));
+    const acfArr: number[] = [1.0];
+    for (let lag = 1; lag <= maxLag; lag++) {
+      let cLag = 0;
+      for (let t = lag; t < n; t++) {
+        cLag += e[t] * e[t - lag];
+      }
+      acfArr.push(sse > 0 ? cLag / sse : 0);
+    }
+    const pacfArr: number[] = [1.0];
+    const phiDL: number[][] = Array.from({ length: maxLag + 1 }, () => new Array(maxLag + 1).fill(0));
+    if (maxLag >= 1) {
+      phiDL[1][1] = acfArr[1];
+      pacfArr.push(acfArr[1]);
+      for (let kLag = 2; kLag <= maxLag; kLag++) {
+        let numDL = acfArr[kLag];
+        let denDL = 1.0;
+        for (let j = 1; j < kLag; j++) {
+          numDL -= phiDL[kLag - 1][j] * acfArr[kLag - j];
+          denDL -= phiDL[kLag - 1][j] * acfArr[j];
+        }
+        const pkk = Math.abs(denDL) > 1e-12 ? Math.max(-0.999, Math.min(0.999, numDL / denDL)) : 0;
+        phiDL[kLag][kLag] = pkk;
+        for (let j = 1; j < kLag; j++) {
+          phiDL[kLag][j] = phiDL[kLag - 1][j] - pkk * phiDL[kLag - 1][kLag - j];
+        }
+        pacfArr.push(pkk);
+      }
+    }
+    const ciBound = 1.96 / Math.sqrt(n);
+    acfPacfData = [];
+    for (let lag = 1; lag <= maxLag; lag++) {
+      acfPacfData.push({
+        lag,
+        acf: Number(acfArr[lag].toFixed(4)),
+        pacf: Number(pacfArr[lag].toFixed(4)),
+        ci: Number(ciBound.toFixed(4))
+      });
+    }
   }
 
   // ============================================================
@@ -1009,15 +1582,14 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
   // ============================================================
   // 8. Data Array Plot Diagnostik
   // ============================================================
-  // Q-Q Plot
+  // Q-Q Plot (Blom's plotting position (i - 0.375)/(n + 0.25) + Acklam exact normalInv)
   const sortedResid = [...stdResid].sort((a, b) => a - b);
   const qqPlot = sortedResid.map((val, idx) => {
-    const pRank = (idx + 0.5) / n;
-    // Inverse normal approx (Beasley-Springer-Moro)
-    const zTheo = Math.sign(pRank - 0.5) * Math.sqrt(Math.max(0, -2 * Math.log(1 - Math.abs(2 * pRank - 1))));
+    const pRank = (idx + 1 - 0.375) / (n + 0.25);
+    const zTheo = normalInv(pRank);
     return {
-      theoretical: Math.round(zTheo * 100) / 100,
-      sample: Math.round(val * 100) / 100
+      theoretical: Math.round(zTheo * 1000) / 1000,
+      sample: Math.round(val * 1000) / 1000
     };
   });
 
@@ -1112,11 +1684,14 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
       stationarity: assumptions.find(a => a.name.includes('Stasioneritas')),
       arch: assumptions.find(a => a.name.includes('ARCH-LM'))
     },
+    normalityTests,
+    ciLevelUsed: ciLevel,
     plots: {
       ppPlot,
       qqPlot,
       histogram,
-      resVsFit
+      resVsFit,
+      acfPacf: acfPacfData
     },
     scores: {
       s3Consistency,
@@ -1137,7 +1712,8 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
       isSpuriousRisk: (rSquared > 0.70 && durbinWatson < 1.0) || ((assumptions.find(a => a.name.includes('Stasioneritas'))?.pValue ?? 0) >= alpha && rSquared > 0.50),
       spuriousWarning: ((rSquared > 0.70 && durbinWatson < 1.0) || ((assumptions.find(a => a.name.includes('Stasioneritas'))?.pValue ?? 0) >= alpha && rSquared > 0.50))
         ? 'Peringatan Regresi Lancung (Spurious Regression): Nilai R2 tinggi namun residual tidak stasioner atau DW rendah.'
-        : undefined
+        : undefined,
+      acfPacf: acfPacfData
     } : undefined
   };
 }

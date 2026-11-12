@@ -77,3 +77,24 @@ Urutan kepercayaan:
 | S3 Konsistensi per analisis | Persen cek lulus: dua mesin selisih relatif maksimal 1e-8; SST = SSR + SSE; R2 = SSR/SST; F = MSR/MSE; t kuadrat = F pada SLR; Beta = B kali sx/sy; p-value dihitung ulang; angka kondisi X di atas 1e8 beri peringatan | 100 persen |
 
 Tampilan: "Konkordansi terhadap R, NIST, PSPP: {S2}% pada {n} dataset. Konsistensi komputasi analisis ini: {S3}% ({lulus}/{total} cek)." Dilarang menyebut "setara SPSS" atau "akurat 100 persen" untuk analisis pengguna. S3 di bawah 100 persen: tampilkan cek yang gagal dan tandai laporan.
+
+## 8. Ekspansi 21 Poin Advanced Statistical Analysis Engine & Referensi Pustaka (Point 17)
+- **Referensi Repository & Pustaka Ilmiah**:
+  - `statsmodels/statsmodels` (OLS, GLM, RLM, Logit, MNLogit, OrderedModel, QuantReg, Diagnostic Tests, HAC/HC0–HC4)
+  - `scipy/scipy` (`scipy.stats`: Shapiro-Wilk AS R94, Anderson-Darling, Fisher Exact Hypergeometric, Kendall's $\tau_b$, Incomplete Beta & Gamma)
+  - `raphaelvallat/pingouin` (Partial correlation, effect sizes, sphericity/normality helpers)
+  - `researchpy/researchpy` (Crosstabulation, Contingency tables, Cramer's $V$, $\phi$, Contingency Coefficient $C$)
+  - `maximtrp/scikit-posthocs` & `scikit-learn/scikit-learn` (Cross-validation $k$-fold, out-of-sample metrics MSE/RMSE/MAE/$R^2$)
+  - `K-Dense-AI/scientific-agent-skills` (Struktur modular analisis ilmiah dan pelaporan akademik 10 elemen)
+- **4 Uji Normalitas Serentak**: Shapiro-Wilk ($W$), Kolmogorov-Smirnov Lilliefors ($D$), Anderson-Darling ($A^2 / A^{*2}$), dan Jarque-Bera ($JB$).
+- **Moderated Regression Analysis (MRA) & Johnson-Neyman**:
+  - Hierarki 3 Model: Model 1 ($X$), Model 2 ($X + Z$), Model 3 ($X + Z + X\cdot Z$) dengan $\Delta R^2$, $F_{\text{change}}$, $\text{Sig. } F\text{ Change}$.
+  - Simple Slope pada $-1\text{ SD}$, Mean, $+1\text{ SD}$ dengan standard error kondisional $\sqrt{\text{Var}(b_1) + z^2\text{Var}(b_3) + 2z\text{Cov}(b_1, b_3)}$.
+  - Teknik Johnson-Neyman menyelesaikan akar kuadratik $t_{\text{crit}}^2 \text{SE}_{\theta}^2(z) = \theta(z)^2$.
+  - Klasifikasi Moderator Sharma, Durand, & Gur-Arie (1981): *Pure Moderator, Quasi Moderator, Predictor Moderasi, Homologizer Moderator*.
+- **Tabel Kontingensi (Crosstabs) & Chi-Square**:
+  - Dimensi $2\times 2, 2\times k, r\times 2, r\times c$, Observed, Expected, Row/Col/Total %, Raw/Std/Adjusted Standardized Residual ($z_{\text{adj}}$).
+  - Uji Pearson $\chi^2$, Likelihood Ratio $G^2$, Yates Continuity Correction, Fisher's Exact Test ($2\times 2$), Monte Carlo Permutation ($r\times c$), Linear-by-Linear Association, $\phi$, Cramer's $V$, $C$, Odds Ratio & Relative Risk.
+- **Korelasi Lengkap & GLM**:
+  - Pearson $r$, Spearman $\rho$, Kendall's $\tau_b$, Partial Correlation, Point-Biserial Correlation, 95% Fisher's $z$ CI.
+  - Binary Logistic, Multinomial Logistic, Ordinal Logistic (PLUM), Poisson GLM, Negative Binomial GLM, Quantile Regression ($L_1$), Polynomial Regression, dan $k$-Fold Cross-Validation ($k=5, 10$).

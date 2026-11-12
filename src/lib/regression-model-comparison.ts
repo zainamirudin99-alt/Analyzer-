@@ -23,6 +23,7 @@ export interface ModelMetricsSummary {
   bic: number;
   deltaAic: number; // relative to M0
   deltaBic: number; // relative to M0
+  mse: number;
   rmse: number;
   mae: number;
   maxVif: number;
@@ -50,6 +51,26 @@ export interface PredictiveValidationResult {
   forecastPoints?: Array<{ actual: number; predicted: number; error: number }>;
 }
 
+export interface KFoldCVFoldMetric {
+  fold: number;
+  trainN: number;
+  testN: number;
+  mse: number;
+  rmse: number;
+  mae: number;
+  rSquared: number;
+}
+
+export interface KFoldCVResult {
+  kFolds: 5 | 10;
+  meanMse: number;
+  meanRmse: number;
+  meanMae: number;
+  meanRSquared: number;
+  stdRmse: number;
+  folds: KFoldCVFoldMetric[];
+}
+
 export interface ModelComparisonReport {
   models: ModelMetricsSummary[];
   baselineModelId: string;
@@ -64,6 +85,8 @@ export interface ModelComparisonReport {
     justification: string;
   };
   predictiveValidation?: PredictiveValidationResult;
+  kFoldValidation5?: KFoldCVResult;
+  kFoldValidation10?: KFoldCVResult;
   comparisonMatrix: Array<{
     indicator: string;
     category: 'goodness_of_fit' | 'information_criteria' | 'error_metrics' | 'diagnostics';
@@ -96,13 +119,13 @@ export function computeInformationCriteria(
 }
 
 /**
- * Compute RMSE and MAE from residuals vector
+ * Compute MSE, RMSE, and MAE from residuals vector
  */
 export function computeErrorMetrics(
   residuals: number[]
-): { rmse: number; mae: number } {
+): { mse: number; rmse: number; mae: number } {
   const n = residuals.length;
-  if (n === 0) return { rmse: 0, mae: 0 };
+  if (n === 0) return { mse: 0, rmse: 0, mae: 0 };
 
   let sumSq = 0;
   let sumAbs = 0;
@@ -112,8 +135,10 @@ export function computeErrorMetrics(
     sumAbs += Math.abs(e);
   }
 
+  const mseVal = sumSq / n;
   return {
-    rmse: Math.round(Math.sqrt(sumSq / n) * 1000) / 1000,
+    mse: Math.round(mseVal * 1000) / 1000,
+    rmse: Math.round(Math.sqrt(mseVal) * 1000) / 1000,
     mae: Math.round((sumAbs / n) * 1000) / 1000
   };
 }
@@ -136,7 +161,7 @@ export function extractModelMetrics(
   const residuals = result.plots.resVsFit.map((p) => p.residual);
 
   const { aic, bic } = computeInformationCriteria(ssRes, n, k);
-  const { rmse, mae } = computeErrorMetrics(residuals);
+  const { mse, rmse, mae } = computeErrorMetrics(residuals);
 
   const vifs = result.coefficients
     .filter((c) => c.variable !== '(Constant)')
@@ -174,6 +199,7 @@ export function extractModelMetrics(
     bic,
     deltaAic: baselineAic !== undefined ? Math.round((aic - baselineAic) * 1000) / 1000 : 0,
     deltaBic: baselineBic !== undefined ? Math.round((bic - baselineBic) * 1000) / 1000 : 0,
+    mse,
     rmse,
     mae,
     maxVif: Math.round(maxVif * 100) / 100,
@@ -381,6 +407,109 @@ export function performPredictiveValidation(
 }
 
 /**
+ * K-Fold Cross-Validation (k = 5 or 10) for OLS Regression (Point 13)
+ * Partitions observations into k equal/nearly-equal folds, fits OLS on k-1 folds,
+ * and evaluates out-of-sample MSE, RMSE, MAE, and R² on the held-out fold.
+ */
+export function runKFoldCrossValidation(
+  rawY: number[],
+  rawX: number[][],
+  kFolds: 5 | 10 = 5
+): KFoldCVResult | null {
+  const n = rawY.length;
+  if (n < kFolds * 2 || rawX.length !== n) return null;
+
+  const folds: KFoldCVFoldMetric[] = [];
+  const foldSize = Math.floor(n / kFolds);
+  const remainder = n % kFolds;
+
+  let currentIdx = 0;
+  for (let fold = 0; fold < kFolds; fold++) {
+    const thisFoldSize = foldSize + (fold < remainder ? 1 : 0);
+    const testStart = currentIdx;
+    const testEnd = currentIdx + thisFoldSize;
+    currentIdx = testEnd;
+
+    const trainY: number[] = [];
+    const trainX: number[][] = [];
+    const testY: number[] = [];
+    const testX: number[][] = [];
+
+    for (let i = 0; i < n; i++) {
+      if (i >= testStart && i < testEnd) {
+        testY.push(rawY[i]);
+        testX.push(rawX[i]);
+      } else {
+        trainY.push(rawY[i]);
+        trainX.push(rawX[i]);
+      }
+    }
+
+    if (trainY.length <= (rawX[0]?.length || 1) + 1 || testY.length === 0) continue;
+
+    try {
+      const XmatTrain = trainX.map((row) => [1.0, ...row]);
+      const YmatTrain = trainY.map((v) => [v]);
+      const XT = matTranspose(XmatTrain);
+      const XTX = matMul(XT, XmatTrain);
+      const XTXInv = matInverse(XTX);
+      const XTY = matMul(XT, YmatTrain);
+      const beta = matMul(XTXInv, XTY).map((r) => r[0]);
+
+      let sumSq = 0;
+      let sumAbs = 0;
+      const meanTestY = testY.reduce((a, b) => a + b, 0) / testY.length;
+      let ssTot = 0;
+
+      for (let i = 0; i < testY.length; i++) {
+        const row = [1.0, ...testX[i]];
+        let pred = 0;
+        for (let j = 0; j < row.length; j++) pred += row[j] * beta[j];
+        const err = testY[i] - pred;
+        sumSq += err * err;
+        sumAbs += Math.abs(err);
+        ssTot += (testY[i] - meanTestY) ** 2;
+      }
+
+      const mse = sumSq / testY.length;
+      const rmse = Math.sqrt(mse);
+      const mae = sumAbs / testY.length;
+      const rSq = ssTot > 1e-12 ? Math.max(0, 1 - sumSq / ssTot) : 0;
+
+      folds.push({
+        fold: fold + 1,
+        trainN: trainY.length,
+        testN: testY.length,
+        mse: Math.round(mse * 10000) / 10000,
+        rmse: Math.round(rmse * 10000) / 10000,
+        mae: Math.round(mae * 10000) / 10000,
+        rSquared: Math.round(rSq * 10000) / 10000
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  if (folds.length === 0) return null;
+
+  const meanMse = folds.reduce((a, b) => a + b.mse, 0) / folds.length;
+  const meanRmse = folds.reduce((a, b) => a + b.rmse, 0) / folds.length;
+  const meanMae = folds.reduce((a, b) => a + b.mae, 0) / folds.length;
+  const meanRSquared = folds.reduce((a, b) => a + b.rSquared, 0) / folds.length;
+  const varRmse = folds.reduce((a, b) => a + (b.rmse - meanRmse) ** 2, 0) / Math.max(1, folds.length - 1);
+
+  return {
+    kFolds,
+    meanMse: Math.round(meanMse * 10000) / 10000,
+    meanRmse: Math.round(meanRmse * 10000) / 10000,
+    meanMae: Math.round(meanMae * 10000) / 10000,
+    meanRSquared: Math.round(meanRSquared * 10000) / 10000,
+    stdRmse: Math.round(Math.sqrt(varRmse) * 10000) / 10000,
+    folds
+  };
+}
+
+/**
  * Build Full Multi-Model Comparison Report
  */
 export function buildModelComparisonReport(
@@ -457,6 +586,16 @@ export function buildModelComparisonReport(
       ? performPredictiveValidation(rawY, rawX, isTimeSeries, 0.7) ?? undefined
       : undefined;
 
+  const kFoldValidation5 =
+    !isTimeSeries && rawY && rawX && rawY.length >= 15
+      ? runKFoldCrossValidation(rawY, rawX, 5) ?? undefined
+      : undefined;
+
+  const kFoldValidation10 =
+    !isTimeSeries && rawY && rawX && rawY.length >= 25
+      ? runKFoldCrossValidation(rawY, rawX, 10) ?? undefined
+      : undefined;
+
   // Comparison Matrix
   const comparisonMatrix: ModelComparisonReport['comparisonMatrix'] = [
     {
@@ -478,7 +617,7 @@ export function buildModelComparisonReport(
     {
       indicator: 'F-Statistic (Simultan)',
       category: 'goodness_of_fit',
-      values: Object.fromEntries(modelSummaries.map((m) => [m.modelId, `${m.fStat.toFixed(2)} (p=${m.fSig < 0.001 ? '.000' : m.fSig.toFixed(3)})`]))
+      values: Object.fromEntries(modelSummaries.map((m) => [m.modelId, `${m.fStat.toFixed(2)} (p=${m.fSig < 0.001 ? '< .001' : m.fSig.toFixed(3)})`]))
     },
     {
       indicator: 'Akaike Information Criterion (AIC)',
@@ -491,6 +630,12 @@ export function buildModelComparisonReport(
       category: 'information_criteria',
       values: Object.fromEntries(modelSummaries.map((m) => [m.modelId, `${m.bic.toFixed(2)} (${m.deltaBic >= 0 ? '+' : ''}${m.deltaBic.toFixed(2)})`])),
       bestModelId: modelSummaries.reduce((min, m) => (m.bic < min.bic ? m : min)).modelId
+    },
+    {
+      indicator: 'Mean Square Error (MSE)',
+      category: 'error_metrics',
+      values: Object.fromEntries(modelSummaries.map((m) => [m.modelId, m.mse.toFixed(3)])),
+      bestModelId: modelSummaries.reduce((min, m) => (m.mse < min.mse ? m : min)).modelId
     },
     {
       indicator: 'Root Mean Square Error (RMSE)',
@@ -540,6 +685,8 @@ export function buildModelComparisonReport(
       justification: predictiveJustification
     },
     predictiveValidation,
+    kFoldValidation5,
+    kFoldValidation10,
     comparisonMatrix
   };
 }

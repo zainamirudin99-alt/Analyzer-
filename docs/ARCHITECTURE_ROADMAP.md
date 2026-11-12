@@ -112,3 +112,16 @@ Dokumen ini memetakan arsitektur sistem modular untuk penambahan fitur **Analisi
   6. Template Interpretasi Naratif: Teks naratif otomatis berbahasa Indonesia yang bersumber langsung dari hasil komputasi numerik.
   7. Ekspor: Word (.docx), PDF, dan Excel (.xlsx) dengan proteksi formula injection.
   8. Gerbang G3: Audit integritas statistik, pelaporan jujur, dan persetujuan rilis.
+
+
+---
+
+## 4. Arsitektur Tahap 5: 21-Point Advanced Statistical Analysis Engine
+
+Penambahan modul-modul statistik tingkat lanjut tetap menjaga prinsip modularitas dan batas bundel serverless Vercel (< 500 MB):
+- `src/lib/regression-engine.ts`: Mesin inti OLS, WLS, GLS, distribusi eksak ($t, F, \chi^2$ via Incomplete Beta/Gamma), Belsley SVD Collinearity Diagnostics, Royston Shapiro-Wilk, Lilliefors K-S, dan Ramsey RESET.
+- `src/lib/regression-spss-compatibility.ts`: Seleksi variabel bertahap (*Enter, Forward, Backward, Stepwise*), Anderson-Darling, Harvey-Collier, Breusch-Pagan standar vs Koenker, White, Glejser, Goldfeld-Quandt, Ljung-Box, ACF/PACF, dan validator SPSS.
+- `src/lib/regression-remedial.ts`: Kovarians HC0–HC4, Newey-West HAC, Cochrane-Orcutt vs Prais-Winsten, IRLS Robust Regression (Huber & Tukey Bisquare), Bootstrap CI, dan Box-Cox.
+- `src/lib/regression-moderation-mra.ts`: Moderated Regression Analysis (MRA) 3-Model Hierarkis, Simple Slope Analysis ($-1\text{ SD}, \text{Mean}, +1\text{ SD}$), Teknik Johnson-Neyman, Moderator Kategorik, dan klasifikasi 4 tipe moderator.
+- `src/lib/regression-contingency-chisquare.ts`: Crosstabulation ($2\times 2$ s/d $r\times c$), Pearson $\chi^2$, Likelihood Ratio $G^2$, Yates, Fisher's Exact Test, Fisher-Freeman-Halton / Monte Carlo, Linear-by-Linear, Phi, Cramer's $V$, Contingency Coeff, OR, RR, RD, dan Adjusted Standardized Residuals.
+- `src/lib/regression-advanced-models.ts`: Binary/Multinomial/Ordinal Logistic Regression, Poisson, Negative Binomial, Quantile Regression, dan GLM.

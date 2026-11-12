@@ -12,6 +12,8 @@ import {
   fPValue,
   chiSquarePValue,
   tPValue,
+  computeAndersonDarlingTest,
+  runStatisticalRegression,
   OLSFitResult
 } from './regression-engine';
 
@@ -46,10 +48,47 @@ export interface SPSSValidationReport {
 
 export interface AdvancedAssumptionDiagnostics {
   jarqueBera: { statistic: number; pValue: number; passed: boolean; details: string };
+  andersonDarling: { statistic: number; pValue: number; df: number; passed: boolean; details: string };
+  harveyCollier: { statistic: number; pValue: number; df: number; passed: boolean; details: string };
+  breuschPaganStandard: { statistic: number; pValue: number; df: number; passed: boolean; details: string };
   whiteTest: { statistic: number; pValue: number; df: number; passed: boolean; details: string };
   glejserTest: { statistic: number; pValue: number; passed: boolean; details: string };
   goldfeldQuandt: { statistic: number; pValue: number; df1: number; df2: number; passed: boolean; details: string };
   ljungBox: { statistic: number; pValue: number; df: number; passed: boolean; details: string };
+}
+
+export interface StepwiseSelectionResult {
+  method: 'enter' | 'forward' | 'backward' | 'stepwise';
+  selectedXCols: string[];
+  excludedXCols: string[];
+  steps: {
+    step: number;
+    action: 'enter' | 'remove' | 'initial';
+    variable: string;
+    rSquared: number;
+    adjRSquared: number;
+    fStat: number;
+    fSig: number;
+  }[];
+  variablesEnteredRemoved: SPSSVariablesEnteredRemoved[];
+  finalFit: OLSFitResult;
+}
+
+/**
+ * Format angka desimal sesuai standar publikasi & SPSS (2, 3, 4, atau 6 desimal)
+ */
+export function formatSPSSValue(val: number | undefined | null, decimals: number = 3): string {
+  if (val === undefined || val === null || isNaN(val)) return '-';
+  return val.toFixed(decimals);
+}
+
+/**
+ * Format nilai p-value (Sig.) bergaya SPSS: menampilkan "< .001" jika p < 0.001
+ */
+export function formatSPSSSig(pVal: number | undefined | null, decimals: number = 3): string {
+  if (pVal === undefined || pVal === null || isNaN(pVal)) return '-';
+  if (pVal < 0.001) return '< .001';
+  return pVal.toFixed(decimals);
 }
 
 /**
@@ -346,6 +385,421 @@ export function computeLjungBox(
 }
 
 /**
+ * Uji Normalitas Anderson-Darling (A^2 Test)
+ */
+export function computeAndersonDarling(residuals: number[]): { statistic: number; pValue: number; df: number; passed: boolean; details: string } {
+  const res = computeAndersonDarlingTest(residuals);
+  const passed = res.pValue > 0.05;
+  return {
+    statistic: Number(res.statistic.toFixed(4)),
+    pValue: Number(res.pValue.toFixed(4)),
+    df: res.df,
+    passed,
+    details: passed
+      ? `Nilai Sig. (${res.pValue.toFixed(4)}) > 0.05: residual berdistribusi normal (Anderson-Darling A²=${res.statistic.toFixed(3)}).`
+      : `Nilai Sig. (${res.pValue.toFixed(4)}) <= 0.05: residual menyimpang dari kurva normal pada ekor distribusi (A²=${res.statistic.toFixed(3)}).`
+  };
+}
+
+/**
+ * Uji Linearitas Harvey-Collier (Recursive Residuals t-Test)
+ * Mengurutkan observasi berdasarkan prediktor utama X_1 dan menguji apakah rata-rata recursive residuals = 0
+ */
+export function computeHarveyCollier(
+  Xraw: number[][],
+  residuals: number[]
+): { statistic: number; pValue: number; df: number; passed: boolean; details: string } {
+  const n = residuals.length;
+  const k = Xraw[0]?.length || 0;
+  const p = k + 1;
+  if (n <= p + 3 || k === 0) {
+    return { statistic: 0, pValue: 1.0, df: Math.max(1, n - p - 1), passed: true, details: 'Sampel tidak cukup untuk uji Harvey-Collier.' };
+  }
+
+  // Sort residuals by first predictor X_1
+  const indexed = residuals.map((e, i) => ({ x1: Xraw[i][0], e, row: [1.0, ...Xraw[i]] })).sort((a, b) => a.x1 - b.x1);
+  // Compute recursive residuals w_r for r = p+1 .. n
+  const wRec: number[] = [];
+  for (let r = p; r < n; r++) {
+    // Subsample 0..r-1
+    const subX = indexed.slice(0, r).map(item => item.row);
+    const xr = indexed[r].row;
+    let f_r = 1.0;
+    try {
+      const XT = matTranspose(subX);
+      const invXTX = matInverse(matMul(XT, subX));
+      let quad = 0;
+      for (let i = 0; i < p; i++) {
+        for (let j = 0; j < p; j++) {
+          quad += xr[i] * invXTX[i][j] * xr[j];
+        }
+      }
+      f_r = Math.sqrt(Math.max(1.0, 1.0 + quad));
+    } catch {
+      f_r = 1.0;
+    }
+    wRec.push(indexed[r].e / f_r);
+  }
+
+  const m = wRec.length;
+  const meanW = wRec.reduce((a, b) => a + b, 0) / m;
+  const sdW = sampleStdDev(wRec, meanW);
+  const tStat = sdW > 1e-12 ? (meanW * Math.sqrt(m)) / sdW : 0;
+  const df = Math.max(1, m - 1);
+  const pValue = tPValue(tStat, df);
+  const passed = pValue > 0.05;
+
+  return {
+    statistic: Number(Math.abs(tStat).toFixed(4)),
+    pValue: Number(pValue.toFixed(4)),
+    df,
+    passed,
+    details: passed
+      ? `Nilai Sig. (${pValue.toFixed(4)}) > 0.05: tidak terdeteksi kelengkungan sistematis pada recursive residuals (Harvey-Collier t=${Math.abs(tStat).toFixed(3)}).`
+      : `Nilai Sig. (${pValue.toFixed(4)}) <= 0.05: terindikasi pelanggaran linearitas fungsional (Harvey-Collier t=${Math.abs(tStat).toFixed(3)}).`
+  };
+}
+
+/**
+ * Uji Heteroskedastisitas Breusch-Pagan Standar (Godfrey / Normal-Theory LM)
+ * LM_BP = (1 / 2) * ESS_g, di mana g_i = (e_i^2 / sigma_MLE^2) - 1
+ */
+export function computeBreuschPaganStandard(
+  Xraw: number[][],
+  residuals: number[]
+): { statistic: number; pValue: number; df: number; passed: boolean; details: string } {
+  const n = residuals.length;
+  const k = Xraw[0]?.length || 0;
+  if (n <= k + 1 || k === 0) {
+    return { statistic: 0, pValue: 1.0, df: Math.max(1, k), passed: true, details: 'Sampel tidak mencukupi untuk Breusch-Pagan standar.' };
+  }
+
+  const sigma2MLE = residuals.reduce((acc, e) => acc + e * e, 0) / n;
+  if (sigma2MLE <= 1e-14) {
+    return { statistic: 0, pValue: 1.0, df: k, passed: true, details: 'Varians residual nol.' };
+  }
+  const g = residuals.map(e => (e * e) / sigma2MLE - 1.0);
+  const design = Xraw.map(row => [1.0, ...row]);
+  let essG = 0;
+  try {
+    const XT = matTranspose(design);
+    const invXTX = matInverse(matMul(XT, design));
+    const bG = matMul(invXTX, matMul(XT, g.map(v => [v]))).map(v => v[0]);
+    for (let i = 0; i < n; i++) {
+      let pred = 0;
+      for (let j = 0; j <= k; j++) pred += design[i][j] * bG[j];
+      essG += pred * pred;
+    }
+  } catch {
+    essG = 0;
+  }
+  const bpStat = 0.5 * essG;
+  const pValue = chiSquarePValue(bpStat, k);
+  const passed = pValue > 0.05;
+
+  return {
+    statistic: Number(bpStat.toFixed(4)),
+    pValue: Number(pValue.toFixed(4)),
+    df: k,
+    passed,
+    details: passed
+      ? `Nilai Sig. (${pValue.toFixed(4)}) > 0.05: varians residual homoskedastik (BP Standar LM=${bpStat.toFixed(3)}, df=${k}).`
+      : `Nilai Sig. (${pValue.toFixed(4)}) <= 0.05: terdeteksi heteroskedastisitas (BP Standar LM=${bpStat.toFixed(3)}, df=${k}).`
+  };
+}
+
+/**
+ * Hitung Fungsi Autokorelasi (ACF) & Autokorelasi Parsial (PACF) beserta Ljung-Box per Lag
+ */
+export function computeACFPACF(
+  series: number[],
+  maxLags: number = 12
+): { lag: number; acf: number; pacf: number; se: number; ci95: number; ljungBoxQ: number; pValue: number }[] {
+  const n = series.length;
+  const L = Math.min(maxLags, Math.max(1, Math.floor(n / 3)));
+  const mean = series.reduce((a, b) => a + b, 0) / (n || 1);
+  let c0 = 0;
+  for (let i = 0; i < n; i++) {
+    const d = series[i] - mean;
+    c0 += d * d;
+  }
+  const acf: number[] = [1.0];
+  for (let k = 1; k <= L; k++) {
+    let ck = 0;
+    for (let t = k; t < n; t++) {
+      ck += (series[t] - mean) * (series[t - k] - mean);
+    }
+    acf.push(c0 > 1e-14 ? ck / c0 : 0);
+  }
+  const pacf: number[] = [1.0];
+  const phi: number[][] = Array.from({ length: L + 1 }, () => new Array(L + 1).fill(0));
+  if (L >= 1) {
+    phi[1][1] = acf[1];
+    pacf.push(acf[1]);
+    for (let k = 2; k <= L; k++) {
+      let num = acf[k];
+      let den = 1.0;
+      for (let j = 1; j < k; j++) {
+        num -= phi[k - 1][j] * acf[k - j];
+        den -= phi[k - 1][j] * acf[j];
+      }
+      const pkk = Math.abs(den) > 1e-12 ? Math.max(-0.999, Math.min(0.999, num / den)) : 0;
+      phi[k][k] = pkk;
+      for (let j = 1; j < k; j++) {
+        phi[k][j] = phi[k - 1][j] - pkk * phi[k - 1][k - j];
+      }
+      pacf.push(pkk);
+    }
+  }
+
+  const out: { lag: number; acf: number; pacf: number; se: number; ci95: number; ljungBoxQ: number; pValue: number }[] = [];
+  let qCum = 0;
+  for (let k = 1; k <= L; k++) {
+    qCum += (acf[k] * acf[k]) / Math.max(1, n - k);
+    const qVal = n * (n + 2) * qCum;
+    const pVal = chiSquarePValue(qVal, k);
+    const se = 1 / Math.sqrt(Math.max(1, n));
+    out.push({
+      lag: k,
+      acf: Number(acf[k].toFixed(4)),
+      pacf: Number(pacf[k].toFixed(4)),
+      se: Number(se.toFixed(4)),
+      ci95: Number((1.96 * se).toFixed(4)),
+      ljungBoxQ: Number(qVal.toFixed(4)),
+      pValue: Number(pVal.toFixed(4))
+    });
+  }
+  return out;
+}
+
+/**
+ * Seleksi Variabel Regresi Bergaya SPSS: Enter, Forward, Backward, dan Stepwise
+ * Kriteria Default SPSS: Probability-of-F-to-enter (PIN) <= 0.05, Probability-of-F-to-remove (POUT) >= 0.10
+ */
+export function runStepwiseVariableSelection(options: {
+  rows: Record<string, any>[];
+  yCol: string;
+  candidateXCols: string[];
+  method: 'enter' | 'forward' | 'backward' | 'stepwise';
+  pIn?: number;
+  pOut?: number;
+  alpha?: number;
+  ciLevel?: number;
+  isTimeSeries?: boolean;
+  timeCol?: string;
+}): StepwiseSelectionResult {
+  const {
+    rows,
+    yCol,
+    candidateXCols,
+    method,
+    pIn = 0.05,
+    pOut = 0.10,
+    alpha = 0.05,
+    ciLevel = 0.95,
+    isTimeSeries = false,
+    timeCol
+  } = options;
+
+  if (method === 'enter' || candidateXCols.length <= 1) {
+    const fit = runStatisticalRegression({
+      rows,
+      yCol,
+      xCols: candidateXCols,
+      alpha,
+      ciLevel,
+      isTimeSeries,
+      timeCol
+    });
+    return {
+      method: 'enter',
+      selectedXCols: [...candidateXCols],
+      excludedXCols: [],
+      steps: [{
+        step: 1,
+        action: 'enter',
+        variable: candidateXCols.join(', '),
+        rSquared: fit.modelSummary.rSquared,
+        adjRSquared: fit.modelSummary.adjRSquared,
+        fStat: fit.anova.regression.f,
+        fSig: fit.anova.regression.sig
+      }],
+      variablesEnteredRemoved: [generateVariablesEnteredRemoved(1, candidateXCols, 'enter')],
+      finalFit: fit
+    };
+  }
+
+  let currentX: string[] = method === 'backward' ? [...candidateXCols] : [];
+  const steps: StepwiseSelectionResult['steps'] = [];
+  const varsTable: SPSSVariablesEnteredRemoved[] = [];
+  let stepNum = 0;
+
+  if (method === 'backward') {
+    stepNum++;
+    const initFit = runStatisticalRegression({ rows, yCol, xCols: currentX, alpha, ciLevel, isTimeSeries, timeCol });
+    steps.push({
+      step: stepNum,
+      action: 'initial',
+      variable: currentX.join(', '),
+      rSquared: initFit.modelSummary.rSquared,
+      adjRSquared: initFit.modelSummary.adjRSquared,
+      fStat: initFit.anova.regression.f,
+      fSig: initFit.anova.regression.sig
+    });
+    varsTable.push(generateVariablesEnteredRemoved(stepNum, currentX, 'backward'));
+
+    while (currentX.length > 1) {
+      const fit = runStatisticalRegression({ rows, yCol, xCols: currentX, alpha, ciLevel, isTimeSeries, timeCol });
+      const preds = fit.coefficients.slice(1);
+      let worstVar = '';
+      let maxP = -1;
+      for (const pRow of preds) {
+        if (pRow.sig > maxP) {
+          maxP = pRow.sig;
+          worstVar = pRow.variable;
+        }
+      }
+      if (maxP >= pOut && worstVar) {
+        currentX = currentX.filter(c => c !== worstVar);
+        stepNum++;
+        const nextFit = runStatisticalRegression({ rows, yCol, xCols: currentX, alpha, ciLevel, isTimeSeries, timeCol });
+        steps.push({
+          step: stepNum,
+          action: 'remove',
+          variable: worstVar,
+          rSquared: nextFit.modelSummary.rSquared,
+          adjRSquared: nextFit.modelSummary.adjRSquared,
+          fStat: nextFit.anova.regression.f,
+          fSig: nextFit.anova.regression.sig
+        });
+        varsTable.push(generateVariablesEnteredRemoved(stepNum, [], 'backward', [worstVar]));
+      } else {
+        break;
+      }
+    }
+  } else {
+    // Forward or Stepwise
+    const maxIter = candidateXCols.length * 2;
+    for (let iter = 0; iter < maxIter; iter++) {
+      const remaining = candidateXCols.filter(c => !currentX.includes(c));
+      let bestCandidate = '';
+      let minP = 1.0;
+      let bestFitCandidate: OLSFitResult | null = null;
+
+      for (const cand of remaining) {
+        const trialCols = [...currentX, cand];
+        try {
+          const trialFit = runStatisticalRegression({ rows, yCol, xCols: trialCols, alpha, ciLevel, isTimeSeries, timeCol });
+          const candCoef = trialFit.coefficients.find(c => c.variable === cand);
+          if (candCoef && candCoef.sig < minP) {
+            minP = candCoef.sig;
+            bestCandidate = cand;
+            bestFitCandidate = trialFit;
+          }
+        } catch {
+          // Skip collinear candidate
+        }
+      }
+
+      if (bestCandidate && minP <= pIn && bestFitCandidate) {
+        currentX.push(bestCandidate);
+        stepNum++;
+        steps.push({
+          step: stepNum,
+          action: 'enter',
+          variable: bestCandidate,
+          rSquared: bestFitCandidate.modelSummary.rSquared,
+          adjRSquared: bestFitCandidate.modelSummary.adjRSquared,
+          fStat: bestFitCandidate.anova.regression.f,
+          fSig: bestFitCandidate.anova.regression.sig
+        });
+        varsTable.push(generateVariablesEnteredRemoved(stepNum, [bestCandidate], method));
+
+        // If stepwise, check if any existing predictor now has p >= pOut
+        if (method === 'stepwise' && currentX.length > 2) {
+          const checkFit = runStatisticalRegression({ rows, yCol, xCols: currentX, alpha, ciLevel, isTimeSeries, timeCol });
+          let worstVar = '';
+          let maxP = -1;
+          for (const pRow of checkFit.coefficients.slice(1)) {
+            if (pRow.variable !== bestCandidate && pRow.sig > maxP) {
+              maxP = pRow.sig;
+              worstVar = pRow.variable;
+            }
+          }
+          if (worstVar && maxP >= pOut) {
+            currentX = currentX.filter(c => c !== worstVar);
+            stepNum++;
+            const afterRemFit = runStatisticalRegression({ rows, yCol, xCols: currentX, alpha, ciLevel, isTimeSeries, timeCol });
+            steps.push({
+              step: stepNum,
+              action: 'remove',
+              variable: worstVar,
+              rSquared: afterRemFit.modelSummary.rSquared,
+              adjRSquared: afterRemFit.modelSummary.adjRSquared,
+              fStat: afterRemFit.anova.regression.f,
+              fSig: afterRemFit.anova.regression.sig
+            });
+            varsTable.push(generateVariablesEnteredRemoved(stepNum, [], 'stepwise', [worstVar]));
+          }
+        }
+      } else {
+        break;
+      }
+    }
+
+    // Fallback if no predictor met p <= pIn: enter the strongest single predictor so model is non-empty
+    if (currentX.length === 0 && candidateXCols.length > 0) {
+      let bestSingle = candidateXCols[0];
+      let bestF = -1;
+      for (const cand of candidateXCols) {
+        try {
+          const f = runStatisticalRegression({ rows, yCol, xCols: [cand], alpha, ciLevel, isTimeSeries, timeCol });
+          if (f.anova.regression.f > bestF) {
+            bestF = f.anova.regression.f;
+            bestSingle = cand;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      currentX = [bestSingle];
+      stepNum++;
+      const singleFit = runStatisticalRegression({ rows, yCol, xCols: currentX, alpha, ciLevel, isTimeSeries, timeCol });
+      steps.push({
+        step: stepNum,
+        action: 'enter',
+        variable: bestSingle,
+        rSquared: singleFit.modelSummary.rSquared,
+        adjRSquared: singleFit.modelSummary.adjRSquared,
+        fStat: singleFit.anova.regression.f,
+        fSig: singleFit.anova.regression.sig
+      });
+      varsTable.push(generateVariablesEnteredRemoved(stepNum, [bestSingle], method));
+    }
+  }
+
+  const finalFit = runStatisticalRegression({
+    rows,
+    yCol,
+    xCols: currentX,
+    alpha,
+    ciLevel,
+    isTimeSeries,
+    timeCol
+  });
+  finalFit.variables.enteredMethod = method === 'forward' ? 'Forward' : (method === 'backward' ? 'Backward' : 'Stepwise');
+
+  return {
+    method,
+    selectedXCols: currentX,
+    excludedXCols: candidateXCols.filter(c => !currentX.includes(c)),
+    steps,
+    variablesEnteredRemoved: varsTable,
+    finalFit
+  };
+}
+
+/**
  * Hitung Seluruh Asumsi Lanjutan
  */
 export function computeAdvancedAssumptions(
@@ -354,6 +808,9 @@ export function computeAdvancedAssumptions(
 ): AdvancedAssumptionDiagnostics {
   return {
     jarqueBera: computeJarqueBera(residuals),
+    andersonDarling: computeAndersonDarling(residuals),
+    harveyCollier: computeHarveyCollier(Xraw, residuals),
+    breuschPaganStandard: computeBreuschPaganStandard(Xraw, residuals),
     whiteTest: computeWhiteTest(Xraw, residuals),
     glejserTest: computeGlejserTest(Xraw, residuals),
     goldfeldQuandt: computeGoldfeldQuandt(Xraw, residuals),

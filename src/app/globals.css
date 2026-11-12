@@ -96,6 +96,13 @@
   --card: var(--card-bg, #ffffff);
   --card-border: 1px solid var(--border);
 
+  /* Statistical & Diagnostic Plots Theme Aliases */
+  --bg-card: var(--surface, #ffffff);
+  --bg-canvas: var(--surface-muted, #f8fafc);
+  --border-color: var(--border, #d8e1eb);
+  --text-primary: var(--text, #0f172a);
+  --accent-primary: var(--primary, #2563eb);
+
   --transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-fast: all 0.14s ease-out;
 
@@ -186,6 +193,13 @@
   --card-bg: #111827;
   --card: var(--card-bg, #111827);
   --card-border: 1px solid var(--border);
+
+  /* Statistical & Diagnostic Plots Theme Aliases */
+  --bg-card: var(--surface, #111827);
+  --bg-canvas: var(--surface-muted, #0b1220);
+  --border-color: var(--border, #263449);
+  --text-primary: var(--text, #f1f5f9);
+  --accent-primary: var(--primary, #00e5ff);
 
   /* Backward Compatibility Aliases */
   --moss: #f1f5f9;

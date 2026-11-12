@@ -15,6 +15,7 @@ import * as XLSX from 'xlsx';
 import { OLSFitResult } from './regression-engine';
 import { ModelComparisonReport } from './regression-model-comparison';
 import { RecommendationEngineOutput } from './regression-recommendation-engine';
+import { generateTenElementAcademicInterpretation } from './regression-interpretation';
 import { sanitizeCellValue } from './file-signature';
 
 export interface XlsxExportOptions {
@@ -244,6 +245,61 @@ export function generateRegressionXLSX(options: XlsxExportOptions): Buffer {
       sanitizeCellValue(a.reason)
     ]);
   });
+
+  if (result.normalityTests) {
+    diagRows.push(
+      [],
+      ['TABEL 4.1B: TESTS OF NORMALITY (4 METODE SERENTAK: SHAPIRO-WILK, LILLIEFORS, ANDERSON-DARLING, JARQUE-BERA)'],
+      ['Metode Uji Normalitas', 'Statistik Uji', 'Sig. (p-value)', 'Skewness', 'Excess Kurtosis']
+    );
+    diagRows.push(
+      ['Shapiro-Wilk (Royston AS R94)', roundNum(result.normalityTests.shapiroWilk?.statistic, 4), roundNum(result.normalityTests.shapiroWilk?.pValue, 6), '', ''],
+      ['Kolmogorov-Smirnov (Lilliefors Correction)', roundNum(result.normalityTests.lilliefors?.statistic, 4), roundNum(result.normalityTests.lilliefors?.pValue, 6), '', ''],
+      ['Anderson-Darling (Stephens A*2)', roundNum(result.normalityTests.andersonDarling?.statistic, 4), roundNum(result.normalityTests.andersonDarling?.pValue, 6), '', ''],
+      [
+        'Jarque-Bera',
+        roundNum(result.normalityTests.jarqueBera?.statistic, 4),
+        roundNum(result.normalityTests.jarqueBera?.pValue, 6),
+        roundNum(result.normalityTests.skewness, 4),
+        roundNum(result.normalityTests.kurtosis, 4)
+      ]
+    );
+  }
+
+  // Tabel 4.1C: Interpretasi Akademik Formal 10 Elemen (Point 15)
+  const tenElements = generateTenElementAcademicInterpretation(result, 0.05);
+  if (tenElements.length > 0) {
+    diagRows.push(
+      [],
+      ['TABEL 4.1C: INTERPRETASI AKADEMIK FORMAL 10 ELEMEN (STANDAR PUBLIKASI)'],
+      [
+        '1. Tujuan Pengujian',
+        '2. Hipotesis H0 & H1',
+        '3. Statistik Uji',
+        '4. Sig. (p-value)',
+        '5. Kriteria Keputusan',
+        '6. Keputusan H0',
+        '7. Arah Hubungan',
+        '8. Kekuatan / Effect Size',
+        '9. Makna Statistik',
+        '10. Implikasi Praktis'
+      ]
+    );
+    tenElements.forEach(item => {
+      diagRows.push([
+        sanitizeCellValue(item.testPurpose),
+        sanitizeCellValue(`${item.hypotheses.h0} | ${item.hypotheses.h1}`),
+        sanitizeCellValue(item.statisticValue),
+        sanitizeCellValue(item.pValueFormatted),
+        sanitizeCellValue(item.decisionCriterion),
+        sanitizeCellValue(item.h0Decision),
+        sanitizeCellValue(item.directionOfRelationship),
+        sanitizeCellValue(item.strengthOfRelationship),
+        sanitizeCellValue(item.statisticalMeaning),
+        sanitizeCellValue(item.practicalImplication)
+      ]);
+    });
+  }
 
   if (recommendationOutput && recommendationOutput.cards.length > 0) {
     diagRows.push([]);

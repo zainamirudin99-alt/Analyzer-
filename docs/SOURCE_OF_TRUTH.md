@@ -98,3 +98,30 @@ Dokumen ini memuat seluruh fakta terverifikasi dari inspeksi langsung kode sumbe
 1. **Metode Autentikasi Pengguna**: Apakah registrasi akun baru dibuka bebas via Email/Password Supabase, atau dibatasi, atau menggunakan Magic Link?
 2. **Ketersediaan Python Lokal**: Karena mesin lokal Windows pengguna belum memiliki Python di PATH, apakah eksekusi tes mesin Python lokal akan menggunakan Python virtual environment (venv) yang diunduh/diinstal, atau diuji via Vercel CLI / script runner?
 3. **Koneksi Supabase Testing**: Apakah pengujian migrasi SQL & RLS akan dijalankan langsung ke instance remote Supabase (memerlukan nilai `.env.local`) atau melalui Docker Supabase Local / Postgres in-memory?
+
+
+---
+
+## 8. Ekspansi Tahap 5: 21 Poin Master Smartprompt — Advanced Statistical Analysis Engine (Standar IBM SPSS Statistics)
+
+Spesifikasi pengembangan lanjutan untuk menyempurnakan dan memperluas menu **Analisis Regresi Statistik** mencakup 21 poin inti:
+1. **Poin 01 — Arsitektur Mesin Statistik**: Mesin utama (`regression-engine.ts` & `python_engine/engine/fit.py`) dengan verifikasi konsistensi paritas SVD dan fungsi distribusi eksak (Regularized Incomplete Beta $I_x(a,b)$ & Gamma $\gamma(s,x)$).
+2. **Poin 02 — Validasi & Prapemrosesan Data**: Deteksi missing value, duplikat, outlier, tipe data, variabel konstan, nilai numerik invalid (`Inf`/`-Inf`), pemeriksaan *Matrix Rank & Condition Number*, serta opsi *Listwise Deletion*, *Mean/Median Imputation*, *Linear Interpolation* (Time Series), dan *Multiple Imputation*.
+3. **Poin 03 — Statistik Deskriptif Lengkap**: Numerik (*Mean, Median, Mode, SD, Variance, Min, Max, Range, Q1, Q3, IQR, Skewness $G_1$, Kurtosis $G_2$, SE Mean*) dan Kategorik (*Frequency, Percentage, Valid Percentage, Cumulative Percentage*).
+4. **Poin 04 — Regresi Linear Standar**: OLS, WLS, GLS, Robust Linear Regression (RLM Huber/Tukey IRLS); metode entri variabel (*Enter, Forward, Backward, Stepwise*); struktur tabel resmi IBM SPSS Statistics.
+5. **Poin 05 — Diagnostik Regresi Eksak**: Normalitas (*Royston Shapiro-Wilk, Lilliefors K-S, Jarque-Bera, Anderson-Darling*), Multikolinearitas (*VIF, Tolerance, Belsley SVD Eigenvalues & Condition Index*), Heteroskedastisitas (*Breusch-Pagan standar, Koenker, White, Glejser, Goldfeld-Quandt*), Autokorelasi (*Durbin-Watson, Breusch-Godfrey, Ljung-Box, ACF & PACF*), Linearitas (*Ramsey RESET eksak, Harvey-Collier*).
+6. **Poin 06 — Metode Statistik Robust**: Kovarians **HC0, HC1, HC2, HC3, HC4**, Newey-West HAC, WLS, Cochrane-Orcutt vs Prais-Winsten AR(1), Bootstrap Confidence Intervals (Case & Block Bootstrap), IRLS Robust Regression, dan Transformasi Variabel.
+7. **Poin 07 — Moderated Regression Analysis (MRA)**: Persamaan $Y = \beta_0 + \beta_1 X + \beta_2 Z + \beta_3(XZ) + \varepsilon$, Mean Centering otomatis, Hierarchical Regression 3 Model (Model 1, Model 2, Model 3) dengan *Change Statistics* ($R^2\text{ Change}, F\text{ Change}, df_1, df_2, \text{Sig. } F\text{ Change}$).
+8. **Poin 08 — Advanced Moderation Analysis**: *Simple Slope Analysis* pada $Z = -1\text{ SD}, \text{Mean}, +1\text{ SD}$, Teknik *Johnson-Neyman* (batas signifikansi $Z_{\text{JN}}$ & Floodlight Region), Moderator Kategorik (Dummy/Contrast Coding), dan klasifikasi 4 tipe moderator (*Pure, Quasi, Predictor, Homologizer*).
+9. **Poin 09 — Contingency Analysis (Crosstabulation)**: Tabel kontingensi $2\times 2, 2\times k, r\times 2, r\times c$ dengan *Observed, Expected, Row %, Column %, Total %, Marginal Totals*.
+10. **Poin 10 — Chi-Square & Association Analysis**: *Pearson Chi-Square, Likelihood Ratio ($G^2$), Yates Continuity Correction, Fisher's Exact Test, Fisher-Freeman-Halton / Monte Carlo Significance, Linear-by-Linear Association*; ukuran asosiasi (*Phi, Cramer's V, Contingency Coefficient, Odds Ratio, Relative Risk, Risk Difference*); serta *Pearson, Standardized, & Adjusted Standardized Residuals*.
+11. **Poin 11 — Correlation & Association**: *Pearson, Spearman Rank, Kendall's Tau-b, Partial Correlation, Point-Biserial*, 95% CI Fisher's $z$, matriks korelasi & heatmap.
+12. **Poin 12 — Advanced Regression Models**: *Binary Logistic, Multinomial Logistic, Ordinal Logistic, Poisson, Negative Binomial, Polynomial, Quantile Regression ($L_1$ Median), dan GLM*.
+13. **Poin 13 — Model Evaluation & Validation**: $R^2$, Adj $R^2$, RMSE, MAE, MSE, AIC, BIC, $k$-Fold Cross-Validation ($k=5, 10$), Rolling-Origin Time-Series Validation, dan perbandingan model.
+14. **Poin 14 — Visualisasi Statistik**: Scatterplot + Garis Regresi, Partial Regression Plot, P-P, Q-Q, Histogram Residual, ZPRED vs SRESID, ACF/PACF, Interaction & Simple Slope Plot, Johnson-Neyman Plot, Clustered/Stacked Bar, Mosaic Plot, dan Residual Heatmap.
+15. **Poin 15 — Mesin Interpretasi Akademik**: Narasi akademik bahasa Indonesia terstruktur 10-elemen (*Tujuan, Metode, $H_0/H_1$, Statistik Uji, p-value, Alpha, CI, Keputusan, Kesimpulan, Implikasi Penelitian*).
+16. **Poin 16 — Kompatibilitas Output SPSS**: Struktur tabel identik SPSS, pembulatan desimal terkonfigurasi, format $p < .001$, dan pengaturan tingkat Confidence Interval ($90\%, 95\%, 99\%$).
+17. **Poin 17 — Integrasi Skill & Repository Statistik**: Adopsi metodologi `statsmodels`, `scipy`, `pingouin`, `researchpy`, `scikit-posthocs`, `scikit-learn`, dan `K-Dense-AI/scientific-agent-skills`.
+18. **Poin 18 — Ekspor Laporan Akademik**: Word (`.docx`) dan multi-sheet Excel (`.xlsx`) mencakup seluruh modul baru.
+19. **Poin 19 & 20 — Jaminan Kualitas & Benchmark SPSS**: Unit test komprehensif, stabilitas numerik, dan benchmark terhadap NIST StRD & golden fixtures SPSS/R.
+20. **Poin 21 — Perbaikan Kontras Dark Mode**: Penghapusan warna latar putih hardcoded (`#ffffff`) pada kartu pilihan di `RegressionTab.tsx` dan penyelarasan token tema gelap/terang di `globals.css`.

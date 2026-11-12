@@ -424,9 +424,9 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '6px',
-                  background: isTimeSeries ? '#eff6ff' : '#f0fdf4',
-                  border: isTimeSeries ? '1px solid #bfdbfe' : '1px solid #bbf7d0',
-                  color: isTimeSeries ? '#1d4ed8' : '#15803d',
+                  background: isTimeSeries ? 'var(--info-bg)' : 'var(--success-bg)',
+                  border: isTimeSeries ? '1px solid var(--info-border)' : '1px solid var(--success-border)',
+                  color: isTimeSeries ? 'var(--info)' : 'var(--success)',
                   padding: '3px 10px',
                   borderRadius: '20px',
                   fontSize: '11.5px',
@@ -489,14 +489,14 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
           marginBottom: '20px',
           padding: '14px 18px',
           borderRadius: '12px',
-          background: '#fef3c7',
-          border: '1.5px solid #f59e0b',
-          color: '#92400e',
+          background: 'var(--warn-bg)',
+          border: '1.5px solid var(--warn-border)',
+          color: 'var(--warn)',
           display: 'flex',
           alignItems: 'flex-start',
           gap: '12px'
         }}>
-          <AlertTriangle size={20} color="#b45309" style={{ flexShrink: 0, marginTop: '2px' }} />
+          <AlertTriangle size={20} color="var(--warn)" style={{ flexShrink: 0, marginTop: '2px' }} />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '13.5px', fontWeight: 800, marginBottom: '2px' }}>
               Perhatian Ekonometrika: Potensi Struktur Data Panel Terdeteksi!
@@ -767,7 +767,7 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                           padding: '14px 18px',
                           borderRadius: '12px',
                           border: selectedSheet === sheet ? '2px solid var(--fern)' : '1px solid var(--border)',
-                          background: selectedSheet === sheet ? 'var(--dew)' : '#ffffff',
+                          background: selectedSheet === sheet ? 'var(--dew)' : 'var(--surface-muted)',
                           cursor: 'pointer'
                         }}
                       >
@@ -915,15 +915,15 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                 <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>Klasifikasi Model:</span>
                   {xCols.length === 0 ? (
-                    <span style={{ background: '#fef2f2', color: '#991b1b', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 800 }}>
+                    <span style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', color: 'var(--danger)', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 800 }}>
                       Belum Ada Variabel X Terpilih (Pilih Minimal 1)
                     </span>
                   ) : xCols.length === 1 ? (
-                    <span style={{ background: '#dbeafe', color: '#1e40af', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 800 }}>
+                    <span style={{ background: 'var(--info-bg)', border: '1px solid var(--info-border)', color: 'var(--info)', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 800 }}>
                       Simple Linear Regression (SLR) — 1 Prediktor
                     </span>
                   ) : (
-                    <span style={{ background: '#dcfce7', color: '#166534', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 800 }}>
+                    <span style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--success)', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 800 }}>
                       Multiple Linear Regression (MLR) — {xCols.length} Prediktor
                     </span>
                   )}
@@ -970,7 +970,7 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                         placeholder="Cari kolom..."
                         value={columnSearchQuery}
                         onChange={(e) => setColumnSearchQuery(e.target.value)}
-                        style={{ paddingLeft: '30px', height: '34px', fontSize: '12px', borderRadius: '8px', border: '1px solid var(--border)', width: '100%' }}
+                        style={{ paddingLeft: '30px', height: '34px', fontSize: '12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', width: '100%' }}
                       />
                     </div>
                   </div>
@@ -991,7 +991,7 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                             padding: '10px 14px',
                             borderRadius: '10px',
                             border: isSelected ? '1.5px solid var(--fern)' : '1px solid var(--border)',
-                            background: isY ? 'var(--mist)' : (isSelected ? 'var(--dew)' : '#ffffff'),
+                            background: isY ? 'var(--mist)' : (isSelected ? 'var(--dew)' : 'var(--surface-muted)'),
                             cursor: isY ? 'not-allowed' : 'pointer',
                             opacity: isY ? 0.5 : 1
                           }}
@@ -1262,19 +1262,19 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                       alignItems: 'center',
                       gap: '12px',
                       marginBottom: '20px',
-                      background: validationSummary.isValid ? '#dcfce7' : '#fee2e2',
-                      border: validationSummary.isValid ? '1px solid #86efac' : '1px solid #fca5a5'
+                      background: validationSummary.isValid ? 'var(--success-bg)' : 'var(--danger-bg)',
+                      border: validationSummary.isValid ? '1px solid var(--success-border)' : '1px solid var(--danger-border)'
                     }}>
                       {validationSummary.isValid ? (
-                        <CheckCircle2 size={24} color="#166534" />
+                        <CheckCircle2 size={24} color="var(--success)" />
                       ) : (
-                        <XCircle size={24} color="#991b1b" />
+                        <XCircle size={24} color="var(--danger)" />
                       )}
                       <div>
-                        <div style={{ fontSize: '14px', fontWeight: 800, color: validationSummary.isValid ? '#166534' : '#991b1b' }}>
+                        <div style={{ fontSize: '14px', fontWeight: 800, color: validationSummary.isValid ? 'var(--success)' : 'var(--danger)' }}>
                           {validationSummary.isValid ? 'Konfigurasi Memenuhi Syarat Estimasi Regresi OLS' : 'Konfigurasi Mengandung Kesalahan (Harus Diperbaiki)'}
                         </div>
-                        <div style={{ fontSize: '12px', color: validationSummary.isValid ? '#14532d' : '#7f1d1d' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                           {validationSummary.isValid ? 'Semua asumsi minimal terpenuhi. Siap dieksekusi oleh mesin statistik.' : 'Tinjau daftar kesalahan di bawah sebelum melanjutkan.'}
                         </div>
                       </div>
@@ -1312,10 +1312,10 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                     {/* Pesan Kesalahan (Blocking) */}
                     {validationSummary.errors.length > 0 && (
                       <div style={{ marginBottom: '16px' }}>
-                        <h5 style={{ fontSize: '13px', fontWeight: 800, color: '#991b1b', marginBottom: '6px' }}>
+                        <h5 style={{ fontSize: '13px', fontWeight: 800, color: 'var(--danger)', marginBottom: '6px' }}>
                           Kesalahan yang Memblokir ({validationSummary.errors.length}):
                         </h5>
-                        <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#7f1d1d' }}>
+                        <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: 'var(--danger)' }}>
                           {validationSummary.errors.map((err, idx) => (
                             <li key={idx} style={{ marginBottom: '4px' }}>{err}</li>
                           ))}
@@ -1325,14 +1325,14 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
 
                     {/* Pesan Peringatan (Non-blocking) */}
                     {validationSummary.warnings.length > 0 && (
-                      <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '10px', background: '#fef8ec', border: '1px solid #f0cc7a' }}>
+                      <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '10px', background: 'var(--warn-bg)', border: '1px solid var(--warn-border)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                          <AlertTriangle size={16} color="#b45309" />
-                          <span style={{ fontSize: '13px', fontWeight: 800, color: '#92400e' }}>
+                          <AlertTriangle size={16} color="var(--warn)" />
+                          <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--warn)' }}>
                             Catatan & Peringatan Metodologis ({validationSummary.warnings.length}):
                           </span>
                         </div>
-                        <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '12.5px', color: '#78350f' }}>
+                        <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
                           {validationSummary.warnings.map((warn, idx) => (
                             <li key={idx} style={{ marginBottom: '4px' }}>{warn}</li>
                           ))}
@@ -1501,7 +1501,7 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
 
                 {/* Pesan Kesalahan Komputasi (Jika ada) */}
                 {fitError && (
-                  <div style={{ marginTop: '16px', padding: '12px', borderRadius: '8px', background: '#fee2e2', border: '1px solid #f87171', color: '#991b1b', fontSize: '13px' }}>
+                  <div style={{ marginTop: '16px', padding: '12px', borderRadius: '8px', background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', color: 'var(--danger)', fontSize: '13px' }}>
                     <strong>Kesalahan Komputasi:</strong> {fitError}
                   </div>
                 )}
@@ -1728,8 +1728,8 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                       padding: '2px 8px',
                       borderRadius: '12px',
                       fontWeight: 700,
-                      background: isPassed ? '#dcfce7' : (isActive ? '#dbeafe' : 'var(--mist)'),
-                      color: isPassed ? '#166534' : (isActive ? '#1e40af' : 'var(--stone)')
+                      background: isPassed ? 'var(--success-bg)' : (isActive ? 'var(--info-bg)' : 'var(--mist)'),
+                      color: isPassed ? 'var(--success)' : (isActive ? 'var(--info)' : 'var(--stone)')
                     }}>
                       {isPassed ? 'Completed' : (isActive ? 'Active' : 'Pending')}
                     </span>

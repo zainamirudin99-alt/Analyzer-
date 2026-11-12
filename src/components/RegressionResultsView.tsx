@@ -23,6 +23,7 @@ import {
 } from '../lib/regression-remedial';
 import { generateDeterministicInterpretation } from '../lib/regression-interpretation';
 import { DiagnosticPlots } from './DiagnosticPlots';
+import { AdvancedStatisticalSuitePanel } from './AdvancedStatisticalSuitePanel';
 import {
   generateVariablesEnteredRemoved,
   computeAdvancedAssumptions,
@@ -2480,8 +2481,22 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
           <h3 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: 600, color: 'var(--text-primary, #f8fafc)' }}>
             Grafik Diagnostik Residual Regresi
           </h3>
-          <DiagnosticPlots plots={activeResult.plots} yCol={variables.yCol} isTimeSeries={isTimeSeries} />
+          <DiagnosticPlots
+            plots={activeResult.plots}
+            yCol={variables.yCol}
+            isTimeSeries={isTimeSeries}
+            acfPacf={timeSeriesDiagnostics?.acfPacf}
+          />
         </div>
+
+        {/* Advanced Statistical Analysis Suite (Points 03–16) */}
+        <AdvancedStatisticalSuitePanel
+          activeResult={activeResult}
+          allRows={allRows}
+          yCol={variables.yCol}
+          xCols={variables.xCols}
+          alpha={alpha}
+        />
       </div>
 
       {/* ========================================================

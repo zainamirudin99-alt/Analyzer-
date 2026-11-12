@@ -203,3 +203,85 @@ export function generateDeterministicInterpretation(
     covarianceEstimatorNote,
   };
 }
+
+// ============================================================
+// Point 15: 10-Element Formal Academic Indonesian Interpretation
+// ============================================================
+export interface TenElementAcademicInterpretation {
+  testPurpose: string;              // 1. Tujuan pengujian statistik
+  hypotheses: { h0: string; h1: string }; // 2. Hipotesis nol (H0) dan alternatif (H1)
+  statisticValue: string;           // 3. Nilai statistik uji
+  pValueFormatted: string;          // 4. Nilai signifikansi (p-value)
+  decisionCriterion: string;        // 5. Kriteria pengambilan keputusan
+  h0Decision: string;               // 6. Keputusan terhadap H0
+  directionOfRelationship: string;  // 7. Arah hubungan
+  strengthOfRelationship: string;   // 8. Kekuatan hubungan / Effect size
+  statisticalMeaning: string;       // 9. Makna statistik
+  practicalImplication: string;     // 10. Implikasi praktis dalam konteks penelitian
+}
+
+export function generateTenElementAcademicInterpretation(
+  result: OLSFitResult,
+  alpha: number = 0.05
+): TenElementAcademicInterpretation[] {
+  const items: TenElementAcademicInterpretation[] = [];
+  const yCol = result.variables.yCol;
+  const xList = result.variables.xCols.join(", ");
+  const r = result.modelSummary.r;
+  const r2 = result.modelSummary.rSquared;
+  const fStat = result.anova.regression.f;
+  const fSig = result.anova.regression.sig;
+  const df1 = result.anova.regression.df;
+  const df2 = result.anova.residual.df;
+
+  // 1. Simultaneous F-Test 10-Element Card
+  const fSigStr = fSig < 0.001 ? "< .001" : fSig.toFixed(3);
+  const fRejected = fSig < alpha;
+  items.push({
+    testPurpose: `Menguji kelayakan model (Goodness-of-Fit) dan pengaruh simultan variabel independen (${xList}) terhadap variabel dependen (${yCol}).`,
+    hypotheses: {
+      h0: `H0: β1 = β2 = ... = βk = 0 (Seluruh prediktor secara simultan tidak berasosiasi linear dengan ${yCol}).`,
+      h1: `H1: Minimal terdapat satu βj ≠ 0 (Minimal satu prediktor berasosiasi linear signifikan dengan ${yCol}).`
+    },
+    statisticValue: `F(${df1}, ${df2}) = ${fStat.toFixed(3)}`,
+    pValueFormatted: fSigStr,
+    decisionCriterion: `Tolak H0 apabila nilai Sig. (p-value) < α (${alpha}).`,
+    h0Decision: fRejected ? "Tolak H0 (Terima H1)" : "Gagal Tolak H0",
+    directionOfRelationship: "Simultan / Multivariat (Omnibus)",
+    strengthOfRelationship: `R = ${r.toFixed(3)}, R Square (R²) = ${r2.toFixed(3)} (${(r2 * 100).toFixed(1)}%), Adjusted R² = ${result.modelSummary.adjRSquared.toFixed(3)}.`,
+    statisticalMeaning: fRejected
+      ? `Kombinasi variabel independen (${xList}) secara bersama-sama mampu menjelaskan ${(r2 * 100).toFixed(1)}% variasi pada ${yCol} secara signifikan.`
+      : `Kombinasi variabel independen (${xList}) belum mampu menjelaskan variasi ${yCol} secara signifikan pada tingkat α = ${alpha}.`,
+    practicalImplication: fRejected
+      ? `Spesifikasi model regresi layak digunakan sebagai dasar inferensi akademik dan pemodelan prediktif terhadap ${yCol}.`
+      : `Peneliti disarankan mengevaluasi kembali spesifikasi teori, kecukupan ukuran sampel (N = ${result.sampleSize.nUsed}), atau variabel kontrol yang belum dimasukkan.`
+  });
+
+  // 2. Partial t-Tests for Each Predictor
+  for (const coef of result.coefficients.filter(c => c.variable !== "(Constant)")) {
+    const tSigStr = coef.sig < 0.001 ? "< .001" : coef.sig.toFixed(3);
+    const tRejected = coef.sig < alpha;
+    const dir = coef.b >= 0 ? "Positif (Searah)" : "Negatif (Berlawanan Arah)";
+    items.push({
+      testPurpose: `Menguji pengaruh parsial (ceteris paribus) variabel ${coef.variable} terhadap ${yCol}.`,
+      hypotheses: {
+        h0: `H0: β_${coef.variable} = 0 (${coef.variable} tidak berpengaruh signifikan secara parsial terhadap ${yCol}).`,
+        h1: `H1: β_${coef.variable} ≠ 0 (${coef.variable} berpengaruh signifikan secara parsial terhadap ${yCol}).`
+      },
+      statisticValue: `t(${df2}) = ${coef.t.toFixed(3)}, B = ${coef.b.toFixed(3)} (SE = ${coef.stdError.toFixed(3)})`,
+      pValueFormatted: tSigStr,
+      decisionCriterion: `Tolak H0 apabila nilai Sig. (2-tailed) < α (${alpha}) dan interval kepercayaan 95% [${coef.ciLower.toFixed(3)}, ${coef.ciUpper.toFixed(3)}] tidak memuat angka nol.`,
+      h0Decision: tRejected ? "Tolak H0 (Signifikan)" : "Gagal Tolak H0 (Tidak Signifikan)",
+      directionOfRelationship: dir,
+      strengthOfRelationship: `Standardized Beta (β) = ${(coef.beta ?? 0).toFixed(3)}, Korelasi Parsial = ${(coef.correlations?.partial ?? 0).toFixed(3)}, Semi-Parsial (Part) = ${(coef.correlations?.part ?? 0).toFixed(3)}.`,
+      statisticalMeaning: tRejected
+        ? `Setiap kenaikan 1 satuan pada ${coef.variable} berasosiasi dengan perubahan rata-rata ${yCol} sebesar ${coef.b.toFixed(3)} satuan dengan mengasumsikan variabel independen lainnya konstan.`
+        : `Variasi pada ${coef.variable} belum terbukti memberikan kontribusi unik yang signifikan terhadap perubahan ${yCol} ketika variabel lain dikontrol.`,
+      practicalImplication: tRejected
+        ? `Variabel ${coef.variable} merupakan determinan empiris penting yang perlu diprioritaskan dalam perumusan kebijakan atau implikasi manajerial terkait ${yCol}.`
+        : `Kebijakan yang hanya mengandalkan intervensi langsung pada ${coef.variable} belum memiliki dukungan bukti empiris linear yang memadai pada sampel ini.`
+    });
+  }
+
+  return items;
+}

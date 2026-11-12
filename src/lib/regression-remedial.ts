@@ -1149,3 +1149,359 @@ export function applyDoubleLogTransformation(
   };
 }
 
+/**
+ * Unified Heteroskedasticity-Consistent Covariance Matrix Estimator (HC0, HC1, HC2, HC3, HC4)
+ * - HC0 (White 1980): w_i = e_i^2
+ * - HC1 (MacKinnon-White 1985): w_i = (n / (n - p)) * e_i^2
+ * - HC2 (Horn-Horn-Duncan): w_i = e_i^2 / (1 - h_ii)
+ * - HC3 (Davidson-MacKinnon 1993): w_i = e_i^2 / (1 - h_ii)^2
+ * - HC4 (Cribari-Neto 2004): w_i = e_i^2 / (1 - h_ii)^{delta_i}, delta_i = min(4, n * h_ii / p)
+ */
+export function computeHCCovariance(
+  y: number[],
+  x: number[][],
+  b: number[],
+  type: "HC0" | "HC1" | "HC2" | "HC3" | "HC4" = "HC3"
+): { se: number[]; covMatrix: number[][]; type: "HC0" | "HC1" | "HC2" | "HC3" | "HC4" } {
+  const n = y.length;
+  const X = x.map((row) => [1, ...row]);
+  const p = X[0].length;
+  const invXtX = invertMatrix(computeXtX(X));
+  const dofScale = type === "HC1" && n > p ? n / (n - p) : 1.0;
+
+  const weights: number[] = [];
+  for (let i = 0; i < n; i++) {
+    let hii = 0;
+    for (let r = 0; r < p; r++) {
+      for (let c = 0; c < p; c++) {
+        hii += X[i][r] * invXtX[r][c] * X[i][c];
+      }
+    }
+    hii = Math.max(0, Math.min(0.9999, hii));
+    const oneMinusH = Math.max(1e-6, 1 - hii);
+
+    let pred = 0;
+    for (let j = 0; j < p; j++) {
+      pred += (b[j] || 0) * X[i][j];
+    }
+    const e2 = (y[i] - pred) * (y[i] - pred);
+
+    if (type === "HC0" || type === "HC1") {
+      weights.push(dofScale * e2);
+    } else if (type === "HC2") {
+      weights.push(e2 / oneMinusH);
+    } else if (type === "HC3") {
+      weights.push(e2 / (oneMinusH * oneMinusH));
+    } else {
+      // HC4 (Cribari-Neto 2004)
+      const delta = Math.min(4.0, (n * hii) / p);
+      weights.push(e2 / Math.pow(oneMinusH, delta));
+    }
+  }
+
+  const M: number[][] = Array.from({ length: p }, () => Array(p).fill(0));
+  for (let i = 0; i < n; i++) {
+    const w = weights[i];
+    for (let r = 0; r < p; r++) {
+      for (let c = 0; c < p; c++) {
+        M[r][c] += X[i][r] * w * X[i][c];
+      }
+    }
+  }
+
+  const temp: number[][] = Array.from({ length: p }, () => Array(p).fill(0));
+  for (let r = 0; r < p; r++) {
+    for (let c = 0; c < p; c++) {
+      for (let k = 0; k < p; k++) {
+        temp[r][c] += invXtX[r][k] * M[k][c];
+      }
+    }
+  }
+
+  const V: number[][] = Array.from({ length: p }, () => Array(p).fill(0));
+  for (let r = 0; r < p; r++) {
+    for (let c = 0; c < p; c++) {
+      for (let k = 0; k < p; k++) {
+        V[r][c] += temp[r][k] * invXtX[k][c];
+      }
+    }
+  }
+
+  return {
+    se: V.map((row, idx) => Math.sqrt(Math.max(1e-12, row[idx]))),
+    covMatrix: V,
+    type,
+  };
+}
+
+/**
+ * Explicit Prais-Winsten AR(1) Transformation (Retains first observation t=1 with sqrt(1 - rho^2))
+ */
+export function applyPraisWinstenAR1(
+  rows: Record<string, any>[],
+  yCol: string,
+  xCols: string[],
+  b: number[]
+): { rows: Record<string, any>[]; rho: number; method: "Prais-Winsten" } {
+  const res = applyCochraneOrcuttAR1(rows, yCol, xCols, b);
+  return { ...res, method: "Prais-Winsten" };
+}
+
+/**
+ * Explicit Strict Cochrane-Orcutt AR(1) Transformation (Drops first observation t=1, uses t=2..n)
+ */
+export function applyCochraneOrcuttStrictAR1(
+  rows: Record<string, any>[],
+  yCol: string,
+  xCols: string[],
+  b: number[]
+): { rows: Record<string, any>[]; rho: number; method: "Cochrane-Orcutt" } {
+  const res = applyCochraneOrcuttAR1(rows, yCol, xCols, b);
+  return {
+    rows: res.rows.length > 1 ? res.rows.slice(1) : res.rows,
+    rho: res.rho,
+    method: "Cochrane-Orcutt",
+  };
+}
+
+/**
+ * Robust Regression via Iteratively Reweighted Least Squares (IRLS - Huber M-Estimator & Tukey Bisquare)
+ */
+export function fitRobustRLM(
+  y: number[],
+  x: number[][],
+  method: "huber" | "tukey" = "huber",
+  maxIter = 30
+): {
+  coefficients: number[];
+  stdErrors: number[];
+  weights: number[];
+  iterations: number;
+  scaleMAD: number;
+  method: "huber" | "tukey";
+} {
+  const n = y.length;
+  const X = x.map((row) => [1, ...row]);
+  const p = X[0].length;
+
+  // Initial OLS estimate
+  let invXtX = invertMatrix(computeXtX(X));
+  const Xty0 = new Array(p).fill(0);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < p; j++) Xty0[j] += X[i][j] * y[i];
+  }
+  let beta = new Array(p).fill(0);
+  for (let i = 0; i < p; i++) {
+    for (let j = 0; j < p; j++) beta[i] += invXtX[i][j] * Xty0[j];
+  }
+
+  let weights = new Array(n).fill(1.0);
+  let scaleMAD = 1.0;
+  let iter = 0;
+
+  for (iter = 1; iter <= maxIter; iter++) {
+    const res: number[] = [];
+    for (let i = 0; i < n; i++) {
+      let pred = 0;
+      for (let j = 0; j < p; j++) pred += beta[j] * X[i][j];
+      res.push(y[i] - pred);
+    }
+
+    // MAD Scale: median(|e_i - median(e)|) / 0.6745
+    const sortedRes = [...res].sort((a, b) => a - b);
+    const medRes = sortedRes[Math.floor(n / 2)];
+    const absDevs = res.map((e) => Math.abs(e - medRes)).sort((a, b) => a - b);
+    scaleMAD = Math.max(1e-8, absDevs[Math.floor(n / 2)] / 0.6745);
+
+    // Update weights
+    const nextWeights: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const u = Math.abs(res[i]) / scaleMAD;
+      if (method === "huber") {
+        const kHuber = 1.345;
+        nextWeights.push(u <= kHuber ? 1.0 : kHuber / u);
+      } else {
+        // Tukey Bisquare (c = 4.685)
+        const cTukey = 4.685;
+        if (u <= cTukey) {
+          const ratio = u / cTukey;
+          const term = 1.0 - ratio * ratio;
+          nextWeights.push(term * term);
+        } else {
+          nextWeights.push(1e-6);
+        }
+      }
+    }
+    weights = nextWeights;
+
+    // Weighted Least Squares step: beta_new = (X^T W X)^-1 X^T W y
+    const XtWX: number[][] = Array.from({ length: p }, () => Array(p).fill(0));
+    const XtWy: number[] = new Array(p).fill(0);
+    for (let i = 0; i < n; i++) {
+      const w = weights[i];
+      for (let r = 0; r < p; r++) {
+        XtWy[r] += X[i][r] * w * y[i];
+        for (let c = 0; c < p; c++) {
+          XtWX[r][c] += X[i][r] * w * X[i][c];
+        }
+      }
+    }
+    const invXtWX = invertMatrix(XtWX);
+    const nextBeta = new Array(p).fill(0);
+    for (let r = 0; r < p; r++) {
+      for (let c = 0; c < p; c++) {
+        nextBeta[r] += invXtWX[r][c] * XtWy[c];
+      }
+    }
+
+    let maxDiff = 0;
+    for (let j = 0; j < p; j++) {
+      const d = Math.abs(nextBeta[j] - beta[j]);
+      if (d > maxDiff) maxDiff = d;
+    }
+    beta = nextBeta;
+    invXtX = invXtWX;
+    if (maxDiff < 1e-6) break;
+  }
+
+  // Weighted residual variance
+  let wsse = 0;
+  for (let i = 0; i < n; i++) {
+    let pred = 0;
+    for (let j = 0; j < p; j++) pred += beta[j] * X[i][j];
+    const diff = y[i] - pred;
+    wsse += weights[i] * diff * diff;
+  }
+  const s2Robust = wsse / Math.max(1, n - p);
+  const stdErrors = invXtX.map((row, idx) => Math.sqrt(Math.max(1e-12, row[idx] * s2Robust)));
+
+  return {
+    coefficients: beta,
+    stdErrors,
+    weights,
+    iterations: iter,
+    scaleMAD,
+    method,
+  };
+}
+
+/**
+ * Non-Parametric Bootstrap Confidence Intervals (Case Resampling & Moving Block Bootstrap)
+ */
+export function computeBootstrapCI(
+  y: number[],
+  x: number[][],
+  options: {
+    replications?: number;
+    ciLevel?: number;
+    isTimeSeries?: boolean;
+    blockLength?: number;
+  } = {}
+): {
+  replications: number;
+  ciLevel: number;
+  estimates: {
+    paramIndex: number;
+    bootstrapMean: number;
+    bootstrapSE: number;
+    bias: number;
+    ciLowerPercentile: number;
+    ciUpperPercentile: number;
+  }[];
+} {
+  const B = options.replications ?? 500;
+  const ciLevel = options.ciLevel ?? 0.95;
+  const isTimeSeries = options.isTimeSeries ?? false;
+  const n = y.length;
+  const X = x.map((row) => [1, ...row]);
+  const p = X[0].length;
+  const blockLen = options.blockLength ?? Math.max(2, Math.floor(Math.pow(n, 1 / 3)));
+
+  // Baseline OLS
+  const inv0 = invertMatrix(computeXtX(X));
+  const Xty0 = new Array(p).fill(0);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < p; j++) Xty0[j] += X[i][j] * y[i];
+  }
+  const bOrig = new Array(p).fill(0);
+  for (let r = 0; r < p; r++) {
+    for (let c = 0; c < p; c++) bOrig[r] += inv0[r][c] * Xty0[c];
+  }
+
+  let seed = 987654321;
+  const prng = () => {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
+
+  const bootSamples: number[][] = Array.from({ length: p }, () => []);
+
+  for (let b = 0; b < B; b++) {
+    const indices: number[] = [];
+    if (isTimeSeries) {
+      while (indices.length < n) {
+        const start = Math.floor(prng() * Math.max(1, n - blockLen + 1));
+        for (let l = 0; l < blockLen && indices.length < n; l++) {
+          indices.push(start + l);
+        }
+      }
+    } else {
+      for (let i = 0; i < n; i++) {
+        indices.push(Math.floor(prng() * n));
+      }
+    }
+
+    const subX = indices.map((idx) => X[idx]);
+    const subY = indices.map((idx) => y[idx]);
+    try {
+      const invSub = invertMatrix(computeXtX(subX));
+      const Xty = new Array(p).fill(0);
+      for (let i = 0; i < n; i++) {
+        for (let j = 0; j < p; j++) Xty[j] += subX[i][j] * subY[i];
+      }
+      for (let r = 0; r < p; r++) {
+        let val = 0;
+        for (let c = 0; c < p; c++) val += invSub[r][c] * Xty[c];
+        bootSamples[r].push(val);
+      }
+    } catch {
+      // Skip singular bootstrap draw
+    }
+  }
+
+  const alphaTail = (1 - ciLevel) / 2;
+  const estimates = bootSamples.map((draws, idx) => {
+    if (draws.length === 0) {
+      return {
+        paramIndex: idx,
+        bootstrapMean: bOrig[idx],
+        bootstrapSE: 0,
+        bias: 0,
+        ciLowerPercentile: bOrig[idx],
+        ciUpperPercentile: bOrig[idx],
+      };
+    }
+    const sorted = [...draws].sort((a, b) => a - b);
+    const m = sorted.length;
+    const mean = sorted.reduce((acc, v) => acc + v, 0) / m;
+    const se = Math.sqrt(sorted.reduce((acc, v) => acc + (v - mean) * (v - mean), 0) / Math.max(1, m - 1));
+    const lowIdx = Math.max(0, Math.floor(alphaTail * m));
+    const highIdx = Math.min(m - 1, Math.ceil((1 - alphaTail) * m) - 1);
+    return {
+      paramIndex: idx,
+      bootstrapMean: Number(mean.toFixed(6)),
+      bootstrapSE: Number(se.toFixed(6)),
+      bias: Number((mean - bOrig[idx]).toFixed(6)),
+      ciLowerPercentile: Number(sorted[lowIdx].toFixed(6)),
+      ciUpperPercentile: Number(sorted[highIdx].toFixed(6)),
+    };
+  });
+
+  return {
+    replications: B,
+    ciLevel,
+    estimates,
+  };
+}
+
+
