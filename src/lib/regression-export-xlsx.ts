@@ -13,6 +13,8 @@
 
 import * as XLSX from 'xlsx';
 import { OLSFitResult } from './regression-engine';
+import { MRAResult } from './regression-moderation-mra';
+import { ContingencyAnalysisResult } from './regression-contingency-chisquare';
 import { ModelComparisonReport } from './regression-model-comparison';
 import { RecommendationEngineOutput } from './regression-recommendation-engine';
 import { generateTenElementAcademicInterpretation } from './regression-interpretation';
@@ -476,3 +478,144 @@ export function generateRegressionXLSX(options: XlsxExportOptions): Buffer {
 }
 
 export const buildRegressionXlsxBuffer = generateRegressionXLSX;
+
+/**
+ * Ekspor Multi-Sheet Excel (.xlsx) untuk Moderated Regression Analysis (MRA)
+ */
+export function generateMRAXLSX(options: {
+  mraResult: MRAResult;
+  datasetName: string;
+  sheetName: string;
+}): Buffer {
+  const { mraResult: mra, datasetName, sheetName } = options;
+  const wb = XLSX.utils.book_new();
+
+  const summaryRows: any[][] = [
+    ['LAPORAN MODERATED REGRESSION ANALYSIS (MRA)'],
+    ['Dataset', sanitizeCellValue(datasetName), 'Sheet', sanitizeCellValue(sheetName)],
+    ['Variabel Y', sanitizeCellValue(mra.yCol), 'Prediktor X', sanitizeCellValue(mra.xCol)],
+    ['Moderator Z', sanitizeCellValue(mra.zCol), 'Klasifikasi', mra.moderatorClassification.type],
+    ['Sample Size (N)', mra.nUsed, 'Alpha', mra.alpha],
+    [],
+    ['R² Change (Interaksi)', roundNum(mra.interactionEffect.rSquaredChange, 4)],
+    ['F Change', roundNum(mra.interactionEffect.fChange, 4)],
+    ['Sig. F Change', roundNum(mra.interactionEffect.sigFChange, 4)],
+    ['Wilayah Johnson-Neyman', sanitizeCellValue(mra.johnsonNeyman.regionsDescription)]
+  ];
+  XLSX.utils.book_append_sheet(wb, createAutoSizedSheet(summaryRows), 'Ringkasan_MRA');
+
+  const hierRows: any[][] = [
+    ['MODEL SUMMARY HIERARKIS (MRA)'],
+    ['Model', 'R', 'R Square', 'Adjusted R Square', 'R Square Change', 'F Change', 'df1', 'df2', 'Sig. F Change'],
+    ...[mra.models.model1, mra.models.model2, mra.models.model3].map(s => [
+      `Model ${s.modelNumber}`,
+      roundNum(s.fit.modelSummary.r, 4),
+      roundNum(s.fit.modelSummary.rSquared, 4),
+      roundNum(s.fit.modelSummary.adjRSquared, 4),
+      roundNum(s.changeStats.rSquaredChange, 4),
+      roundNum(s.changeStats.fChange, 4),
+      s.changeStats.df1,
+      s.changeStats.df2,
+      roundNum(s.changeStats.sigFChange, 4)
+    ])
+  ];
+  XLSX.utils.book_append_sheet(wb, createAutoSizedSheet(hierRows), 'Model_Hierarkis');
+
+  const coefRows: any[][] = [
+    ['COEFFICIENTS MODEL 3 (FULL INTERACTION)'],
+    ['Variabel', 'B', 'Std. Error', 'Beta', 't', 'Sig.', 'Tolerance', 'VIF'],
+    ...mra.models.model3.fit.coefficients.map(c => [
+      sanitizeCellValue(c.variable),
+      roundNum(c.b, 4),
+      roundNum(c.stdError, 4),
+      c.variable === '(Constant)' ? '-' : roundNum(c.beta, 4),
+      roundNum(c.t, 4),
+      roundNum(c.sig, 4),
+      c.variable === '(Constant)' ? '-' : roundNum(c.collinearity.tolerance, 4),
+      c.variable === '(Constant)' ? '-' : roundNum(c.collinearity.vif, 4)
+    ])
+  ];
+  XLSX.utils.book_append_sheet(wb, createAutoSizedSheet(coefRows), 'Koefisien_Model3');
+
+  const slopeRows: any[][] = [
+    ['SIMPLE SLOPES CONDITIONAL EFFECTS'],
+    ['Level Moderator', 'Slope (b)', 'Std. Error', 't', 'Sig.', 'CI Bawah', 'CI Atas', 'Signifikan'],
+    ...mra.simpleSlopes.map(s => [
+      sanitizeCellValue(s.levelLabel),
+      roundNum(s.slope, 4),
+      roundNum(s.stdError, 4),
+      roundNum(s.tStat, 4),
+      roundNum(s.pValue, 4),
+      roundNum(s.ciLower, 4),
+      roundNum(s.ciUpper, 4),
+      s.isSignificant ? 'Ya' : 'Tidak'
+    ])
+  ];
+  XLSX.utils.book_append_sheet(wb, createAutoSizedSheet(slopeRows), 'Simple_Slopes');
+
+  return Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+}
+
+/**
+ * Ekspor Multi-Sheet Excel (.xlsx) untuk Analisis Kontingensi & Chi-Square
+ */
+export function generateContingencyXLSX(options: {
+  contingencyResult: ContingencyAnalysisResult;
+  datasetName: string;
+  sheetName: string;
+}): Buffer {
+  const { contingencyResult: c, datasetName, sheetName } = options;
+  const wb = XLSX.utils.book_new();
+
+  const summaryRows: any[][] = [
+    ['LAPORAN ANALISIS KONTINGENSI & CHI-SQUARE'],
+    ['Dataset', sanitizeCellValue(datasetName), 'Sheet', sanitizeCellValue(sheetName)],
+    ['Variabel Baris', sanitizeCellValue(c.rowVar), 'Variabel Kolom', sanitizeCellValue(c.colVar)],
+    ['Dimensi', `${c.tableDimensions.r}x${c.tableDimensions.c}`, 'Valid N', c.sampleSize.validN],
+    ['Sel Expected < 5', `${c.expectedCountDiagnostics.cellsBelow5Count}/${c.expectedCountDiagnostics.totalCells} (${c.expectedCountDiagnostics.cellsBelow5Percent.toFixed(1)}%)`],
+    ['Rekomendasi Uji Utama', c.expectedCountDiagnostics.recommendedPrimaryTest]
+  ];
+  XLSX.utils.book_append_sheet(wb, createAutoSizedSheet(summaryRows), 'Ringkasan_Kontingensi');
+
+  const crossRows: any[][] = [
+    [`CROSSTABULATION: ${c.rowVar} * ${c.colVar}`],
+    [c.rowVar, 'Metrik', ...c.colCategories.map(sanitizeCellValue), 'Total']
+  ];
+  c.rowCategories.forEach((rCat, rIdx) => {
+    crossRows.push([sanitizeCellValue(rCat), 'Count', ...c.cells[rIdx].map(cell => cell.observed), c.rowTotals[rIdx].count]);
+    crossRows.push(['', 'Expected Count', ...c.cells[rIdx].map(cell => roundNum(cell.expected, 2)), c.rowTotals[rIdx].count]);
+    crossRows.push(['', '% within Row', ...c.cells[rIdx].map(cell => roundNum(cell.rowPercent, 2)), 100]);
+    crossRows.push(['', 'Adjusted Residual', ...c.cells[rIdx].map(cell => roundNum(cell.adjustedResidual, 3)), '-']);
+  });
+  XLSX.utils.book_append_sheet(wb, createAutoSizedSheet(crossRows), 'Crosstabulation');
+
+  const chiRows: any[][] = [
+    ['CHI-SQUARE & EXACT TESTS'],
+    ['Metode Uji', 'Value', 'df', 'Asymp. Sig. (2-sided)', 'Exact/MC Sig.', 'Catatan'],
+    ...c.chiSquareTests.map(t => [
+      t.testName,
+      t.value !== undefined ? roundNum(t.value, 4) : '-',
+      t.df !== undefined ? t.df : '-',
+      roundNum(t.asympSig2Sided, 4),
+      t.exactSig2Sided !== undefined ? roundNum(t.exactSig2Sided, 4) : t.monteCarloSig !== undefined ? roundNum(t.monteCarloSig, 4) : '-',
+      sanitizeCellValue(t.notes || '-')
+    ])
+  ];
+  XLSX.utils.book_append_sheet(wb, createAutoSizedSheet(chiRows), 'ChiSquare_Tests');
+
+  const measRows: any[][] = [
+    ['SYMMETRIC MEASURES & RISK ESTIMATE'],
+    ['Metrik', 'Value', 'Approx. Sig.', 'Interpretasi'],
+    ...c.symmetricMeasures.map(m => [m.measureName, roundNum(m.value, 4), roundNum(m.approxSig, 4), m.interpretation]),
+    ...(c.riskEstimates.is2x2
+      ? [
+          [],
+          ['Odds Ratio (2x2)', roundNum(c.riskEstimates.oddsRatio?.value, 4), '-', c.riskEstimates.oddsRatio ? `[${c.riskEstimates.oddsRatio.ciLower.toFixed(3)}, ${c.riskEstimates.oddsRatio.ciUpper.toFixed(3)}]` : '-'],
+          ['Relative Risk (Col 1)', roundNum(c.riskEstimates.relativeRiskCol1?.value, 4), '-', c.riskEstimates.relativeRiskCol1 ? `[${c.riskEstimates.relativeRiskCol1.ciLower.toFixed(3)}, ${c.riskEstimates.relativeRiskCol1.ciUpper.toFixed(3)}]` : '-']
+        ]
+      : [])
+  ];
+  XLSX.utils.book_append_sheet(wb, createAutoSizedSheet(measRows), 'Symmetric_Risk');
+
+  return Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+}

@@ -24,6 +24,8 @@ import {
   ShadingType
 } from 'docx';
 import { OLSFitResult } from './regression-engine';
+import { MRAResult } from './regression-moderation-mra';
+import { ContingencyAnalysisResult } from './regression-contingency-chisquare';
 import { generateDeterministicInterpretation } from './regression-interpretation';
 import { RecommendationEngineOutput } from './regression-recommendation-engine';
 import { ModelComparisonReport } from './regression-model-comparison';
@@ -1095,3 +1097,309 @@ export async function generateRegressionDocx(options: DocxExportOptions): Promis
 }
 
 export const buildRegressionDocxBuffer = generateRegressionDocx;
+
+function createDocxFromChildren(children: (Paragraph | Table)[]): Promise<Buffer> {
+  const doc = new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
+          }
+        },
+        children
+      }
+    ]
+  });
+  return Packer.toBuffer(doc);
+}
+
+/**
+ * Ekspor Laporan Word (.docx) bergaya IBM SPSS untuk Moderated Regression Analysis (MRA)
+ */
+export async function generateMRADocx(options: {
+  mraResult: MRAResult;
+  datasetName: string;
+  sheetName: string;
+}): Promise<Buffer> {
+  const { mraResult: mra, datasetName, sheetName } = options;
+  const children: (Paragraph | Table)[] = [];
+
+  children.push(createSectionHeading('Laporan Moderated Regression Analysis (MRA) — Gaya IBM SPSS'));
+  children.push(
+    new Paragraph({
+      spacing: { before: 40, after: 120 },
+      children: [
+        new TextRun({
+          text: `Dataset: ${datasetName} (${sheetName}) | Y = ${mra.yCol} | X = ${mra.xCol} | Moderator Z = ${mra.zCol} | N = ${mra.nUsed} | α = ${mra.alpha}`,
+          font: FONT_FAMILY,
+          size: 19,
+          color: '334155'
+        })
+      ]
+    })
+  );
+
+  // Table 1: Hierarchical Models
+  children.push(...createTableCaption('Tabel 1', 'Model Summary & Hierarchical Change Statistics', `Klasifikasi Sharma et al. (1981): ${mra.moderatorClassification.type}`));
+  const steps = [mra.models.model1, mra.models.model2, mra.models.model3];
+  children.push(
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [
+        new TableRow({
+          children: ['Model', 'R', 'R²', 'Adj. R²', 'ΔR²', 'F Change', 'df1/df2', 'Sig. F Change'].map((h, i) =>
+            createSpssCell(h, {
+              bold: true,
+              headerShading: true,
+              topBorder: true,
+              bottomBorder: true,
+              align: i === 0 ? AlignmentType.LEFT : AlignmentType.RIGHT
+            })
+          )
+        }),
+        ...steps.map((s, idx) => {
+          const isLast = idx === steps.length - 1;
+          return new TableRow({
+            children: [
+              createSpssCell(`Model ${s.modelNumber}`, { bold: true, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtNum(s.fit.modelSummary.r, 3), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtNum(s.fit.modelSummary.rSquared, 3), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtNum(s.fit.modelSummary.adjRSquared, 3), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtNum(s.changeStats.rSquaredChange, 4), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtNum(s.changeStats.fChange, 3), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(`${s.changeStats.df1}/${s.changeStats.df2}`, { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtSig(s.changeStats.sigFChange), { bold: true, align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast })
+            ]
+          });
+        })
+      ]
+    })
+  );
+
+  // Table 2: Model 3 Coefficients
+  children.push(...createTableCaption('Tabel 2', 'Coefficients Model 3 (Full Interaction MRA)', `Variabel Dependen: ${mra.yCol}`));
+  const coefs = mra.models.model3.fit.coefficients;
+  children.push(
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [
+        new TableRow({
+          children: ['Variabel', 'B', 'Std. Error', 'Beta', 't', 'Sig.', 'Tolerance', 'VIF'].map((h, i) =>
+            createSpssCell(h, {
+              bold: true,
+              headerShading: true,
+              topBorder: true,
+              bottomBorder: true,
+              align: i === 0 ? AlignmentType.LEFT : AlignmentType.RIGHT
+            })
+          )
+        }),
+        ...coefs.map((c, idx) => {
+          const isLast = idx === coefs.length - 1;
+          return new TableRow({
+            children: [
+              createSpssCell(c.variable, { bold: c.variable.includes('_x_'), bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtNum(c.b, 4), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtNum(c.stdError, 4), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(c.variable === '(Constant)' ? '-' : fmtNum(c.beta, 3), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtNum(c.t, 3), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtSig(c.sig), { bold: c.sig <= mra.alpha, align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(c.variable === '(Constant)' ? '-' : fmtNum(c.collinearity.tolerance, 3), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(c.variable === '(Constant)' ? '-' : fmtNum(c.collinearity.vif, 2), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast })
+            ]
+          });
+        })
+      ]
+    })
+  );
+
+  // Table 3: Simple Slopes
+  children.push(...createTableCaption('Tabel 3', 'Conditional Effect (Simple Slope Analysis)', mra.johnsonNeyman.regionsDescription));
+  children.push(
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [
+        new TableRow({
+          children: ['Level Moderator', 'Slope (b)', 'Std. Error', 't', 'Sig.', 'CI Bawah', 'CI Atas'].map((h, i) =>
+            createSpssCell(h, {
+              bold: true,
+              headerShading: true,
+              topBorder: true,
+              bottomBorder: true,
+              align: i === 0 ? AlignmentType.LEFT : AlignmentType.RIGHT
+            })
+          )
+        }),
+        ...mra.simpleSlopes.map((s, idx) => {
+          const isLast = idx === mra.simpleSlopes.length - 1;
+          return new TableRow({
+            children: [
+              createSpssCell(s.levelLabel, { bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtNum(s.slope, 4), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtNum(s.stdError, 4), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtNum(s.tStat, 3), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtSig(s.pValue), { bold: s.isSignificant, align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtNum(s.ciLower, 3), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtNum(s.ciUpper, 3), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast })
+            ]
+          });
+        })
+      ]
+    })
+  );
+
+  children.push(createSectionHeading('Interpretasi Akademik MRA'));
+  mra.academicInterpretation.forEach(line => {
+    children.push(
+      new Paragraph({
+        spacing: { before: 40, after: 60 },
+        children: [new TextRun({ text: line, font: FONT_FAMILY, size: 19, color: '334155' })]
+      })
+    );
+  });
+
+  return createDocxFromChildren(children);
+}
+
+/**
+ * Ekspor Laporan Word (.docx) bergaya IBM SPSS untuk Analisis Kontingensi & Chi-Square
+ */
+export async function generateContingencyDocx(options: {
+  contingencyResult: ContingencyAnalysisResult;
+  datasetName: string;
+  sheetName: string;
+}): Promise<Buffer> {
+  const { contingencyResult: c, datasetName, sheetName } = options;
+  const children: (Paragraph | Table)[] = [];
+
+  children.push(createSectionHeading('Laporan Tabel Kontingensi & Uji Chi-Square — Gaya IBM SPSS'));
+  children.push(
+    new Paragraph({
+      spacing: { before: 40, after: 120 },
+      children: [
+        new TextRun({
+          text: `Dataset: ${datasetName} (${sheetName}) | Baris: ${c.rowVar} | Kolom: ${c.colVar} | Dimensi: ${c.tableDimensions.r}x${c.tableDimensions.c} | Valid N = ${c.sampleSize.validN} (${c.sampleSize.validPercent.toFixed(1)}%)`,
+          font: FONT_FAMILY,
+          size: 19,
+          color: '334155'
+        })
+      ]
+    })
+  );
+
+  // Table 1: Crosstabulation
+  children.push(...createTableCaption('Tabel 1', `${c.rowVar} * ${c.colVar} Crosstabulation`, 'Angka menampilkan Count / Expected / Adjusted Residual'));
+  children.push(
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [
+        new TableRow({
+          children: [c.rowVar, ...c.colCategories, 'Total'].map((h, i) =>
+            createSpssCell(h, {
+              bold: true,
+              headerShading: true,
+              topBorder: true,
+              bottomBorder: true,
+              align: i === 0 ? AlignmentType.LEFT : AlignmentType.RIGHT
+            })
+          )
+        }),
+        ...c.rowCategories.map((rCat, rIdx) => {
+          const isLast = rIdx === c.rowCategories.length - 1;
+          return new TableRow({
+            children: [
+              createSpssCell(rCat, { bold: true, bottomDouble: isLast, lightBottom: !isLast }),
+              ...c.cells[rIdx].map(cell =>
+                createSpssCell(`${cell.observed} (E=${cell.expected.toFixed(1)}, z=${cell.adjustedResidual.toFixed(2)})`, {
+                  align: AlignmentType.RIGHT,
+                  bottomDouble: isLast,
+                  lightBottom: !isLast
+                })
+              ),
+              createSpssCell(String(c.rowTotals[rIdx].count), { bold: true, align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast })
+            ]
+          });
+        })
+      ]
+    })
+  );
+
+  // Table 2: Chi-Square Tests
+  children.push(...createTableCaption('Tabel 2', 'Chi-Square Tests', `Rekomendasi Utama: ${c.expectedCountDiagnostics.recommendedPrimaryTest}`));
+  children.push(
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [
+        new TableRow({
+          children: ['Metode Uji', 'Value', 'df', 'Asymp. Sig. (2-sided)', 'Exact/MC Sig.'].map((h, i) =>
+            createSpssCell(h, {
+              bold: true,
+              headerShading: true,
+              topBorder: true,
+              bottomBorder: true,
+              align: i === 0 ? AlignmentType.LEFT : AlignmentType.RIGHT
+            })
+          )
+        }),
+        ...c.chiSquareTests.map((t, idx) => {
+          const isLast = idx === c.chiSquareTests.length - 1;
+          const ex = t.exactSig2Sided !== undefined ? fmtSig(t.exactSig2Sided) : t.monteCarloSig !== undefined ? fmtSig(t.monteCarloSig) : '-';
+          return new TableRow({
+            children: [
+              createSpssCell(t.testName, { bold: true, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(t.value !== undefined ? fmtNum(t.value, 3) : '-', { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(t.df !== undefined ? String(t.df) : '-', { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtSig(t.asympSig2Sided), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(ex, { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast })
+            ]
+          });
+        })
+      ]
+    })
+  );
+
+  // Table 3: Symmetric Measures
+  children.push(...createTableCaption('Tabel 3', 'Symmetric Measures'));
+  children.push(
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [
+        new TableRow({
+          children: ['Ukuran Asosiasi', 'Value', 'Approx. Sig.', 'Interpretasi'].map((h, i) =>
+            createSpssCell(h, {
+              bold: true,
+              headerShading: true,
+              topBorder: true,
+              bottomBorder: true,
+              align: i === 1 || i === 2 ? AlignmentType.RIGHT : AlignmentType.LEFT
+            })
+          )
+        }),
+        ...c.symmetricMeasures.map((m, idx) => {
+          const isLast = idx === c.symmetricMeasures.length - 1;
+          return new TableRow({
+            children: [
+              createSpssCell(m.measureName, { bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtNum(m.value, 3), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(fmtSig(m.approxSig), { align: AlignmentType.RIGHT, bottomDouble: isLast, lightBottom: !isLast }),
+              createSpssCell(m.interpretation, { bottomDouble: isLast, lightBottom: !isLast })
+            ]
+          });
+        })
+      ]
+    })
+  );
+
+  children.push(createSectionHeading('Interpretasi Akademik Kontingensi'));
+  c.academicInterpretation.forEach(line => {
+    children.push(
+      new Paragraph({
+        spacing: { before: 40, after: 60 },
+        children: [new TextRun({ text: line, font: FONT_FAMILY, size: 19, color: '334155' })]
+      })
+    );
+  });
+
+  return createDocxFromChildren(children);
+}

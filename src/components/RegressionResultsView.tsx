@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { OLSFitResult, runRegressionEngine, sampleStdDev } from '../lib/regression-engine';
+import { OLSFitResult, runRegressionEngine, sampleStdDev, encodeCategoricalPredictors, tPValue } from '../lib/regression-engine';
 import {
   getPermittedRemedials,
   detectOutliers,
@@ -46,6 +46,10 @@ import {
   buildModelComparisonReport,
   ModelComparisonReport
 } from '../lib/regression-model-comparison';
+import {
+  verifyWithPythonParity,
+  PythonParityReport
+} from '../lib/regression-python-parity';
 import {
   CheckCircle2,
   AlertTriangle,
@@ -98,6 +102,8 @@ interface RegressionResultsViewProps {
   alpha?: number;
   fileName?: string;
   selectedSheet?: string;
+  analysisMode?: 'basic' | 'advanced';
+  refCategories?: Record<string, string>;
 }
 
 interface StoredModel {
@@ -143,7 +149,9 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
   frequency = 'tidak_beraturan',
   alpha = 0.05,
   fileName = 'Dataset.xlsx',
-  selectedSheet = 'Sheet1'
+  selectedSheet = 'Sheet1',
+  analysisMode = 'basic',
+  refCategories = {}
 }) => {
   const [viewMode, setViewMode] = useState<'table' | 'card'>('table');
   const [showS3Modal, setShowS3Modal] = useState(false);
@@ -152,6 +160,9 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
   const [isExportingXlsx, setIsExportingXlsx] = useState(false);
   const [showRecommendationsModal, setShowRecommendationsModal] = useState(false);
   const [showModelComparisonModal, setShowModelComparisonModal] = useState(false);
+  const [showHC3Comparison, setShowHC3Comparison] = useState(false);
+  const [isCheckingPython, setIsCheckingPython] = useState(false);
+  const [pythonParity, setPythonParity] = useState<PythonParityReport | null>(null);
 
   // Models history: M0 is permanent and always present!
   const [models, setModels] = useState<StoredModel[]>([
@@ -1345,6 +1356,44 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
             <TrendingUpIcon size={13} /> Komparasi Model ({models.length})
           </button>
 
+          {/* Verifikasi Python Statsmodels / QR-SVD */}
+          <button
+            type="button"
+            disabled={isCheckingPython}
+            onClick={async () => {
+              setIsCheckingPython(true);
+              try {
+                const rep = await verifyWithPythonParity({
+                  rows: allRows,
+                  yCol: variables.yCol,
+                  xCols,
+                  tsResult: activeResult,
+                  isTimeSeries,
+                  timeCol,
+                  refCategories
+                });
+                setPythonParity(rep);
+              } finally {
+                setIsCheckingPython(false);
+              }
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              border: '1px solid #10b981',
+              background: pythonParity ? 'rgba(16, 185, 129, 0.18)' : 'rgba(16, 185, 129, 0.08)',
+              color: '#34d399',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: isCheckingPython ? 'wait' : 'pointer'
+            }}
+          >
+            <ShieldCheck size={13} /> {isCheckingPython ? 'Verifikasi...' : 'Verifikasi Python/QR'}
+          </button>
+
           {/* Export Word (.docx) */}
           <button
             type="button"
@@ -2412,6 +2461,109 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
               </p>
             </div>
           </div>
+
+          {/* Perbandingan Side-by-Side OLS (M0) vs Robust HC3 */}
+          {allRows.length > 0 && (
+            <div style={{ marginTop: '14px', padding: '14px', background: 'var(--bg-secondary, #0f172a)', borderRadius: '8px', border: '1px solid var(--border-color, #334155)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary, #f8fafc)' }}>
+                  Perbandingan OLS Klasik vs Robust Standard Error (HC3) — Koefisien Tetap Identik
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowHC3Comparison(!showHC3Comparison)}
+                  style={{
+                    minHeight: '36px',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    border: '1px solid #0284c7',
+                    background: showHC3Comparison ? '#0284c7' : 'transparent',
+                    color: showHC3Comparison ? '#ffffff' : '#38bdf8',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {showHC3Comparison ? 'Sembunyikan HC3' : 'Bandingkan OLS vs HC3'}
+                </button>
+              </div>
+              {showHC3Comparison && (() => {
+                try {
+                  const { encodedRows, encodedXCols } = encodeCategoricalPredictors(allRows, xCols, refCategories);
+                  const validRows = encodedRows.filter(r =>
+                    [variables.yCol, ...encodedXCols].every(col => {
+                      const v = r[col];
+                      return v !== null && v !== undefined && v !== '' && !isNaN(Number(v)) && isFinite(Number(v));
+                    })
+                  );
+                  if (validRows.length <= encodedXCols.length + 1) return null;
+                  const yVec = validRows.map(r => Number(r[variables.yCol]));
+                  const xMat = validRows.map(r => encodedXCols.map(c => Number(r[c])));
+                  const bVec = coefficients.map(c => c.b);
+                  const seHC3 = computeHC3StandardErrors(yVec, xMat, bVec);
+                  const dfRes = Math.max(1, activeResult.anova.residual.df);
+                  return (
+                    <div style={{ marginTop: '12px', overflowX: 'auto' }}>
+                      <table style={spssTableStyle}>
+                        <thead>
+                          <tr>
+                            <th style={{ ...spssThStyle, textAlign: 'left' }}>Variabel</th>
+                            <th style={{ ...spssThStyle, textAlign: 'right' }}>B (Identik)</th>
+                            <th style={{ ...spssThStyle, textAlign: 'right' }}>SE (OLS M0)</th>
+                            <th style={{ ...spssThStyle, textAlign: 'right' }}>Sig. (OLS)</th>
+                            <th style={{ ...spssThStyle, textAlign: 'right' }}>SE (Robust HC3)</th>
+                            <th style={{ ...spssThStyle, textAlign: 'right' }}>t (HC3)</th>
+                            <th style={{ ...spssThStyle, textAlign: 'right' }}>Sig. (HC3)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {coefficients.map((row, idx) => {
+                            const hcSe = seHC3[idx] ?? row.stdError;
+                            const hcT = hcSe > 0 ? row.b / hcSe : 0;
+                            const hcSig = tPValue(hcT, dfRes);
+                            return (
+                              <tr key={row.variable}>
+                                <td style={spssTdStyle}>{row.variable}</td>
+                                <td style={{ ...spssTdStyle, textAlign: 'right' }}>{formatDec(row.b)}</td>
+                                <td style={{ ...spssTdStyle, textAlign: 'right' }}>{formatDec(row.stdError)}</td>
+                                <td style={{ ...spssTdStyle, textAlign: 'right' }}>{formatSig(row.sig)}</td>
+                                <td style={{ ...spssTdStyle, textAlign: 'right', color: '#38bdf8', fontWeight: 600 }}>
+                                  {formatDec(hcSe)}
+                                </td>
+                                <td style={{ ...spssTdStyle, textAlign: 'right' }}>
+                                  {formatDec(hcT)}
+                                </td>
+                                <td style={{ ...spssTdStyle, textAlign: 'right', fontWeight: 700 }}>
+                                  {formatSig(hcSig)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                } catch {
+                  return null;
+                }
+              })()}
+            </div>
+          )}
+
+          {/* Status Verifikasi Python Statsmodels / Dual Solver */}
+          {pythonParity && (
+            <div style={{
+              marginTop: '12px',
+              padding: '12px 14px',
+              borderRadius: '8px',
+              border: '1px solid #10b981',
+              background: 'rgba(16, 185, 129, 0.10)',
+              fontSize: '12.5px',
+              color: '#d1fae5'
+            }}>
+              <strong>{pythonParity.engineLabel}:</strong> {pythonParity.message} (Max rel. diff B = {pythonParity.maxCoefficientRelDiff.toExponential(2)}, LRE = {pythonParity.minLRE})
+            </div>
+          )}
         </div>
 
         {/* Table E: Residuals Statistics */}
@@ -2549,6 +2701,7 @@ export const RegressionResultsView: React.FC<RegressionResultsViewProps> = ({
           yCol={variables.yCol}
           xCols={variables.xCols}
           alpha={alpha}
+          analysisMode={analysisMode}
         />
       </div>
 

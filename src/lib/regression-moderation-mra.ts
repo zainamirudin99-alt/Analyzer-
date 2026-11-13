@@ -7,9 +7,7 @@
 // ============================================================
 
 import {
-  matMul,
-  matTranspose,
-  matInverse,
+  solveQRHouseholder,
   sampleStdDev,
   tPValue,
   tCriticalValue,
@@ -84,9 +82,22 @@ export interface MRAInput {
   covariateCols?: string[];
   centerVariables?: boolean; // Default true (Mean Centering)
   isModeratorCategorical?: boolean;
-  categoricalCoding?: 'dummy' | 'contrast'; // 0/1 vs -0.5/+0.5
+  categoricalCoding?: 'dummy' | 'contrast'; // 0/1 vs -0.5/+0.5 (for 2-category)
+  referenceCategory?: string; // Explicit reference category for categorical moderator
   alpha?: number;
   ciLevel?: number;
+}
+
+export interface MRAMultiCategoryTerm {
+  category: string;
+  termName: string;
+  bMain: number;
+  pMain: number;
+  bInteraction: number;
+  stdError: number;
+  tStat: number;
+  pValue: number;
+  isSignificant: boolean;
 }
 
 export interface MRAResult {
@@ -99,6 +110,9 @@ export interface MRAResult {
   centerVariables: boolean;
   isModeratorCategorical: boolean;
   categoricalCoding?: 'dummy' | 'contrast';
+  referenceCategory?: string;
+  categoryLevels?: string[];
+  multiCategoryInteractions?: MRAMultiCategoryTerm[];
   alpha: number;
   ciLevel: number;
   means: {
@@ -141,6 +155,17 @@ export interface MRAResult {
   academicInterpretation: string[];
 }
 
+/** Hierarchical F-change handling exact fits cleanly */
+function computeFChange(deltaR2: number, r2: number, df1: number, df2: number): { fChange: number; sigFChange: number } {
+  const residProp = 1 - r2;
+  if (residProp <= 1e-12) {
+    if (deltaR2 > 1e-12) return { fChange: 1e9, sigFChange: 0 };
+    return { fChange: 0, sigFChange: 1 };
+  }
+  const fChange = (deltaR2 / Math.max(1, df1)) / (residProp / Math.max(1, df2));
+  return { fChange, sigFChange: fPValue(fChange, df1, df2) };
+}
+
 /**
  * Jalankan Moderated Regression Analysis (MRA) Hierarkis 3 Model + Simple Slopes + Johnson-Neyman
  */
@@ -154,6 +179,7 @@ export function runModeratedRegressionAnalysis(input: MRAInput): MRAResult {
     centerVariables = true,
     isModeratorCategorical = false,
     categoricalCoding = 'dummy',
+    referenceCategory,
     alpha = 0.05,
     ciLevel = 0.95
   } = input;
@@ -175,11 +201,317 @@ export function runModeratedRegressionAnalysis(input: MRAInput): MRAResult {
 
   const rawY = validRows.map(r => Number(r[yCol]));
   const rawX = validRows.map(r => Number(r[xCol]));
+  const meanY = rawY.reduce((a, b) => a + b, 0) / n;
+  const sdY = sampleStdDev(rawY, meanY);
+  const meanX = rawX.reduce((a, b) => a + b, 0) / n;
+  const sdX = sampleStdDev(rawX, meanX);
+  const xUsedName = centerVariables ? `${xCol}_c` : xCol;
+
+  // Detect categorical levels (m >= 2)
+  const uniqueCats = isModeratorCategorical
+    ? Array.from(new Set(validRows.map(r => String(r[zCol]).trim()))).sort()
+    : [];
+  if (isModeratorCategorical && uniqueCats.length < 2) {
+    throw new Error(`Variabel moderator kategorik '${zCol}' hanya memiliki ${uniqueCats.length} kategori unik.`);
+  }
+  const refCat = isModeratorCategorical
+    ? (referenceCategory && uniqueCats.includes(referenceCategory) ? referenceCategory : uniqueCats[0])
+    : undefined;
+  const nonRefCats = isModeratorCategorical ? uniqueCats.filter(c => c !== refCat) : [];
+  const isMultiCategoryMod = isModeratorCategorical && nonRefCats.length >= 2;
+
+  if (isMultiCategoryMod && n <= 1 + 1 + 2 * nonRefCats.length + covariateCols.length) {
+    throw new Error(`Ukuran sampel valid (n=${n}) tidak mencukupi untuk MRA multi-kategori dengan ${uniqueCats.length} kategori.`);
+  }
+
+  // Multi-category (>= 3 levels) MRA path with m-1 dummies & joint F-change
+  if (isMultiCategoryMod && refCat) {
+    const zDummyCols = nonRefCats.map(cat => `${zCol}[${cat}]`);
+    const xzInteractionCols = nonRefCats.map(cat => `${xCol}_x_${zCol}[${cat}]`);
+    const xzName = `${xCol}_x_${zCol}[${nonRefCats.length} dummy]`;
+
+    const preparedRows = validRows.map((r, i) => {
+      const xc = centerVariables ? rawX[i] - meanX : rawX[i];
+      const catVal = String(r[zCol]).trim();
+      const nextRow: Record<string, any> = {
+        ...r,
+        [yCol]: rawY[i],
+        [xUsedName]: xc
+      };
+      nonRefCats.forEach((cat, idx) => {
+        const d = catVal === cat ? 1.0 : 0.0;
+        nextRow[zDummyCols[idx]] = d;
+        nextRow[xzInteractionCols[idx]] = xc * d;
+      });
+      return nextRow;
+    });
+
+    const fit1 = runStatisticalRegression({ rows: preparedRows, yCol, xCols: [xUsedName, ...covariateCols], alpha, ciLevel });
+    const fit2 = runStatisticalRegression({ rows: preparedRows, yCol, xCols: [xUsedName, ...zDummyCols, ...covariateCols], alpha, ciLevel });
+    const fit3 = runStatisticalRegression({ rows: preparedRows, yCol, xCols: [xUsedName, ...zDummyCols, ...xzInteractionCols, ...covariateCols], alpha, ciLevel });
+
+    const r2_1 = fit1.modelSummary.rSquared;
+    const r2_2 = fit2.modelSummary.rSquared;
+    const r2_3 = fit3.modelSummary.rSquared;
+    const deltaR2_2 = Math.max(0, r2_2 - r2_1);
+    const deltaR2_3 = Math.max(0, r2_3 - r2_2);
+
+    const df1_1 = fit1.anova.regression.df;
+    const df2_1 = fit1.anova.residual.df;
+    const df1_2 = zDummyCols.length;
+    const df2_2 = fit2.anova.residual.df;
+    const df1_3 = xzInteractionCols.length;
+    const df2_3 = fit3.anova.residual.df;
+
+    const { fChange: fChange2, sigFChange: sigFChange2 } = computeFChange(deltaR2_2, r2_2, df1_2, df2_2);
+    const { fChange: fChange3, sigFChange: sigFChange3 } = computeFChange(deltaR2_3, r2_3, df1_3, df2_3);
+
+    const Xmat3 = preparedRows.map(r => [
+      1.0,
+      Number(r[xUsedName]),
+      ...zDummyCols.map(c => Number(r[c])),
+      ...xzInteractionCols.map(c => Number(r[c])),
+      ...covariateCols.map(c => Number(r[c]))
+    ]);
+    const { invXTX: invXTX3 } = solveQRHouseholder(Xmat3, rawY);
+    const mse3 = fit3.anova.residual.ms;
+    const cov3 = invXTX3.map(row => row.map(v => v * mse3));
+
+    const b0 = fit3.coefficients[0].b;
+    const b1 = fit3.coefficients[1].b;
+    const varB1 = Math.max(1e-14, cov3[1][1]);
+    const tCrit = tCriticalValue(df2_3, 1 - ciLevel);
+
+    const multiCategoryInteractions: MRAMultiCategoryTerm[] = nonRefCats.map((cat, idx) => {
+      const zRow = fit3.coefficients[2 + idx];
+      const xzRow = fit3.coefficients[2 + zDummyCols.length + idx];
+      return {
+        category: cat,
+        termName: xzInteractionCols[idx],
+        bMain: Number(zRow.b.toFixed(6)),
+        pMain: Number(zRow.sig.toFixed(4)),
+        bInteraction: Number(xzRow.b.toFixed(6)),
+        stdError: Number(xzRow.stdError.toFixed(6)),
+        tStat: Number(xzRow.t.toFixed(4)),
+        pValue: Number(xzRow.sig.toFixed(4)),
+        isSignificant: xzRow.sig <= alpha
+      };
+    });
+
+    const xPlotLevels = centerVariables
+      ? [
+          { xLabel: 'Rendah (-1 SD)', xUsed: -sdX, xRaw: meanX - sdX },
+          { xLabel: 'Rata-rata (Mean)', xUsed: 0.0, xRaw: meanX },
+          { xLabel: 'Tinggi (+1 SD)', xUsed: sdX, xRaw: meanX + sdX }
+        ]
+      : [
+          { xLabel: 'Rendah (-1 SD)', xUsed: meanX - sdX, xRaw: meanX - sdX },
+          { xLabel: 'Rata-rata (Mean)', xUsed: meanX, xRaw: meanX },
+          { xLabel: 'Tinggi (+1 SD)', xUsed: meanX + sdX, xRaw: meanX + sdX }
+        ];
+
+    const simpleSlopes: SimpleSlopeItem[] = [
+      // Reference category (all dummies = 0)
+      (() => {
+        const se = Math.sqrt(varB1);
+        const tStat = b1 / se;
+        const pVal = tPValue(tStat, df2_3);
+        return {
+          levelLabel: `${refCat} (Acuan)`,
+          zCentered: 0,
+          zRaw: 0,
+          slope: Number(b1.toFixed(4)),
+          stdError: Number(se.toFixed(4)),
+          tStat: Number(tStat.toFixed(4)),
+          pValue: Number(pVal.toFixed(4)),
+          ciLower: Number((b1 - tCrit * se).toFixed(4)),
+          ciUpper: Number((b1 + tCrit * se).toFixed(4)),
+          isSignificant: pVal <= alpha,
+          linePoints: xPlotLevels.map(xp => ({
+            xLabel: xp.xLabel,
+            xRaw: Number(xp.xRaw.toFixed(4)),
+            yPredicted: Number((b0 + b1 * xp.xUsed).toFixed(4))
+          }))
+        };
+      })(),
+      ...nonRefCats.map((cat, idx) => {
+        const idxZ = 2 + idx;
+        const idxXZ = 2 + zDummyCols.length + idx;
+        const bZ = fit3.coefficients[idxZ].b;
+        const bXZ = fit3.coefficients[idxXZ].b;
+        const slope = b1 + bXZ;
+        const se = Math.sqrt(Math.max(1e-14, cov3[1][1] + cov3[idxXZ][idxXZ] + 2 * cov3[1][idxXZ]));
+        const tStat = slope / se;
+        const pVal = tPValue(tStat, df2_3);
+        return {
+          levelLabel: cat,
+          zCentered: idx + 1,
+          zRaw: idx + 1,
+          slope: Number(slope.toFixed(4)),
+          stdError: Number(se.toFixed(4)),
+          tStat: Number(tStat.toFixed(4)),
+          pValue: Number(pVal.toFixed(4)),
+          ciLower: Number((slope - tCrit * se).toFixed(4)),
+          ciUpper: Number((slope + tCrit * se).toFixed(4)),
+          isSignificant: pVal <= alpha,
+          linePoints: xPlotLevels.map(xp => ({
+            xLabel: xp.xLabel,
+            xRaw: Number(xp.xRaw.toFixed(4)),
+            yPredicted: Number((b0 + b1 * xp.xUsed + bZ + bXZ * xp.xUsed).toFixed(4))
+          }))
+        };
+      })
+    ];
+
+    // Pick strongest interaction dummy for summary fields while exposing joint F-change
+    const strongestIdx = multiCategoryInteractions.reduce(
+      (best, cur, i) => (Math.abs(cur.tStat) > Math.abs(multiCategoryInteractions[best].tStat) ? i : best),
+      0
+    );
+    const repRow = fit3.coefficients[2 + zDummyCols.length + strongestIdx];
+    const hasMainSig = sigFChange2 <= alpha;
+    const hasInterSig = sigFChange3 <= alpha;
+
+    let modType: ModeratorClassificationType;
+    let modRationale = '';
+    let homologizerSubgroupR2Diff: number | undefined;
+    if (hasInterSig && !hasMainSig) {
+      modType = 'Pure Moderator (Moderasi Murni)';
+      modRationale = `Uji interaksi gabungan (${df1_3} dummy interaksi) signifikan (F Change = ${fChange3.toFixed(3)}, p = ${sigFChange3.toFixed(4)} <= ${alpha}), sedangkan efek utama kategori ${zCol} tidak signifikan (p = ${sigFChange2.toFixed(4)} > ${alpha}).`;
+    } else if (hasInterSig && hasMainSig) {
+      modType = 'Quasi Moderator (Moderasi Semu)';
+      modRationale = `Baik uji interaksi gabungan (F Change = ${fChange3.toFixed(3)}, p = ${sigFChange3.toFixed(4)} <= ${alpha}) maupun efek utama kategori ${zCol} (F Change = ${fChange2.toFixed(3)}, p = ${sigFChange2.toFixed(4)} <= ${alpha}) keduanya signifikan.`;
+    } else if (!hasInterSig && hasMainSig) {
+      modType = 'Predictor Moderasi (Variabel Independen / Anteseden)';
+      modRationale = `Uji interaksi gabungan ${zCol} tidak signifikan (p = ${sigFChange3.toFixed(4)} > ${alpha}), namun efek utama ${zCol} signifikan (p = ${sigFChange2.toFixed(4)} <= ${alpha}).`;
+    } else {
+      modType = 'Homologizer Moderator (Moderasi Potensial / Homologiser)';
+      const r2Subs: number[] = [];
+      for (const cat of uniqueCats) {
+        const subRows = validRows.filter(r => String(r[zCol]).trim() === cat);
+        if (subRows.length >= 4) {
+          try {
+            const fSub = runStatisticalRegression({ rows: subRows, yCol, xCols: [xCol], alpha });
+            r2Subs.push(fSub.modelSummary.rSquared);
+          } catch {
+            // Skip degenerate subgroup
+          }
+        }
+      }
+      if (r2Subs.length >= 2) {
+        homologizerSubgroupR2Diff = Number((Math.max(...r2Subs) - Math.min(...r2Subs)).toFixed(4));
+      }
+      modRationale = `Baik interaksi gabungan (p = ${sigFChange3.toFixed(4)}) maupun efek utama kategori ${zCol} (p = ${sigFChange2.toFixed(4)}) tidak signifikan pada alpha = ${alpha}.`;
+    }
+
+    const repZRow = fit3.coefficients[2 + strongestIdx];
+    return {
+      yCol,
+      xCol,
+      zCol,
+      interactionCol: xzName,
+      covariateCols,
+      nUsed: n,
+      centerVariables,
+      isModeratorCategorical: true,
+      categoricalCoding: 'dummy',
+      referenceCategory: refCat,
+      categoryLevels: uniqueCats,
+      multiCategoryInteractions,
+      alpha,
+      ciLevel,
+      means: {
+        meanX: Number(meanX.toFixed(4)),
+        sdX: Number(sdX.toFixed(4)),
+        meanZ: 0,
+        sdZ: 0,
+        meanY: Number(meanY.toFixed(4)),
+        sdY: Number(sdY.toFixed(4))
+      },
+      models: {
+        model1: {
+          modelNumber: 1,
+          modelName: 'Model 1 (Main Effect X)',
+          formula: `${yCol} = b0 + b1(${xUsedName})${covariateCols.length ? ' + Covariates' : ''}`,
+          fit: { ...fit1, modelSummary: { ...fit1.modelSummary, model: 1 } },
+          changeStats: {
+            rSquaredChange: Number(r2_1.toFixed(6)),
+            fChange: Number(fit1.anova.regression.f.toFixed(4)),
+            df1: df1_1,
+            df2: df2_1,
+            sigFChange: Number(fit1.anova.regression.sig.toFixed(4))
+          }
+        },
+        model2: {
+          modelNumber: 2,
+          modelName: `Model 2 (Main Effects X + ${zCol} [${uniqueCats.length} Kategori])`,
+          formula: `${yCol} = b0 + b1(${xUsedName}) + Sum(bi * Dummy_${zCol}[Acuan=${refCat}])`,
+          fit: { ...fit2, modelSummary: { ...fit2.modelSummary, model: 2 } },
+          changeStats: {
+            rSquaredChange: Number(deltaR2_2.toFixed(6)),
+            fChange: Number(fChange2.toFixed(4)),
+            df1: df1_2,
+            df2: df2_2,
+            sigFChange: Number(sigFChange2.toFixed(4))
+          }
+        },
+        model3: {
+          modelNumber: 3,
+          modelName: `Model 3 (Full Multi-Category Interaction, Acuan=${refCat})`,
+          formula: `${yCol} = b0 + b1(${xUsedName}) + Dummy_${zCol} + Interaksi(${xCol} * Dummy_${zCol})`,
+          fit: { ...fit3, modelSummary: { ...fit3.modelSummary, model: 3 } },
+          changeStats: {
+            rSquaredChange: Number(deltaR2_3.toFixed(6)),
+            fChange: Number(fChange3.toFixed(4)),
+            df1: df1_3,
+            df2: df2_3,
+            sigFChange: Number(sigFChange3.toFixed(4))
+          }
+        }
+      },
+      interactionEffect: {
+        b3: Number(repRow.b.toFixed(6)),
+        stdError: Number(repRow.stdError.toFixed(6)),
+        beta: Number(repRow.beta.toFixed(6)),
+        tStat: Number(repRow.t.toFixed(4)),
+        pValue: Number(sigFChange3.toFixed(4)),
+        ciLower: Number(repRow.ciLower.toFixed(6)),
+        ciUpper: Number(repRow.ciUpper.toFixed(6)),
+        rSquaredChange: Number(deltaR2_3.toFixed(6)),
+        fChange: Number(fChange3.toFixed(4)),
+        sigFChange: Number(sigFChange3.toFixed(4)),
+        isSignificant: hasInterSig
+      },
+      moderatorClassification: {
+        type: modType,
+        b2MainEffectZ: Number(repZRow.b.toFixed(6)),
+        p2MainEffectZ: Number(sigFChange2.toFixed(4)),
+        b3InteractionXZ: Number(repRow.b.toFixed(6)),
+        p3InteractionXZ: Number(sigFChange3.toFixed(4)),
+        homologizerSubgroupR2Diff,
+        rationale: modRationale
+      },
+      simpleSlopes,
+      johnsonNeyman: {
+        hasRealRoots: false,
+        criticalValuesCentered: [],
+        criticalValuesRaw: [],
+        regionsDescription: `Moderator ${zCol} bersifat multi-kategori (${uniqueCats.length} level, kategori acuan = '${refCat}'). Wilayah Johnson-Neyman kontinyu tidak berlaku; gunakan tabel Simple Slope per kategori.`,
+        percentSignificantTotal: Number(((simpleSlopes.filter(s => s.isSignificant).length / simpleSlopes.length) * 100).toFixed(2)),
+        floodlightCurve: []
+      },
+      academicInterpretation: [
+        `1. Spesifikasi MRA Multi-Kategori: Moderator ${zCol} memiliki ${uniqueCats.length} kategori dengan '${refCat}' sebagai kategori acuan (${nonRefCats.length} dummy efek utama dan ${nonRefCats.length} suku interaksi).`,
+        `2. Uji Omnibus Interaksi: Penambahan seluruh suku interaksi meningkatkan R² sebesar ${(deltaR2_3 * 100).toFixed(2)}% (F Change(${df1_3}, ${df2_3}) = ${fChange3.toFixed(3)}, Sig. F Change = ${sigFChange3.toFixed(4)}).`,
+        `3. Klasifikasi Moderator (Sharma et al., 1981): ${modType}. ${modRationale}`,
+        `4. Simple Slope per Kategori: ${simpleSlopes.map(s => `${s.levelLabel}: b = ${s.slope.toFixed(4)} (p = ${s.pValue.toFixed(4)})`).join('; ')}.`
+      ]
+    };
+  }
 
   let rawZ: number[] = [];
   if (isModeratorCategorical) {
-    const uniqueCats = Array.from(new Set(validRows.map(r => String(r[zCol]).trim()))).sort();
-    const highCat = uniqueCats.length > 1 ? uniqueCats[1] : uniqueCats[0];
+    const highCat = nonRefCats[0] || uniqueCats[0];
     rawZ = validRows.map(r => {
       const isHigh = String(r[zCol]).trim() === highCat;
       if (categoricalCoding === 'contrast') {
@@ -191,14 +523,9 @@ export function runModeratedRegressionAnalysis(input: MRAInput): MRAResult {
     rawZ = validRows.map(r => Number(r[zCol]));
   }
 
-  const meanY = rawY.reduce((a, b) => a + b, 0) / n;
-  const sdY = sampleStdDev(rawY, meanY);
-  const meanX = rawX.reduce((a, b) => a + b, 0) / n;
-  const sdX = sampleStdDev(rawX, meanX);
   const meanZ = rawZ.reduce((a, b) => a + b, 0) / n;
   const sdZ = sampleStdDev(rawZ, meanZ);
 
-  const xUsedName = centerVariables ? `${xCol}_c` : xCol;
   const zUsedName = centerVariables && !isModeratorCategorical ? `${zCol}_c` : zCol;
   const xzName = `${xCol}_x_${zCol}`;
 
@@ -256,15 +583,13 @@ export function runModeratedRegressionAnalysis(input: MRAInput): MRAResult {
   const deltaR2_2 = Math.max(0, r2_2 - r2_1);
   const df1_2 = 1;
   const df2_2 = fit2.anova.residual.df;
-  const fChange2 = (1 - r2_2) > 1e-12 ? (deltaR2_2 / df1_2) / ((1 - r2_2) / df2_2) : 0;
-  const sigFChange2 = fPValue(fChange2, df1_2, df2_2);
+  const { fChange: fChange2, sigFChange: sigFChange2 } = computeFChange(deltaR2_2, r2_2, df1_2, df2_2);
 
   const r2_3 = fit3.modelSummary.rSquared;
   const deltaR2_3 = Math.max(0, r2_3 - r2_2);
   const df1_3 = 1;
   const df2_3 = fit3.anova.residual.df;
-  const fChange3 = (1 - r2_3) > 1e-12 ? (deltaR2_3 / df1_3) / ((1 - r2_3) / df2_3) : 0;
-  const sigFChange3 = fPValue(fChange3, df1_3, df2_3);
+  const { fChange: fChange3, sigFChange: sigFChange3 } = computeFChange(deltaR2_3, r2_3, df1_3, df2_3);
 
   const model1Step: HierarchicalModelStep = {
     modelNumber: 1,
@@ -317,8 +642,7 @@ export function runModeratedRegressionAnalysis(input: MRAInput): MRAResult {
     Number(r[xzName]),
     ...covariateCols.map(c => Number(r[c]))
   ]);
-  const XT3 = matTranspose(Xmat3);
-  const invXTX3 = matInverse(matMul(XT3, Xmat3));
+  const { invXTX: invXTX3 } = solveQRHouseholder(Xmat3, rawY);
   const mse3 = fit3.anova.residual.ms;
   const cov3 = invXTX3.map(row => row.map(v => v * mse3));
 
@@ -533,6 +857,8 @@ export function runModeratedRegressionAnalysis(input: MRAInput): MRAResult {
     centerVariables,
     isModeratorCategorical,
     categoricalCoding: isModeratorCategorical ? categoricalCoding : undefined,
+    referenceCategory: isModeratorCategorical ? refCat : undefined,
+    categoryLevels: isModeratorCategorical ? uniqueCats : undefined,
     alpha,
     ciLevel,
     means: {

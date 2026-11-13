@@ -14,6 +14,9 @@ export async function POST(req: NextRequest) {
     const timeCol = body.timeCol || body.time_col;
     const frequency = body.frequency;
     const alpha = body.alpha ? Number(body.alpha) : 0.05;
+    const ciLevel = body.ciLevel ? Number(body.ciLevel) : 0.95;
+    const missingPolicy = body.missingPolicy || body.missing_policy || 'listwise';
+    const refCategories = body.refCategories || body.ref_categories || {};
 
     if (!rows || rows.length === 0) {
       return NextResponse.json(
@@ -42,7 +45,10 @@ export async function POST(req: NextRequest) {
       isTimeSeries: Boolean(isTimeSeries),
       timeCol,
       frequency,
-      alpha: alpha ? Number(alpha) : 0.05
+      alpha: alpha ? Number(alpha) : 0.05,
+      ciLevel,
+      missingPolicy,
+      refCategories
     });
 
     return NextResponse.json({

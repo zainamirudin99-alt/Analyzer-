@@ -16,6 +16,7 @@ export interface OLSFitInput {
   entryMethod?: 'enter' | 'forward' | 'backward' | 'stepwise';
   missingPolicy?: 'listwise' | 'impute_mean' | 'impute_median' | 'linear_interpolation' | 'multiple_imputation';
   weightsCol?: string; // Optional WLS weights column
+  refCategories?: Record<string, string>; // Reference category per categorical predictor
 }
 
 export interface AssumptionTestResult {
@@ -167,6 +168,15 @@ export interface OLSFitResult {
     spuriousWarning?: string;
     acfPacf?: { lag: number; acf: number; pacf: number; ci: number }[];
   };
+  solverMetadata?: {
+    primarySolver: 'Householder-QR';
+    verificationSolver: 'One-Sided-Jacobi-SVD';
+    matrixRank: number;
+    conditionNumberEst: number;
+    missingPolicyApplied: string;
+    imputedCellsCount: number;
+    dummyEncodings?: { sourceCol: string; referenceCategory: string; dummyCols: string[] }[];
+  };
 }
 
 // ============================================================
@@ -258,14 +268,352 @@ export function matInverse(A: number[][]): number[][] {
   return aug.map(row => row.slice(n));
 }
 
-/** Simple SVD / Pseudo-Inverse approximation for verification */
+export interface QRSolution {
+  beta: number[];
+  invXTX: number[][];
+  rank: number;
+  conditionEst: number;
+}
+
+/**
+ * Householder QR Decomposition OLS Solver
+ * Menghindari pembentukan langsung (X^T X) untuk menjaga stabilitas numerik
+ */
+export function solveQRHouseholder(X: number[][], Y: number[]): QRSolution {
+  const n = X.length;
+  const p = X[0]?.length || 0;
+  if (n < p || p === 0) {
+    throw new Error(`Matriks tidak valid untuk QR decomposition (n=${n}, p=${p}).`);
+  }
+
+  const A = X.map(row => [...row]);
+  const qty = [...Y];
+
+  for (let k = 0; k < p; k++) {
+    let normSq = 0;
+    for (let i = k; i < n; i++) {
+      normSq += A[i][k] * A[i][k];
+    }
+    const normX = Math.sqrt(normSq);
+    if (normX < 1e-13) {
+      throw new Error(`Matriks prediktor mengalami kolinearitas sempurna / singular pada kolom ke-${k + 1}.`);
+    }
+
+    const s = A[k][k] >= 0 ? normX : -normX;
+    const u0 = A[k][k] + s;
+    const v = new Array(n - k);
+    v[0] = u0;
+    let vNormSq = u0 * u0;
+    for (let i = k + 1; i < n; i++) {
+      const val = A[i][k];
+      v[i - k] = val;
+      vNormSq += val * val;
+    }
+
+    if (vNormSq < 1e-26) continue;
+    const scale = 2.0 / vNormSq;
+
+    for (let j = k; j < p; j++) {
+      let dot = 0;
+      for (let i = k; i < n; i++) {
+        dot += v[i - k] * A[i][j];
+      }
+      const factor = scale * dot;
+      for (let i = k; i < n; i++) {
+        A[i][j] -= factor * v[i - k];
+      }
+    }
+
+    let dotY = 0;
+    for (let i = k; i < n; i++) {
+      dotY += v[i - k] * qty[i];
+    }
+    const factorY = scale * dotY;
+    for (let i = k; i < n; i++) {
+      qty[i] -= factorY * v[i - k];
+    }
+  }
+
+  // Extract R (p x p upper triangular) & inspect diagonal rank
+  const R: number[][] = Array.from({ length: p }, (_, i) =>
+    Array.from({ length: p }, (__, j) => (j >= i ? A[i][j] : 0))
+  );
+
+  let maxDiag = 0;
+  let minDiag = Infinity;
+  for (let i = 0; i < p; i++) {
+    const absD = Math.abs(R[i][i]);
+    if (absD > maxDiag) maxDiag = absD;
+    if (absD < minDiag) minDiag = absD;
+  }
+
+  const tol = Math.max(1e-12, maxDiag * 1e-12);
+  let rank = 0;
+  for (let i = 0; i < p; i++) {
+    if (Math.abs(R[i][i]) > tol) rank++;
+  }
+  if (rank < p) {
+    throw new Error(`Matriks prediktor berperingkat kurang (rank=${rank} < ${p}): terdapat kolinearitas sempurna atau kolom konstan.`);
+  }
+
+  // Back-substitution: R * beta = qty[0..p-1]
+  const beta = new Array(p).fill(0);
+  for (let i = p - 1; i >= 0; i--) {
+    let sum = qty[i];
+    for (let j = i + 1; j < p; j++) {
+      sum -= R[i][j] * beta[j];
+    }
+    beta[i] = sum / R[i][i];
+  }
+
+  // Upper triangular inverse R^-1 via back-substitution -> (X^T X)^-1 = R^-1 (R^-1)^T
+  const Rinv: number[][] = Array.from({ length: p }, () => new Array(p).fill(0));
+  for (let j = p - 1; j >= 0; j--) {
+    Rinv[j][j] = 1.0 / R[j][j];
+    for (let i = j - 1; i >= 0; i--) {
+      let sum = 0;
+      for (let m = i + 1; m <= j; m++) {
+        sum += R[i][m] * Rinv[m][j];
+      }
+      Rinv[i][j] = -sum / R[i][i];
+    }
+  }
+
+  const invXTX: number[][] = Array.from({ length: p }, () => new Array(p).fill(0));
+  for (let i = 0; i < p; i++) {
+    for (let j = i; j < p; j++) {
+      let dot = 0;
+      for (let m = Math.max(i, j); m < p; m++) {
+        dot += Rinv[i][m] * Rinv[j][m];
+      }
+      invXTX[i][j] = dot;
+      invXTX[j][i] = dot;
+    }
+  }
+
+  return {
+    beta,
+    invXTX,
+    rank,
+    conditionEst: minDiag > 0 ? maxDiag / minDiag : 1e15
+  };
+}
+
+/**
+ * Independent One-Sided Jacobi SVD Least-Squares Solver (S3 Verification Engine)
+ */
 export function solveLstsqSVD(X: number[][], Y: number[]): number[] {
-  const XT = matTranspose(X);
-  const XTX = matMul(XT, X);
-  const invXTX = matInverse(XTX);
-  const XTY = matMul(XT, Y.map(y => [y]));
-  const B = matMul(invXTX, XTY);
-  return B.map(b => b[0]);
+  const n = X.length;
+  const p = X[0]?.length || 0;
+  if (n === 0 || p === 0) return [];
+
+  // Column-oriented copy W[col][row]
+  const W: number[][] = Array.from({ length: p }, (_, j) => X.map(row => row[j]));
+  const V: number[][] = Array.from({ length: p }, (_, i) =>
+    Array.from({ length: p }, (__, j) => (i === j ? 1.0 : 0.0))
+  );
+
+  for (let sweep = 0; sweep < 35; sweep++) {
+    let converged = true;
+    for (let i = 0; i < p - 1; i++) {
+      for (let j = i + 1; j < p; j++) {
+        let a = 0;
+        let b = 0;
+        let c = 0;
+        for (let r = 0; r < n; r++) {
+          const wi = W[i][r];
+          const wj = W[j][r];
+          a += wi * wi;
+          b += wj * wj;
+          c += wi * wj;
+        }
+        if (Math.abs(c) <= 1e-14 * Math.sqrt(Math.max(1e-30, a * b))) continue;
+        converged = false;
+
+        const tau = (b - a) / (2.0 * c);
+        const t = (tau >= 0 ? 1 : -1) / (Math.abs(tau) + Math.sqrt(1 + tau * tau));
+        const cos = 1.0 / Math.sqrt(1 + t * t);
+        const sin = t * cos;
+
+        for (let r = 0; r < n; r++) {
+          const wi = W[i][r];
+          const wj = W[j][r];
+          W[i][r] = cos * wi - sin * wj;
+          W[j][r] = sin * wi + cos * wj;
+        }
+        for (let r = 0; r < p; r++) {
+          const vi = V[r][i];
+          const vj = V[r][j];
+          V[r][i] = cos * vi - sin * vj;
+          V[r][j] = sin * vi + cos * vj;
+        }
+      }
+    }
+    if (converged) break;
+  }
+
+  const sigma = W.map(col => Math.sqrt(col.reduce((acc, val) => acc + val * val, 0)));
+  const maxSigma = Math.max(...sigma, 0);
+  const tol = Math.max(n, p) * 1e-13 * maxSigma;
+
+  const beta = new Array(p).fill(0);
+  for (let j = 0; j < p; j++) {
+    if (sigma[j] > tol) {
+      let uDotY = 0;
+      for (let r = 0; r < n; r++) {
+        uDotY += (W[j][r] / sigma[j]) * Y[r];
+      }
+      const coeff = uDotY / sigma[j];
+      for (let i = 0; i < p; i++) {
+        beta[i] += coeff * V[i][j];
+      }
+    }
+  }
+  return beta;
+}
+
+/**
+ * Terapkan kebijakan missing values eksplisit sesuai persetujuan pengguna
+ */
+export function applyMissingPolicyToRows(
+  rows: Record<string, any>[],
+  numericCols: string[],
+  policy: 'listwise' | 'impute_mean' | 'impute_median' | 'linear_interpolation' | 'multiple_imputation' = 'listwise',
+  otherRequiredCols: string[] = []
+): { cleanedRows: Record<string, any>[]; imputedCellsCount: number; rowsDropped: number } {
+  if (!rows || rows.length === 0) {
+    return { cleanedRows: [], imputedCellsCount: 0, rowsDropped: 0 };
+  }
+
+  const isValidNum = (v: any) => v !== null && v !== undefined && v !== '' && !isNaN(Number(v)) && isFinite(Number(v));
+
+  if (policy === 'listwise') {
+    const cleanedRows = rows.filter(r =>
+      numericCols.every(c => isValidNum(r[c])) &&
+      otherRequiredCols.every(c => r[c] !== null && r[c] !== undefined && r[c] !== '')
+    );
+    return {
+      cleanedRows,
+      imputedCellsCount: 0,
+      rowsDropped: rows.length - cleanedRows.length
+    };
+  }
+
+  // Hitung statistik imputasi (mean / median) per kolom numerik
+  const colFillValue: Record<string, number> = {};
+  for (const col of numericCols) {
+    const validVals = rows.map(r => r[col]).filter(isValidNum).map(Number).sort((a, b) => a - b);
+    if (validVals.length === 0) {
+      colFillValue[col] = 0;
+      continue;
+    }
+    if (policy === 'impute_median') {
+      const mid = Math.floor(validVals.length / 2);
+      colFillValue[col] = validVals.length % 2 !== 0 ? validVals[mid] : (validVals[mid - 1] + validVals[mid]) / 2;
+    } else {
+      colFillValue[col] = validVals.reduce((a, b) => a + b, 0) / validVals.length;
+    }
+  }
+
+  let imputedCellsCount = 0;
+  const working = rows.map(r => ({ ...r }));
+
+  if (policy === 'linear_interpolation') {
+    for (const col of numericCols) {
+      for (let i = 0; i < working.length; i++) {
+        if (!isValidNum(working[i][col])) {
+          let prevIdx = i - 1;
+          while (prevIdx >= 0 && !isValidNum(working[prevIdx][col])) prevIdx--;
+          let nextIdx = i + 1;
+          while (nextIdx < working.length && !isValidNum(working[nextIdx][col])) nextIdx++;
+          if (prevIdx >= 0 && nextIdx < working.length) {
+            const vPrev = Number(working[prevIdx][col]);
+            const vNext = Number(working[nextIdx][col]);
+            working[i][col] = vPrev + ((vNext - vPrev) * (i - prevIdx)) / (nextIdx - prevIdx);
+          } else {
+            working[i][col] = colFillValue[col];
+          }
+          imputedCellsCount++;
+        }
+      }
+    }
+  } else {
+    for (const row of working) {
+      for (const col of numericCols) {
+        if (!isValidNum(row[col])) {
+          row[col] = Number(colFillValue[col].toFixed(6));
+          imputedCellsCount++;
+        }
+      }
+    }
+  }
+
+  const cleanedRows = working.filter(r =>
+    otherRequiredCols.every(c => r[c] !== null && r[c] !== undefined && r[c] !== '')
+  );
+
+  return {
+    cleanedRows,
+    imputedCellsCount,
+    rowsDropped: rows.length - cleanedRows.length
+  };
+}
+
+/**
+ * Dummy coding otomatis untuk prediktor kategorik (m - 1 kolom, hindari dummy trap)
+ */
+export function encodeCategoricalPredictors(
+  rows: Record<string, any>[],
+  xCols: string[],
+  refCategories: Record<string, string> = {}
+): {
+  encodedRows: Record<string, any>[];
+  encodedXCols: string[];
+  encodings: { sourceCol: string; referenceCategory: string; dummyCols: string[] }[];
+} {
+  const encodedRows = rows.map(r => ({ ...r }));
+  const encodedXCols: string[] = [];
+  const encodings: { sourceCol: string; referenceCategory: string; dummyCols: string[] }[] = [];
+
+  for (const col of xCols) {
+    const nonEmpty = encodedRows.map(r => r[col]).filter(v => v !== null && v !== undefined && v !== '');
+    const numericRatio =
+      nonEmpty.length > 0
+        ? nonEmpty.filter(v => !isNaN(Number(v)) && isFinite(Number(v))).length / nonEmpty.length
+        : 1;
+
+    if (numericRatio >= 0.99) {
+      encodedXCols.push(col);
+      continue;
+    }
+
+    const categories = Array.from(new Set(nonEmpty.map(v => String(v).trim()))).sort();
+    if (categories.length <= 1) {
+      throw new Error(`Variabel kategorik '${col}' hanya memiliki ${categories.length} kategori unik (varians = 0).`);
+    }
+
+    const refCat = refCategories[col] && categories.includes(refCategories[col]) ? refCategories[col] : categories[0];
+    const dummyCols: string[] = [];
+
+    for (const cat of categories) {
+      if (cat === refCat) continue;
+      const dColName = `${col}[${cat}]`;
+      dummyCols.push(dColName);
+      encodedXCols.push(dColName);
+      for (const row of encodedRows) {
+        const val = row[col];
+        if (val === null || val === undefined || val === '') {
+          row[dColName] = null;
+        } else {
+          row[dColName] = String(val).trim() === cat ? 1 : 0;
+        }
+      }
+    }
+
+    encodings.push({ sourceCol: col, referenceCategory: refCat, dummyCols });
+  }
+
+  return { encodedRows, encodedXCols, encodings };
 }
 
 /** Sample standard deviation */
@@ -780,30 +1128,63 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
     timeCol,
     frequency = 'tidak_beraturan',
     alpha = 0.05,
-    ciLevel = 0.95
+    ciLevel = 0.95,
+    missingPolicy = 'listwise',
+    refCategories = {}
   } = input;
 
   const nInitial = rows.length;
-  const requiredCols = [yCol, ...xCols];
+
+  // 1. Chronological sorting for Time Series before missing-value handling (important for interpolation & DW/BG/ADF)
+  let orderedRows = rows;
   if (isTimeSeries && timeCol) {
-    requiredCols.push(timeCol);
+    const parseTimeSortable = (val: any, fallbackIdx: number): number => {
+      if (typeof val === 'number' && isFinite(val)) return val;
+      const str = String(val ?? '').trim();
+      if (!str) return fallbackIdx;
+      const num = Number(str);
+      if (!isNaN(num) && isFinite(num)) return num;
+      const parsed = Date.parse(str);
+      if (!isNaN(parsed)) return parsed;
+      return fallbackIdx;
+    };
+    orderedRows = rows
+      .map((r, idx) => ({ r, idx, key: parseTimeSortable(r[timeCol], idx) }))
+      .sort((a, b) => (a.key !== b.key ? a.key - b.key : a.idx - b.idx))
+      .map(item => item.r);
   }
 
-  // 1. Listwise Deletion
-  const cleanRows = rows.filter(r => {
-    return requiredCols.every(c => {
+  // 2. Categorical Dummy Encoding (m - 1 dummies with explicit reference category)
+  const {
+    encodedRows,
+    encodedXCols: activeXCols,
+    encodings: dummyEncodings
+  } = encodeCategoricalPredictors(orderedRows, xCols, refCategories);
+
+  const dummyColSet = new Set(dummyEncodings.flatMap(e => e.dummyCols));
+  const numericCols = [yCol, ...activeXCols.filter(c => !dummyColSet.has(c))];
+  const otherRequiredCols = [
+    ...Array.from(dummyColSet),
+    ...(isTimeSeries && timeCol ? [timeCol] : [])
+  ];
+
+  // 3. Explicit Missing Values Policy
+  const {
+    cleanedRows: policyRows,
+    imputedCellsCount
+  } = applyMissingPolicyToRows(encodedRows, numericCols, missingPolicy, otherRequiredCols);
+
+  const cleanRows = policyRows.filter(r =>
+    [yCol, ...activeXCols].every(c => {
       const val = r[c];
       if (val === null || val === undefined || val === '') return false;
-      if (isTimeSeries && timeCol && c === timeCol) {
-        return true;
-      }
       const num = Number(val);
       return !isNaN(num) && isFinite(num);
-    });
-  });
+    })
+  );
 
   const n = cleanRows.length;
-  const k = xCols.length;
+  const k = activeXCols.length;
 
   if (n <= k + 1) {
     throw new Error(`Ukuran sampel (n=${n}) tidak mencukupi untuk estimasi ${k} prediktor (syarat n > k + 1 = ${k + 2}).`);
@@ -811,19 +1192,17 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
 
   // Extract numeric vectors
   const Y = cleanRows.map(r => Number(r[yCol]));
-  const Xraw = cleanRows.map(r => xCols.map(c => Number(r[c])));
+  const Xraw = cleanRows.map(r => activeXCols.map(c => Number(r[c])));
 
   // Construct design matrix X with constant column 1 as first column
   const Xmat: number[][] = Xraw.map(row => [1.0, ...row]);
 
-  // 2. OLS Estimation via Matrix Inversion
-  const XT = matTranspose(Xmat);
-  const XTX = matMul(XT, Xmat);
-  const invXTX = matInverse(XTX);
-  const XTY = matMul(XT, Y.map(y => [y]));
-  const Bvec = matMul(invXTX, XTY).map(b => b[0]);
+  // 4. Primary OLS Estimation via Householder QR Decomposition (numerically stable)
+  const qrResult = solveQRHouseholder(Xmat, Y);
+  const Bvec = qrResult.beta;
+  const invXTX = qrResult.invXTX;
 
-  // 3. Independent Verification Engine (SVD / pseudo-inverse)
+  // 5. Independent Verification Engine (One-Sided Jacobi SVD)
   const B_svd = solveLstsqSVD(Xmat, Y);
 
   // Predicted and Residuals
@@ -885,7 +1264,7 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
       min: Math.round(Math.min(...Y) * 1000) / 1000,
       max: Math.round(Math.max(...Y) * 1000) / 1000
     },
-    ...xCols.map((col, idx) => {
+    ...activeXCols.map((col, idx) => {
       const vals = Xraw.map(row => row[idx]);
       const m = vals.reduce((a, b) => a + b, 0) / n;
       return {
@@ -922,7 +1301,7 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
 
   // Predictor rows
   for (let j = 1; j <= k; j++) {
-    const varName = xCols[j - 1];
+    const varName = activeXCols[j - 1];
     const xjVals = Xraw.map(row => row[j - 1]);
     const sxj = sampleStdDev(xjVals);
     const b = Bvec[j];
@@ -939,7 +1318,7 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
     const partial = Math.sign(t) * Math.sqrt(tSquared / (tSquared + dfRes));
     const part = Math.sign(t) * Math.sqrt(Math.max(0, (tSquared * (1 - rSquared)) / dfRes));
 
-    // Tolerance and VIF
+    // Tolerance and VIF via Householder QR auxiliary regression
     let tolerance = 1.0;
     let vif = 1.0;
     if (k > 1) {
@@ -947,9 +1326,7 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
       const otherX = Xraw.map(row => row.filter((_, idx) => idx !== j - 1));
       try {
         const otherXmat = otherX.map(row => [1.0, ...row]);
-        const otherXT = matTranspose(otherXmat);
-        const otherInv = matInverse(matMul(otherXT, otherXmat));
-        const otherB = matMul(otherInv, matMul(otherXT, xjVals.map(x => [x]))).map(v => v[0]);
+        const { beta: otherB } = solveQRHouseholder(otherXmat, xjVals);
         const predXj = otherXmat.map(row => row.reduce((sum, v, idx) => sum + v * otherB[idx], 0));
         const meanXj = xjVals.reduce((a, b) => a + b, 0) / n;
         let sstXj = 0;
@@ -958,12 +1335,13 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
           sstXj += (xjVals[i] - meanXj) * (xjVals[i] - meanXj);
           ssrXj += (predXj[i] - meanXj) * (predXj[i] - meanXj);
         }
-        const r2j = sstXj === 0 ? 0 : Math.min(0.9999, ssrXj / sstXj);
+        const r2j = sstXj === 0 ? 0 : Math.min(0.9999, Math.max(0, ssrXj / sstXj));
         tolerance = Math.max(0.0001, 1 - r2j);
         vif = 1 / tolerance;
-      } catch (ex) {
-        tolerance = 0.5;
-        vif = 2.0;
+      } catch {
+        // Near-singular / collinear auxiliary predictor matrix
+        tolerance = 0.0001;
+        vif = 10000;
       }
     }
 
@@ -1030,7 +1408,7 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
     const varProps: Record<string, number> = {
       '(Constant)': Math.round((((eigVecs[0][d] * eigVecs[0][d]) / lamD) / phiTotal[0]) * 1000) / 1000
     };
-    xCols.forEach((col, idx) => {
+    activeXCols.forEach((col, idx) => {
       const j = idx + 1;
       varProps[col] = Math.round((((eigVecs[j][d] * eigVecs[j][d]) / lamD) / phiTotal[j]) * 1000) / 1000;
     });
@@ -1245,8 +1623,7 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
   }
   let bpSSR = 0;
   try {
-    const eSqVec = eSq.map(v => [v]);
-    const b_bp = matMul(invXTX, matMul(XT, eSqVec)).map(v => v[0]);
+    const { beta: b_bp } = solveQRHouseholder(Xmat, eSq);
     for (let i = 0; i < n; i++) {
       let predESq = 0;
       for (let j = 0; j <= k; j++) {
@@ -1254,7 +1631,7 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
       }
       bpSSR += (predESq - meanESq) * (predESq - meanESq);
     }
-  } catch (err) {
+  } catch {
     bpSSR = 0;
   }
   const bpR2 = bpSST > 0 ? Math.min(1.0, Math.max(0, bpSSR / bpSST)) : 0;
@@ -1329,9 +1706,7 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
     let bgLM = 0;
     try {
       const Xbg = Xmat.map((row, t) => [...row, t > 0 ? e[t - 1] : 0]);
-      const XbgT = matTranspose(Xbg);
-      const invXbg = matInverse(matMul(XbgT, Xbg));
-      const bBg = matMul(invXbg, matMul(XbgT, e.map(ev => [ev]))).map(v => v[0]);
+      const { beta: bBg } = solveQRHouseholder(Xbg, e);
       let ssrBg = 0;
       for (let t = 0; t < n; t++) {
         let predBg = 0;
@@ -1466,7 +1841,7 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
   // ============================================================
   const checks: ConsistencyCheckItem[] = [];
 
-  // Check 1: SVD and Matrix Inverse Coefficient Parity
+  // Check 1: Householder QR and One-Sided Jacobi SVD Coefficient Parity
   let maxRelDiffB = 0;
   for (let j = 0; j <= k; j++) {
     const diff = Math.abs(Bvec[j] - B_svd[j]) / Math.max(1e-10, Math.abs(Bvec[j]));
@@ -1474,7 +1849,7 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
   }
   checks.push({
     id: 'S3_CHECK_1_DUAL_ENGINE_PARITY',
-    description: 'Paritas dua mesin (Matrix Inversion vs SVD): selisih relatif koefisien B <= 1e-8',
+    description: 'Paritas dua mesin (Householder QR vs One-Sided Jacobi SVD): selisih relatif koefisien B <= 1e-8',
     passed: maxRelDiffB <= 1e-8,
     value: maxRelDiffB,
     threshold: 1e-8,
@@ -1645,7 +2020,7 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
     descriptiveStatistics,
     variables: {
       yCol,
-      xCols,
+      xCols: activeXCols,
       enteredMethod: 'Enter'
     },
     modelSummary: {
@@ -1719,7 +2094,16 @@ export function runStatisticalRegression(input: OLSFitInput): OLSFitResult {
         ? 'Peringatan Regresi Lancung (Spurious Regression): Nilai R2 tinggi namun residual tidak stasioner atau DW rendah.'
         : undefined,
       acfPacf: acfPacfData
-    } : undefined
+    } : undefined,
+    solverMetadata: {
+      primarySolver: 'Householder-QR',
+      verificationSolver: 'One-Sided-Jacobi-SVD',
+      matrixRank: qrResult.rank,
+      conditionNumberEst: Number(qrResult.conditionEst.toFixed(4)),
+      missingPolicyApplied: missingPolicy,
+      imputedCellsCount,
+      dummyEncodings: dummyEncodings.length > 0 ? dummyEncodings : undefined
+    }
   };
 }
 

@@ -25,6 +25,8 @@ export interface RecommendationAlternative {
   description: string;
   applicability: string;
   consequences: MethodologicalConsequences;
+  pros?: string[];
+  cons?: string[];
   remedialType?: string;
 }
 
@@ -38,7 +40,8 @@ export interface StatisticalRecommendationCard {
     | 'stationarity'
     | 'outlier'
     | 'specification'
-    | 'sample_size';
+    | 'sample_size'
+    | 'moderation';
   testName: string;
   statistic: number;
   statisticName: string;
@@ -52,6 +55,9 @@ export interface StatisticalRecommendationCard {
   primaryRecommendation: string;
   alternativeMethods: RecommendationAlternative[];
   methodologicalConsequences: MethodologicalConsequences;
+  pros: string[];
+  cons: string[];
+  nonCausalityNote: string;
   availableActions: {
     canApply: boolean;
     remedialType?: string;
@@ -90,7 +96,7 @@ export function generateStatisticalRecommendations(
   const isTS = options?.isTimeSeries ?? result.timeSeriesSummary?.isTimeSeries ?? false;
   const n = result.sampleSize.nUsed;
   const k = result.kPredictors;
-  const cards: StatisticalRecommendationCard[] = [];
+  const rawCards: Omit<StatisticalRecommendationCard, 'pros' | 'cons' | 'nonCausalityNote'>[] = [];
 
   // Helper to find assumption by name
   const findAssump = (keyword: string) =>
@@ -107,7 +113,7 @@ export function generateStatisticalRecommendations(
     const statVal = normAssump.statistic;
     const pVal = normAssump.pValue ?? 0.05;
 
-    cards.push({
+    rawCards.push({
       id: 'rec_normality',
       category: 'normality',
       testName: normAssump.name,
@@ -223,7 +229,7 @@ export function generateStatisticalRecommendations(
     const isPass = maxVif <= 5;
     const isWarning = maxVif > 5 && maxVif <= 10;
 
-    cards.push({
+    rawCards.push({
       id: 'rec_multicollinearity',
       category: 'multicollinearity',
       testName: 'Multikolinearitas (Variance Inflation Factor & Tolerance)',
@@ -339,7 +345,7 @@ export function generateStatisticalRecommendations(
     const statVal = heteroAssump.statistic;
     const pVal = heteroAssump.pValue ?? 0.05;
 
-    cards.push({
+    rawCards.push({
       id: 'rec_heteroskedasticity',
       category: 'heteroskedasticity',
       testName: heteroAssump.name,
@@ -453,7 +459,7 @@ export function generateStatisticalRecommendations(
     const pVal = autocorrAssump.pValue;
 
     if (!isNA) {
-      cards.push({
+      rawCards.push({
         id: 'rec_autocorrelation',
         category: 'autocorrelation',
         testName: autocorrAssump.name,
@@ -569,7 +575,7 @@ export function generateStatisticalRecommendations(
     const r2 = result.modelSummary.rSquared;
     const dw = result.modelSummary.durbinWatson;
 
-    cards.push({
+    rawCards.push({
       id: 'rec_stationarity',
       category: 'stationarity',
       testName: 'Stasioneritas Deret Waktu & Peringatan Regresi Lancung (Spurious Regression)',
@@ -658,7 +664,7 @@ export function generateStatisticalRecommendations(
   const casewiseCount = result.casewiseDiagnostics?.length ?? 0;
   const hasOutlier = outlierAssump ? outlierAssump.status !== 'lulus' : casewiseCount > 0;
 
-  cards.push({
+  rawCards.push({
     id: 'rec_outlier',
     category: 'outlier',
     testName: 'Diagnostik Pencilan & Observasi Berpengaruh (Cook\'s Distance & Casewise)',
@@ -749,7 +755,7 @@ export function generateStatisticalRecommendations(
     const statVal = specAssump.statistic;
     const pVal = specAssump.pValue ?? 0.05;
 
-    cards.push({
+    rawCards.push({
       id: 'rec_specification',
       category: 'specification',
       testName: 'Spesifikasi Bentuk Fungsional & Linearitas (Ramsey RESET Test)',
@@ -840,7 +846,7 @@ export function generateStatisticalRecommendations(
   const isSampleAdequate = n >= minNModel;
   const isSampleGenerous = n >= minNPredictors;
 
-  cards.push({
+  rawCards.push({
     id: 'rec_sample_size',
     category: 'sample_size',
     testName: 'Kecukupan Ukuran Sampel (Kaidah Ekonometrika Green, 1991)',
@@ -905,6 +911,73 @@ export function generateStatisticalRecommendations(
     }
   });
 
+  // Enrich every card with standardized 8-element fields (pros, cons, non-causality guardrails)
+  const CATEGORY_PROS_CONS: Record<
+    StatisticalRecommendationCard['category'],
+    { pros: string[]; cons: string[] }
+  > = {
+    normality: {
+      pros: ['Menjaga koefisien OLS M0 tetap transparan dalam satuan asli.', 'Robust inference (HC3/Bootstrap) menjaga validitas p-value dan CI tanpa menghapus data.'],
+      cons: ['Transformasi non-linear mengubah skala interpretasi koefisien ke bentuk log/Box-Cox.', 'Pada n kecil (<= 50), sensitivitas terhadap outlier lebih tinggi.']
+    },
+    multicollinearity: {
+      pros: ['Mempertahankan stabilitas matriks X^T X dan ketepatan tanda koefisien beta.', 'Mean-centering pada MRA mengurangi korelasi artifisial tanpa mengubah R² model.'],
+      cons: ['Penghapusan variabel berkolinearitas tinggi berisiko menimbulkan omitted variable bias.', 'Ridge Regression menyusutkan varians dengan konsekuensi sedikit bias pada estimasi.']
+    },
+    heteroskedasticity: {
+      pros: ['HC3/WLS memulihkan standar error dan t-statistik yang valid meski varians galat tidak konstan.', 'HC3 mempertahankan nilai R² dan koefisien B identik dengan M0.'],
+      cons: ['HC3 hanya berlaku secara asimtotik pada sampel memadai.', 'WLS membutuhkan spesifikasi fungsi bobot yang tepat agar efisien.']
+    },
+    autocorrelation: {
+      pros: ['Newey-West HAC / Prais-Winsten mencegah t-statistik melambung akibat autokorelasi serial.', 'Menjaga validitas uji hipotesis pada data runtun waktu.'],
+      cons: ['Prais-Winsten mengubah bentuk persamaan ke selisih kuasi-rho.', 'Memerlukan urutan waktu kronologis yang konsisten dan bebas duplikasi periode.']
+    },
+    stationarity: {
+      pros: ['Mencegah kesimpulan regresi lancung (spurious regression) antar-variabel tren.', 'Diferensiasi atau kointegrasi memisahkan efek jangka pendek dan jangka panjang.'],
+      cons: ['First differencing menghilangkan informasi ekuilibrium jangka panjang pada level.', 'Mengurangi jumlah observasi efektif sebanyak orde diferensiasi (1 baris).']
+    },
+    outlier: {
+      pros: ['Huber/Tukey IRLS mengurangi bobot observasi ekstrem secara bertahap tanpa menghapus data.', 'Cook Distance menandai kasus berpengaruh untuk verifikasi salah ketik/kualitas data.'],
+      cons: ['Pembuangan observasi tanpa justifikasi substantif dapat mendistorsi generalisasi populasi.', 'Estimasi robust sedikit berbeda dari rata-rata kuadrat terkecil klasik.']
+    },
+    specification: {
+      pros: ['Menangkap bentuk hubungan non-linear atau interaksi tersembunyi bila teori mendukung.', 'Menjaga validitas bentuk fungsional model.'],
+      cons: ['Penambahan polinomial meningkatkan korelasi antar-suku bila tidak di-centering.', 'Menambah derajat bebas yang terpakai (membutuhkan n lebih besar).']
+    },
+    sample_size: {
+      pros: ['Menjamin kekuatan uji statistik (statistical power) sesuai acuan Green (1991).', 'Mencegah overfitting pada jumlah prediktor besar.'],
+      cons: ['Dengan n terbatas, koefisien kecil berisiko gagal terdeteksi secara statistik (Type II error).', 'Rasio n/k kecil menurunkan kestabilan estimasi interval kepercayaan.']
+    },
+    moderation: {
+      pros: ['Mean-centering mengurangi multikolinearitas antara X, Z, dan suku interaksi X*Z.', 'Analisis Simple Slope & Johnson-Neyman memetakan kondisi efek secara rinci.'],
+      cons: ['Interaksi statistik bukan bukti kausalitas searah tanpa desain longitudinal/eksperimental.', 'Daya uji (power) untuk mendeteksi efek interaksi umumnya lebih rendah daripada efek utama.']
+    }
+  };
+
+  const DEFAULT_NON_CAUSALITY =
+    'Catatan Metodologi: Analisis regresi mengukur asosiasi statistik bersyarat, bukan pembuktian kausalitas mutlak tanpa dasar teori atau desain penelitian kausal.';
+
+  const cards: StatisticalRecommendationCard[] = rawCards.map(c => {
+    const pc = CATEGORY_PROS_CONS[c.category] ?? {
+      pros: ['Memberikan dasar diagnostik kuantitatif untuk pelaporan model yang jujur.'],
+      cons: ['Membutuhkan evaluasi kesesuaian teori sebelum menerapkan metode remedial.']
+    };
+    const enrichedAlts = c.alternativeMethods.map(alt => ({
+      ...alt,
+      pros: alt.pros ?? [alt.applicability || 'Memperbaiki validitas inferensi pada kondisi pelanggaran terkait.'],
+      cons: alt.cons ?? [
+        alt.consequences.coefficientsChange ? alt.consequences.coefficientsDetail : 'Kompleksitas interpretasi meningkat dibanding OLS dasar.'
+      ]
+    }));
+    return {
+      ...c,
+      alternativeMethods: enrichedAlts,
+      pros: pc.pros,
+      cons: pc.cons,
+      nonCausalityNote: DEFAULT_NON_CAUSALITY
+    };
+  });
+
   // Calculate Health Score & Overall Status
   const total = cards.length || 1;
   const passed = cards.filter((c) => c.status === 'LULUS').length;
@@ -946,5 +1019,46 @@ export function generateStatisticalRecommendations(
       healthScore,
       topPriorityActions
     }
+  };
+}
+
+/**
+ * Rekomendasi metodologis terstandarisasi khusus untuk Moderated Regression Analysis (MRA)
+ */
+export function generateMRARecommendations(params: {
+  xCol: string;
+  zCol: string;
+  yCol: string;
+  centerVariables: boolean;
+  isInteractionSignificant: boolean;
+  sigFChange: number;
+  alpha: number;
+  maxVifModel3?: number;
+}): {
+  centeringAdvisory: string;
+  nonCausalityAdvisory: string;
+  sharmaGuidance: string;
+  pros: string[];
+  cons: string[];
+} {
+  const { xCol, zCol, yCol, centerVariables, isInteractionSignificant, sigFChange, alpha, maxVifModel3 } = params;
+  const highCollinearity = maxVifModel3 !== undefined && maxVifModel3 >= 10;
+
+  return {
+    centeringAdvisory: centerVariables
+      ? `Pemusatan rata-rata (mean centering) aktif pada ${xCol} dan ${zCol}. Hal ini menstabilkan koefisien efek utama (nilai pada titik rata-rata) dan mencegah VIF struktural berlebihan${highCollinearity ? ', namun VIF maksimum masih >= 10 sehingga perlu memeriksa korelasi asli antarvariabel.' : '.'}`
+      : `Mean centering sedang NONAKTIF. Pada skala mentah tanpa centering, suku interaksi (${xCol} * ${zCol}) sangat berisiko memicu multikolinearitas tinggi (VIF >= 10); aktifkan mean centering sebelum interpretasi akhir.`,
+    nonCausalityAdvisory: `Prinsip Asosiatif & Non-Kausal: Interaksi ${xCol} x ${zCol} terhadap ${yCol} (Sig. F Change = ${sigFChange.toFixed(4)}) menguji apakah hubungan statistik bersyarat berubah menurut level ${zCol}, bukan membuktikan mekanisme sebab-akibat secara mutlak tanpa desain penelitian kausal.`,
+    sharmaGuidance: isInteractionSignificant
+      ? `Interaksi signifikan pada alpha = ${alpha}. Telusuri wilayah signifikansi melalui tabel Simple Slope (atau grafik Johnson-Neyman untuk moderator numerik) sebelum menarik kesimpulan moderasi.`
+      : `Interaksi tidak signifikan (p = ${sigFChange.toFixed(4)} > ${alpha}). Laporkan Model MRA apa adanya secara jujur; jangan membuang sampel atau mengubah moderator demi mengejar signifikansi.`,
+    pros: [
+      'Memisahkan efek utama X, efek moderator Z, dan efek interaksi X*Z secara hierarkis (R² Change).',
+      'Mean centering menormalkan interpretasi konstanta dan mengurangi multikolinearitas non-esensial.'
+    ],
+    cons: [
+      'Uji interaksi memiliki daya statistik (statistical power) lebih rendah dibanding uji efek utama.',
+      'Hasil bergantung pada ketepatan teori arah moderasi antara X dan Z.'
+    ]
   };
 }

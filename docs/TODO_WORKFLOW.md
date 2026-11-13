@@ -159,3 +159,22 @@ Dokumen ini memuat daftar tugas operasional dari Tahap 1 hingga Tahap 3 beserta 
 - [ ] **Fase 4**: Modul Advanced Regression Models (Binary/Multinomial/Ordinal Logistic, Poisson, Negative Binomial, Quantile, GLM) & $k$-Fold Cross-Validation (Poin 12 & 13).
 - [ ] **Fase 5**: Visualisasi Statistik Lengkap, Mesin Interpretasi Akademik 10-Elemen, Dokumentasi Skill Ilmiah, & Ekspor Laporan Word (`.docx`) / Excel (`.xlsx`) (Poin 14, 15, 17, 18).
 - [ ] **Fase 6**: Pengujian Unit/Integrasi Komprehensif & Benchmark IBM SPSS / NIST StRD (Poin 19 & 20).
+
+---
+
+## Tahap 6: Master Refactor, Optimization & Statistical Engine Upgrade (`2026-11-13-regression-upgrade-design.md`)
+- [x] **Fase 1 — Refactoring UI/UX Wizard 7-Tahap & Alur Terpandu**:
+  - [x] Step 1 terpadu (Upload / Link GSheets / 2 Sampel Cross-Section & Time Series + Multi-Sheet Selector).
+  - [x] Step 2 Data Cleaning & Pratinjau (baseline originalRows snapshot, deteksi duplikat/invalid/missing, opsi Listwise/Mean/Median/Manual dengan preview N terpengaruh).
+  - [x] Step 3 Jenis Data (Cross Section vs Time Series + deteksi urutan/duplikat/gap/interval tidak konsisten).
+  - [x] Step 4 Pemilihan Metode (SLR, MLR, MRA, Analisis Kontingensi).
+  - [x] Step 5 Variabel & Parameter adaptif per metode + Toggle Basic Mode vs Advanced Mode + Dummy Coding & Reference Category.
+- [x] **Fase 2 — Peningkatan Akurasi Mesin Statistik & Dual-Mode Parity**:
+  - [x] Upgrade solver primer `regression-engine.ts` ke Householder QR Decomposition + SVD cross-check + dukungan aktif `missingPolicy`, `encodeCategoricalPredictors`, dan chronological sorting Time Series.
+  - [x] Fix MRA moderator kategorikal multi-level ($m-1$ dummy + interaksi $X \times D_j$ + joint F-change) di `regression-moderation-mra.ts`.
+  - [x] Standarisasi 8-elemen `StatisticalRecommendationCard` di `regression-recommendation-engine.ts`.
+  - [x] Tambah `api/py/validate.py` (`numpy`, `scipy`, `statsmodels`, `pandas`) & hapus `matplotlib` dari `requirements.txt` untuk parity Vercel tanpa collision + auto-fallback offline.
+- [x] **Fase 3 — Output SPSS per Metode, Ekspor Lengkap & QA**:
+  - [x] Workspace Hasil Step 7 untuk `OLS`, `MRA` (Model 1–3, Simple Slope, Johnson-Neyman, Interaction Plot), dan `Kontingensi` (Crosstabs, Chi-Square, Symmetric Measures, Risk Estimates, Grouped/Stacked/Mosaic Plot), plus tab Advanced GLM di Advanced Mode.
+  - [x] Ekspor Word (`.docx`) & Excel (`.xlsx`) terintegrasi untuk OLS, MRA, dan Kontingensi.
+  - [x] Pengujian menyeluruh (Vitest unit/statistical/NIST/MRA/Contingency + Zero-regression CED & Panel + `tsc --noEmit` + `next build`).

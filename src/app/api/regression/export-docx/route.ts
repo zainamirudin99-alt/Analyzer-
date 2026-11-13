@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateRegressionDocx } from "../../../../lib/regression-docx-builder";
+import {
+  generateRegressionDocx,
+  generateMRADocx,
+  generateContingencyDocx
+} from "../../../../lib/regression-docx-builder";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const {
+      analysisType = "ols",
       result,
-      datasetName = "Dataset_Regresi.xlsx",
-      sheetName = "Sheet1",
+      mraResult,
+      contingencyResult,
+      datasetName = body.fileName || "Dataset_Regresi.xlsx",
+      sheetName = body.selectedSheet || "Sheet1",
       alpha = 0.05,
       seed = 12345,
       statusLabel = "Konfirmatori",
@@ -18,28 +25,45 @@ export async function POST(req: NextRequest) {
       comparisonReport,
     } = body;
 
-    if (!result || !result.coefficients || !result.modelSummary) {
-      return NextResponse.json(
-        { error: "Objek hasil OLSFitResult tidak valid atau belum tersedia." },
-        { status: 400 }
-      );
+    let docxBuffer: Buffer;
+    let prefix = "Hasil_Regresi_SPSS";
+
+    if (analysisType === "mra") {
+      if (!mraResult || !mraResult.models) {
+        return NextResponse.json({ error: "Objek hasil MRA tidak valid." }, { status: 400 });
+      }
+      docxBuffer = await generateMRADocx({ mraResult, datasetName, sheetName });
+      prefix = "Hasil_MRA_SPSS";
+    } else if (analysisType === "contingency") {
+      if (!contingencyResult || !contingencyResult.chiSquareTests) {
+        return NextResponse.json({ error: "Objek hasil Kontingensi tidak valid." }, { status: 400 });
+      }
+      docxBuffer = await generateContingencyDocx({ contingencyResult, datasetName, sheetName });
+      prefix = "Hasil_Kontingensi_SPSS";
+    } else {
+      if (!result || !result.coefficients || !result.modelSummary) {
+        return NextResponse.json(
+          { error: "Objek hasil OLSFitResult tidak valid atau belum tersedia." },
+          { status: 400 }
+        );
+      }
+
+      docxBuffer = await generateRegressionDocx({
+        result,
+        datasetName,
+        sheetName,
+        alpha,
+        seed,
+        statusLabel,
+        exploratoryReason,
+        kTried,
+        modelsHistory,
+        recommendationOutput,
+        comparisonReport,
+      });
     }
 
-    const docxBuffer = await generateRegressionDocx({
-      result,
-      datasetName,
-      sheetName,
-      alpha,
-      seed,
-      statusLabel,
-      exploratoryReason,
-      kTried,
-      modelsHistory,
-      recommendationOutput,
-      comparisonReport,
-    });
-
-    const filename = `Hasil_Regresi_SPSS_${new Date().toISOString().slice(0, 10)}.docx`;
+    const filename = `${prefix}_${new Date().toISOString().slice(0, 10)}.docx`;
 
     return new NextResponse(new Uint8Array(docxBuffer), {
       status: 200,

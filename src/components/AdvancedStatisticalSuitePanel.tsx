@@ -42,6 +42,7 @@ interface AdvancedStatisticalSuitePanelProps {
   yCol: string;
   xCols: string[];
   alpha?: number;
+  analysisMode?: 'basic' | 'advanced';
 }
 
 export const AdvancedStatisticalSuitePanel: React.FC<AdvancedStatisticalSuitePanelProps> = ({
@@ -49,7 +50,8 @@ export const AdvancedStatisticalSuitePanel: React.FC<AdvancedStatisticalSuitePan
   allRows,
   yCol,
   xCols,
-  alpha = 0.05
+  alpha = 0.05,
+  analysisMode = 'advanced'
 }) => {
   const [activeSuiteTab, setActiveSuiteTab] = useState<'diagnostics' | 'mra' | 'contingency' | 'correlation' | 'glm'>('diagnostics');
   const [decimals, setDecimals] = useState<number>(3);
@@ -262,7 +264,9 @@ export const AdvancedStatisticalSuitePanel: React.FC<AdvancedStatisticalSuitePan
           { id: 'mra', label: '2. Moderasi (MRA) & Johnson-Neyman' },
           { id: 'contingency', label: '3. Crosstabs, Chi-Square, Fisher & Risk' },
           { id: 'correlation', label: '4. Korelasi (Pearson, Spearman, Kendall, Parsial)' },
-          { id: 'glm', label: '5. Regresi Lanjutan (Logistik, Poisson, Kuantil, K-Fold)' }
+          ...(analysisMode === 'advanced'
+            ? [{ id: 'glm' as const, label: '5. Model Lanjutan GLM (Logistik, Poisson, Kuantil, K-Fold)' }]
+            : [])
         ] as Array<{ id: typeof activeSuiteTab; label: string }>).map((tab) => (
           <button
             key={tab.id}

@@ -125,3 +125,20 @@ Penambahan modul-modul statistik tingkat lanjut tetap menjaga prinsip modularita
 - `src/lib/regression-moderation-mra.ts`: Moderated Regression Analysis (MRA) 3-Model Hierarkis, Simple Slope Analysis ($-1\text{ SD}, \text{Mean}, +1\text{ SD}$), Teknik Johnson-Neyman, Moderator Kategorik, dan klasifikasi 4 tipe moderator.
 - `src/lib/regression-contingency-chisquare.ts`: Crosstabulation ($2\times 2$ s/d $r\times c$), Pearson $\chi^2$, Likelihood Ratio $G^2$, Yates, Fisher's Exact Test, Fisher-Freeman-Halton / Monte Carlo, Linear-by-Linear, Phi, Cramer's $V$, Contingency Coeff, OR, RR, RD, dan Adjusted Standardized Residuals.
 - `src/lib/regression-advanced-models.ts`: Binary/Multinomial/Ordinal Logistic Regression, Poisson, Negative Binomial, Quantile Regression, dan GLM.
+
+---
+
+## 5. Arsitektur Tahap 6: Refactoring Wizard 7-Tahap, Dual-Mode Engine QR/SVD + Python Parity, MRA Multi-Kategori & Kontingensi Terintegrasi
+
+Mengacu pada `docs/superpowers/specs/2026-11-13-regression-upgrade-design.md`:
+1. **Wizard 7-Tahap (`RegressionTab.tsx`)**:
+   - Step 1: Sumber Data (Upload/Link/Sample Cross-Section & Time Series) + Sheet Selector terpadu.
+   - Step 2: Pembersihan & Pratinjau Data (baseline snapshot, missing policy interaktif: Listwise/Mean/Median/Manual, duplikat, statistik deskriptif awal).
+   - Step 3: Jenis Data (Cross Section vs Time Series + validator urutan kronologis, duplikat, periode hilang, inkonsistensi interval).
+   - Step 4: Metode Analisis (SLR, MLR, MRA, Analisis Kontingensi).
+   - Step 5: Konfigurasi Variabel & Parameter (Basic vs Advanced Mode, dummy coding prediktor/moderator kategorikal dengan reference category).
+   - Step 6: Ringkasan Pra-Eksekusi & Validasi Invarian/Green (1991).
+   - Step 7: Workspace Hasil Gaya SPSS per Metode (`OLSResultView`, `MRAResultView`, `ContingencyResultView`) beserta tab terstruktur, rekomendasi 8-elemen, perbandingan $M_0/M_1/M_2$, plot, dan ekspor `.docx`/`.xlsx`.
+2. **Dual-Mode Statistical Parity**:
+   - Primary client/Node solver ditingkatkan dari normal equations `matInverse(X'X)` menjadi **Householder QR Decomposition** dengan verifikasi silang **SVD** dan *chronological sort* otomatis pada Time Series.
+   - Endpoint Python `api/py/validate.py` (`numpy`, `scipy`, `statsmodels`, `pandas`; tanpa `matplotlib`) bertindak sebagai verifikasi silang Statsmodels di Vercel dengan *auto-fallback* mulus ke TS QR/SVD saat offline/lokal.
