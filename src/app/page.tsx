@@ -8,7 +8,7 @@ import { ResultsTab } from '@/components/ResultsTab';
 import { GuideTab } from '@/components/GuideTab';
 import { SettingsTab } from '@/components/SettingsTab';
 import { RegressionTab } from '@/components/RegressionTab';
-import { PanelTab } from '@/components/PanelTab';
+import { PanelTabHub } from '@/components/PanelTabHub';
 import { AuthGate } from '@/components/AuthGate';
 import { useSupabaseKeepalive } from '@/hooks/useSupabaseKeepalive';
 
@@ -112,7 +112,7 @@ export default function HomePage() {
             )}
 
             {activeTab === 'panel' && (
-              <PanelTab />
+              <PanelTabHub />
             )}
           </main>
         </div>
