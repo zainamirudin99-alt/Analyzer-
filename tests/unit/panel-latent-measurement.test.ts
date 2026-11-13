@@ -11,6 +11,7 @@ import { generatePanelLatentDocx } from '../../src/lib/panel-latent-export-docx'
 import { generatePanelLatentPDF } from '../../src/lib/panel-latent-export-pdf';
 import { generatePanelLatentCSV, generatePanelLatentXLSX } from '../../src/lib/panel-latent-export-xlsx';
 import { executePanelLatentPipeline } from '../../src/lib/panel-latent-orchestrator';
+import { evaluatePreprocessingCandidates } from '../../src/lib/panel-latent-recommender';
 
 describe('Panel Latent Variable Measurement Model — Statistical Recovery, Diagnostics & Exports', () => {
   it('1. Recovers known latent Y*, relative biases, loadings, and reliability order on simulated panel data', async () => {
@@ -157,6 +158,58 @@ describe('Panel Latent Variable Measurement Model — Statistical Recovery, Diag
       }
     });
     expect(resShort.diagnostics.ar1SkippedReason).toContain('T = 2 < 3');
+  });
+
+  it('5. Evaluates multiple preprocessing & likelihood scenarios and adapts to outliers, scale mismatches, negatives, and duplicates', () => {
+    const presetRows = generateCO2PresetDataset();
+    const mapping = autoDetectPanelLatentMapping(Object.keys(presetRows[0]));
+
+    // A. Standard preset evaluates >= 7 candidates quickly and returns ranked convergent best
+    const resPreset = evaluatePreprocessingCandidates({ rows: presetRows, mapping });
+    expect(resPreset.evaluatedCount).toBeGreaterThanOrEqual(7);
+    expect(resPreset.bestScenario).toBeDefined();
+    expect(resPreset.bestScenario.id).toBe(resPreset.bestScenarioId);
+    expect(resPreset.bestScenario.compositeScore).toBeGreaterThan(50);
+    expect(resPreset.bestScenario.isConverged).toBe(true);
+    expect(Number.isFinite(resPreset.bestScenario.nrmseOriginalScale)).toBe(true);
+
+    // B. Outlier-contaminated dataset triggers outlier candidates and stays convergent/robust
+    const outlierRows = presetRows.map((r, idx) =>
+      idx === 3 || idx === 17
+        ? { ...r, [mapping.x1Col]: Number(r[mapping.x1Col]) * 6.5 }
+        : r
+    );
+    const resOutliers = evaluatePreprocessingCandidates({ rows: outlierRows, mapping });
+    expect(resOutliers.outlierCountDetected).toBeGreaterThan(0);
+    expect(resOutliers.evaluatedCount).toBeGreaterThanOrEqual(9);
+    expect(resOutliers.bestScenario.isConverged).toBe(true);
+
+    // C. Extreme scale mismatch (>100x on X1) is detected and recommends Standardized Z-score
+    const multiScaleRows = presetRows.map(r => ({
+      ...r,
+      [mapping.x1Col]: Number(r[mapping.x1Col]) * 250
+    }));
+    const resScale = evaluatePreprocessingCandidates({ rows: multiScaleRows, mapping });
+    expect(resScale.scaleRatioDetected).toBeGreaterThan(10);
+    expect(resScale.bestScenario.preprocessing.applyStandardize).toBe(true);
+    expect(resScale.bestScenario.recommendedIdentification).toBe('standardized');
+
+    // D. Negative values cleanly filter out log(1+x) candidates, and duplicate City-Year auto-enables dropDuplicateCityYear
+    const negDupRows = [
+      ...presetRows.map(r => ({
+        ...r,
+        [mapping.x2Col]: Number(r[mapping.x2Col]) - 900
+      })),
+      { ...presetRows[0], [mapping.x2Col]: Number(presetRows[0][mapping.x2Col]) - 900 }
+    ];
+    const resNegDup = evaluatePreprocessingCandidates({
+      rows: negDupRows,
+      mapping,
+      allowNegativeValues: true
+    });
+    expect(resNegDup.duplicateRowsDetected).toBeGreaterThan(0);
+    expect(resNegDup.scenarios.every(s => s.preprocessing.applyLog1p === false)).toBe(true);
+    expect(resNegDup.scenarios.every(s => s.preprocessing.dropDuplicateCityYear === true)).toBe(true);
   });
 });
 

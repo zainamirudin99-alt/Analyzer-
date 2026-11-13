@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   AlertCircle,
@@ -10,6 +10,8 @@ import {
   BookOpen,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Cpu,
   Database,
@@ -21,6 +23,7 @@ import {
   Link2,
   Play,
   Printer,
+  RefreshCw,
   ShieldCheck,
   Sliders,
   Sparkles,
@@ -46,6 +49,8 @@ import {
   PanelLatentMapping,
   PanelLatentModelSpec,
   PanelLatentPreprocessingOptions,
+  PreprocessingCandidateScenario,
+  PreprocessingRecommendationResult,
   PriorRegime
 } from '@/lib/panel-latent-types';
 import {
@@ -95,11 +100,25 @@ export const PanelLatentTab: React.FC = () => {
   const [estimateError, setEstimateError] = useState<string | null>(null);
   const [fitResult, setFitResult] = useState<PanelLatentFitResult | null>(null);
 
+  // Step 3 Multi-Scenario Recommendation
+  const [recommendation, setRecommendation] = useState<PreprocessingRecommendationResult | null>(null);
+  const [isRecommending, setIsRecommending] = useState<boolean>(false);
+  const [recommendError, setRecommendError] = useState<string | null>(null);
+  const [recSignature, setRecSignature] = useState<string>('');
+  const [showAllScenarios, setShowAllScenarios] = useState<boolean>(true);
+  const [appliedNotice, setAppliedNotice] = useState<string | null>(null);
+
   // Step 9 tabs
   const [resultSubTab, setResultSubTab] = useState<'stata' | 'visuals' | 'interpret' | 'code'>('stata');
   const [codeTab, setCodeTab] = useState<'stan' | 'r' | 'brms' | 'prep'>('stan');
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<string | null>(null);
+
+  const datasetSignature = useMemo(
+    () =>
+      `${datasetName}|${rawRows.length}|${mapping.cityCol}|${mapping.yearCol}|${mapping.x1Col}|${mapping.x2Col}|${mapping.x3Col}|${spec.anchorSource}`,
+    [datasetName, rawRows.length, mapping.cityCol, mapping.yearCol, mapping.x1Col, mapping.x2Col, mapping.x3Col, spec.anchorSource]
+  );
 
   const qualityReport = useMemo(
     () => validatePanelLatentData(rawRows, mapping, preprocessing),
@@ -126,6 +145,73 @@ export const PanelLatentTab: React.FC = () => {
     }
     setFitResult(null);
     setSourceError(null);
+    setRecommendation(null);
+    setRecSignature('');
+    setRecommendError(null);
+    setAppliedNotice(null);
+  };
+
+  const handleEvaluateScenarios = useCallback(async () => {
+    if (rawRows.length === 0) return;
+    setIsRecommending(true);
+    setRecommendError(null);
+    try {
+      const res = await fetch('/api/panel-latent/recommend-preprocessing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rows: rawRows,
+          mapping,
+          spec,
+          allowNegativeValues: preprocessing.allowNegativeValues
+        })
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success || !json.data) {
+        throw new Error(json.error || 'Gagal mengevaluasi skenario prapemrosesan.');
+      }
+      setRecommendation(json.data);
+      setRecSignature(datasetSignature);
+    } catch (err: any) {
+      setRecommendError(err.message || 'Terjadi kesalahan saat mengevaluasi kombinasi prapemrosesan.');
+    } finally {
+      setIsRecommending(false);
+    }
+  }, [rawRows, mapping, spec, preprocessing.allowNegativeValues, datasetSignature]);
+
+  useEffect(() => {
+    if (
+      currentStep === 3 &&
+      rawRows.length > 0 &&
+      recSignature !== datasetSignature &&
+      !isRecommending
+    ) {
+      handleEvaluateScenarios();
+    }
+  }, [currentStep, rawRows.length, recSignature, datasetSignature, isRecommending, handleEvaluateScenarios]);
+
+  const isScenarioCurrentlyActive = useCallback(
+    (s: PreprocessingCandidateScenario) =>
+      s.preprocessing.applyLog1p === preprocessing.applyLog1p &&
+      s.preprocessing.applyWinsorize === preprocessing.applyWinsorize &&
+      s.preprocessing.applyStandardize === preprocessing.applyStandardize &&
+      s.preprocessing.dropDuplicateCityYear === preprocessing.dropDuplicateCityYear &&
+      s.recommendedLikelihood === spec.likelihood &&
+      s.recommendedIdentification === spec.identification,
+    [preprocessing, spec.likelihood, spec.identification]
+  );
+
+  const handleApplyScenario = (s: PreprocessingCandidateScenario) => {
+    setPreprocessing({ ...s.preprocessing });
+    setSpec(prev => ({
+      ...prev,
+      likelihood: s.recommendedLikelihood,
+      identification: s.recommendedIdentification
+    }));
+    setFitResult(null);
+    setAppliedNotice(
+      `Konfigurasi "${s.label}" diterapkan ke Step 3 & Step 5 (${s.recommendedLikelihood === 'student_t' ? 'Student-t Likelihood' : 'Normal Likelihood'}, identifikasi ${s.recommendedIdentification === 'standardized' ? 'Standardized Factor' : `Anchor ${spec.anchorSource}`}).`
+    );
   };
 
   const handleLoadPreset = () => {
@@ -570,9 +656,316 @@ export const PanelLatentTab: React.FC = () => {
               ))}
             </div>
 
+            {/* Multi-Scenario System Recommendation Panel */}
+            <div
+              style={{
+                padding: '16px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1.5px solid var(--primary)',
+                background: 'var(--surface-muted)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+                <div style={{ flex: '1 1 320px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Sliders size={18} color="var(--primary)" />
+                    <strong style={{ fontSize: '15px', color: 'var(--text)' }}>
+                      Rekomendasi Sistem Multi-Skenario (Simulasi Semua Kemungkinan Terbaik)
+                    </strong>
+                  </div>
+                  <p style={{ margin: '4px 0 0', fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    Sistem menguji seluruh kombinasi prapemrosesan (<code>Asli</code>, <code>Winsorization 2.5%</code>, <code>log(1+x)</code>, <code>Z-Score</code>, serta gabungannya) bersama <code>Normal</code> vs <code>Student-t Likelihood</code> via Bayesian MCMC cepat untuk menemukan konfigurasi paling konvergen, reliabel, dan akurat pada skala asli.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  disabled={isRecommending || rawRows.length === 0}
+                  onClick={handleEvaluateScenarios}
+                  style={{ minHeight: '44px', fontSize: '13px', whiteSpace: 'nowrap' }}
+                >
+                  <RefreshCw size={15} style={{ marginRight: '6px' }} />
+                  {isRecommending ? 'Memproses Kemungkinan...' : 'Evaluasi Ulang Semua Kemungkinan'}
+                </button>
+              </div>
+
+              {isRecommending && (
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface)',
+                    fontSize: '13px',
+                    color: 'var(--text-secondary)'
+                  }}
+                >
+                  Menjalankan screening Bayesian MCMC lintas kombinasi prapemrosesan &amp; likelihood...
+                </div>
+              )}
+
+              {recommendError && (
+                <div style={{ padding: '12px', borderRadius: 'var(--radius-sm)', background: 'var(--danger-bg)', color: '#ef4444', fontSize: '13px' }}>
+                  {recommendError}
+                </div>
+              )}
+
+              {appliedNotice && (
+                <div
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--info-bg)',
+                    border: '1px solid var(--primary)',
+                    fontSize: '12.5px',
+                    color: 'var(--text)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <CheckCircle2 size={16} color="var(--success)" />
+                  <span>{appliedNotice}</span>
+                </div>
+              )}
+
+              {recommendation && !isRecommending && (
+                <>
+                  {/* Best Recommendation Highlight Card */}
+                  <div
+                    style={{
+                      padding: '14px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--primary)',
+                      background: 'var(--surface)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            padding: '4px 10px',
+                            borderRadius: '999px',
+                            background: 'var(--primary)',
+                            color: '#fff',
+                            fontSize: '12px',
+                            fontWeight: 800
+                          }}
+                        >
+                          <ShieldCheck size={14} /> REKOMENDASI TERBAIK (#1 dari {recommendation.evaluatedCount})
+                        </span>
+                        <strong style={{ fontSize: '14.5px', color: 'var(--text)' }}>
+                          {recommendation.bestScenario.label}
+                        </strong>
+                      </div>
+
+                      {isScenarioCurrentlyActive(recommendation.bestScenario) ? (
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '8px 14px',
+                            borderRadius: 'var(--radius-sm)',
+                            border: '1px solid var(--success)',
+                            background: 'var(--info-bg)',
+                            color: 'var(--success)',
+                            fontSize: '13px',
+                            fontWeight: 700,
+                            minHeight: '44px'
+                          }}
+                        >
+                          <CheckCircle2 size={16} /> Konfigurasi Terbaik Aktif
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={() => handleApplyScenario(recommendation.bestScenario)}
+                          style={{ minHeight: '44px', fontSize: '13.5px' }}
+                        >
+                          <Sparkles size={15} style={{ marginRight: '6px' }} />
+                          Terapkan Rekomendasi Terbaik
+                        </button>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: '8px' }}>
+                      {[
+                        { label: 'Skor Komposit', val: `${recommendation.bestScenario.compositeScore.toFixed(1)} / 100` },
+                        { label: 'Reliabilitas Rata-Rata', val: `${(recommendation.bestScenario.meanReliability * 100).toFixed(1)}%` },
+                        { label: 'NRMSE Skala Asli', val: `${(recommendation.bestScenario.nrmseOriginalScale * 100).toFixed(1)}%` },
+                        { label: 'Max R-hat', val: recommendation.bestScenario.maxRHat.toFixed(3) },
+                        { label: 'Max |r Residu|', val: recommendation.bestScenario.maxResidualCorr.toFixed(3) },
+                        { label: 'Waktu Evaluasi', val: `${recommendation.elapsedMs} ms` }
+                      ].map(kpi => (
+                        <div
+                          key={kpi.label}
+                          style={{
+                            padding: '8px 10px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-light)',
+                            background: 'var(--surface-muted)'
+                          }}
+                        >
+                          <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontWeight: 700 }}>{kpi.label}</div>
+                          <div style={{ fontSize: '14.5px', fontWeight: 800, color: 'var(--text)', marginTop: '2px' }}>{kpi.val}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                      <strong>Alasan Pemilihan:</strong> {recommendation.bestScenario.rationale}{' '}
+                      <span style={{ color: 'var(--text-muted)' }}>
+                        (Menerapkan rekomendasi ini menyelaraskan opsi Step 3 serta rekomendasi{' '}
+                        <code>{recommendation.bestScenario.recommendedLikelihood === 'student_t' ? 'Student-t Likelihood' : 'Normal Likelihood'}</code> &amp; identifikasi{' '}
+                        <code>{recommendation.bestScenario.recommendedIdentification === 'standardized' ? 'Standardized Factor' : `Anchor ${spec.anchorSource}`}</code> di Step 5.)
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Toggle & Full Ranked Candidate Matrix */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                    <strong style={{ fontSize: '13px', color: 'var(--text)' }}>
+                      Perbandingan Seluruh {recommendation.evaluatedCount} Skenario yang Diproses
+                    </strong>
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      onClick={() => setShowAllScenarios(v => !v)}
+                      style={{ minHeight: '38px', fontSize: '12.5px' }}
+                    >
+                      {showAllScenarios ? (
+                        <>
+                          <ChevronUp size={15} style={{ marginRight: '5px' }} /> Sembunyikan Matriks Skenario
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown size={15} style={{ marginRight: '5px' }} /> Tampilkan Semua Skenario
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {showAllScenarios && (
+                    <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--surface)' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
+                        <thead>
+                          <tr style={{ background: 'var(--surface-muted)' }}>
+                            <th style={{ padding: '8px 10px', textAlign: 'center', borderBottom: '1px solid var(--border)' }}>#</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>Kombinasi Skenario</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>Skor</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>Reliabilitas</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>NRMSE Asli</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>Max R-hat</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>Max |r Residu|</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'center', borderBottom: '1px solid var(--border)' }}>Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {recommendation.scenarios.map((s, idx) => {
+                            const active = isScenarioCurrentlyActive(s);
+                            return (
+                              <tr
+                                key={s.id}
+                                style={{
+                                  background: idx === 0 ? 'var(--info-bg)' : 'transparent',
+                                  borderBottom: '1px solid var(--border-light)'
+                                }}
+                              >
+                                <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 800 }}>
+                                  #{idx + 1}
+                                </td>
+                                <td style={{ padding: '8px 10px', minWidth: '230px' }}>
+                                  <div style={{ fontWeight: 700, color: 'var(--text)' }}>{s.label}</div>
+                                  <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                                    {s.shortTag} • PPC p=({s.ppcPMean.toFixed(2)}, {s.ppcPSd.toFixed(2)})
+                                    {s.warnings.length > 0 ? ` • ${s.warnings.join(', ')}` : ''}
+                                  </div>
+                                </td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right', minWidth: '105px' }}>
+                                  <div style={{ fontWeight: 800, color: idx === 0 ? 'var(--primary)' : 'var(--text)' }}>
+                                    {s.compositeScore.toFixed(1)}
+                                  </div>
+                                  <div style={{ height: '5px', borderRadius: '999px', background: 'var(--border)', overflow: 'hidden', marginTop: '3px' }}>
+                                    <div
+                                      style={{
+                                        width: `${Math.min(100, Math.max(0, s.compositeScore))}%`,
+                                        height: '100%',
+                                        background: idx === 0 ? 'var(--primary)' : 'var(--text-secondary)'
+                                      }}
+                                    />
+                                  </div>
+                                </td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700 }}>
+                                  {(s.meanReliability * 100).toFixed(1)}%
+                                </td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                                  {(s.nrmseOriginalScale * 100).toFixed(1)}%
+                                </td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right', color: s.isConverged ? 'var(--success)' : '#ef4444', fontWeight: 700 }}>
+                                  {s.maxRHat.toFixed(3)}
+                                </td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right', color: s.maxResidualCorr > 0.35 ? '#f59e0b' : 'var(--text)' }}>
+                                  {s.maxResidualCorr.toFixed(3)}
+                                </td>
+                                <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                  {active ? (
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        padding: '5px 10px',
+                                        borderRadius: '999px',
+                                        border: '1px solid var(--success)',
+                                        color: 'var(--success)',
+                                        fontSize: '12px',
+                                        fontWeight: 700
+                                      }}
+                                    >
+                                      <Check size={13} /> Aktif
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className={idx === 0 ? 'btn btn-primary' : 'btn btn-outline'}
+                                      onClick={() => handleApplyScenario(s)}
+                                      style={{ minHeight: '38px', fontSize: '12px', padding: '4px 12px' }}
+                                    >
+                                      Terapkan
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
             {/* Opt-In Preprocessing Toggles */}
             <div style={{ padding: '16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface-muted)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <strong style={{ fontSize: '14px' }}>Opsi Prapemrosesan (Persetujuan Eksplisit Pengguna)</strong>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                <strong style={{ fontSize: '14px' }}>Opsi Prapemrosesan (Persetujuan Eksplisit Pengguna)</strong>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  Step 5 Aktif: <code>{spec.likelihood === 'student_t' ? 'Student-t' : 'Normal'}</code> •{' '}
+                  <code>{spec.identification === 'standardized' ? 'Standardized Y*' : `Anchor ${spec.anchorSource}`}</code>
+                </span>
+              </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', cursor: 'pointer', minHeight: '36px' }}>
                 <input
                   type="checkbox"

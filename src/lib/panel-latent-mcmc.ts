@@ -399,18 +399,17 @@ function runCoreMCMCSampler(
       : 1;
   const S0 = Math.sqrt(Math.max(1e-8, baseVar));
 
-  // Scaled data
+  // Center around baseMean and scale by S0 for scale/shift-invariant MCMC conditioning (crucial for log1p/multi-scale data)
   const xWork: [Array<number | null>, Array<number | null>, Array<number | null>] = [
-    observations.map(o => (o.x1 === null ? null : o.x1 / S0)),
-    observations.map(o => (o.x2 === null ? null : o.x2 / S0)),
-    observations.map(o => (o.x3 === null ? null : o.x3 / S0))
+    observations.map(o => (o.x1 === null ? null : (o.x1 - baseMean) / S0)),
+    observations.map(o => (o.x2 === null ? null : (o.x2 - baseMean) / S0)),
+    observations.map(o => (o.x3 === null ? null : (o.x3 - baseMean) / S0))
   ];
   const seWork: [number[], number[], number[]] = [
     observations.map(o => o.se1 / S0),
     observations.map(o => o.se2 / S0),
     observations.map(o => o.se3 / S0)
   ];
-  const M0 = baseMean / S0;
 
   // Group observations per city sorted chronologically for AR(1) and random intercepts
   const cityObsIndices: number[][] = Array.from({ length: citiesCount }, () => []);
@@ -428,13 +427,13 @@ function runCoreMCMCSampler(
     ar1SkippedReason = `Komponen AR(1) otomatis dinonaktifkan karena jumlah periode T = ${yearsCount} < 3.`;
   }
 
-  // Initial row-wise average proxy for dispersed MCMC initialization
+  // Initial row-wise average proxy for dispersed MCMC initialization (centered around 0)
   const yProxy = observations.map((_, k) => {
     const vals: number[] = [];
     if (xWork[0][k] !== null) vals.push(xWork[0][k]!);
     if (xWork[1][k] !== null) vals.push(xWork[1][k]!);
     if (xWork[2][k] !== null) vals.push(xWork[2][k]!);
-    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : M0;
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
   });
 
   const chains = Math.max(2, Math.min(8, spec.chains || 4));
@@ -483,28 +482,134 @@ function runCoreMCMCSampler(
   let globalDrawCounter = 0;
   const nu = Math.max(2.5, spec.studentTDf || 5);
 
+  // Method-of-moments 3-indicator triad initializer for fast, well-conditioned chain warm start
+  const pairCov = (a: 0 | 1 | 2, b: 0 | 1 | 2): number => {
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (let k = 0; k < nObs; k++) {
+      const va = xWork[a][k];
+      const vb = xWork[b][k];
+      if (va !== null && vb !== null) {
+        xs.push(va);
+        ys.push(vb);
+      }
+    }
+    if (xs.length < 3) return 0.5;
+    const mx = xs.reduce((s, v) => s + v, 0) / xs.length;
+    const my = ys.reduce((s, v) => s + v, 0) / ys.length;
+    let c = 0;
+    for (let i = 0; i < xs.length; i++) c += (xs[i] - mx) * (ys[i] - my);
+    return c / Math.max(1, xs.length - 1);
+  };
+  const c12 = Math.max(1e-4, pairCov(0, 1));
+  const c13 = Math.max(1e-4, pairCov(0, 2));
+  const c23 = Math.max(1e-4, pairCov(1, 2));
+  const cXX = [0, 1, 2].map(j => {
+    const arr = xWork[j].filter((v): v is number => v !== null);
+    if (arr.length < 3) return 1.0;
+    const m = arr.reduce((s, v) => s + v, 0) / arr.length;
+    return arr.reduce((s, v) => s + (v - m) ** 2, 0) / Math.max(1, arr.length - 1);
+  });
+  const sigInit = [
+    Math.max(1e-4, (c12 * c13) / c23),
+    Math.max(1e-4, (c12 * c23) / c13),
+    Math.max(1e-4, (c13 * c23) / c12)
+  ];
+  const momErrVar = [0, 1, 2].map(j => Math.min(2.0, Math.max(0.003, cXX[j] - sigInit[j])));
+  const momLam = [0, 1, 2].map(j => Math.min(4.0, Math.max(0.25, Math.sqrt(sigInit[j] / sigInit[anchorIdx]))));
+
+  // Exact Kalman-marginal log-posterior of log-variances integrating out latent Y*_{it}
+  const marginalVarianceLogPost = (
+    candEpsSq: number[],
+    candEtaSq: number,
+    alphaCur: number[],
+    lambdaCur: number[],
+    muCur: number,
+    uCur: number[],
+    gammaCur: number[],
+    rhoCur: number,
+    omegaCur: [number[], number[], number[]]
+  ): number => {
+    const oneMR2 = ar1Active ? Math.max(1e-4, 1 - rhoCur * rhoCur) : 1;
+    let lp =
+      0.5 * Math.log(candEtaSq) - Math.log(candEtaSq + prior.cauchyStrucScale * prior.cauchyStrucScale);
+    for (let j = 0; j < 3; j++) {
+      lp += 0.5 * Math.log(candEpsSq[j]) - Math.log(candEpsSq[j] + prior.cauchyErrScale * prior.cauchyErrScale);
+    }
+
+    for (let ci = 0; ci < citiesCount; ci++) {
+      const idxs = cityObsIndices[ci];
+      let m = 0;
+      let v = candEtaSq / oneMR2;
+
+      for (let pos = 0; pos < idxs.length; pos++) {
+        const k = idxs[pos];
+        const obs = observations[k];
+        const base = muCur + uCur[ci] + gammaCur[obs.yearIdx];
+
+        if (pos > 0) {
+          if (ar1Active) {
+            const kPrev = idxs[pos - 1];
+            const dt = Math.max(1, obs.year - observations[kPrev].year);
+            const rD = Math.pow(rhoCur, dt);
+            m = rD * m;
+            v = rD * rD * v + candEtaSq * ((1 - rD * rD) / oneMR2);
+          } else {
+            m = 0;
+            v = candEtaSq;
+          }
+        }
+
+        let tauEff = 0;
+        let numEff = 0;
+        let sumLogV = 0;
+        let sumTauR2 = 0;
+        for (let j = 0; j < 3; j++) {
+          const xVal = xWork[j][k];
+          if (xVal === null) continue;
+          const vjk = Math.max(1e-8, candEpsSq[j] / omegaCur[j][k] + seWork[j][k] * seWork[j][k]);
+          const tau = 1 / vjk;
+          const r = xVal - (alphaCur[j] + lambdaCur[j] * base);
+          tauEff += tau * lambdaCur[j] * lambdaCur[j];
+          numEff += tau * lambdaCur[j] * r;
+          sumLogV += Math.log(vjk);
+          sumTauR2 += tau * r * r;
+        }
+
+        const priorPrec = 1 / Math.max(1e-8, v);
+        const sPrec = priorPrec + tauEff;
+        const postMeanNum = m * priorPrec + numEff;
+        lp += -0.5 * (sumLogV + Math.log(Math.max(1e-12, v * sPrec)) + sumTauR2 + m * m * priorPrec - (postMeanNum * postMeanNum) / sPrec);
+
+        m = postMeanNum / sPrec;
+        v = 1 / sPrec;
+      }
+    }
+    return lp;
+  };
+
   for (let c = 0; c < chains; c++) {
     const rng = new SeededRandom((spec.seed || 20261113) + c * 9973);
 
-    // Overdispersed initial states across chains
+    // Overdispersed initial states around triad method-of-moments estimate
     const alpha = [0, 1, 2].map(j =>
       spec.identification === 'anchor' && j === anchorIdx
         ? 0
         : spec.sourceSpecificBias
-        ? (spec.identification === 'standardized' ? M0 : 0) + rng.normal(0, 0.2)
+        ? rng.normal(0, 0.15)
         : 0
     );
     const lambda = [0, 1, 2].map(j =>
       spec.identification === 'anchor' && j === anchorIdx
         ? 1
         : spec.sourceSpecificLoading
-        ? Math.max(0.4, 1.0 + rng.normal(0, 0.25))
+        ? Math.max(0.2, momLam[j] * Math.exp(rng.normal(0, 0.12)))
         : 1.0
     );
-    const sigmaEpsSq = [0, 1, 2].map(() => 0.15 + rng.next() * 0.35);
+    const sigmaEpsSq = [0, 1, 2].map(j => Math.max(1e-4, momErrVar[j] * Math.exp(rng.normal(0, 0.25))));
     const aEps = [1.0, 1.0, 1.0];
 
-    let mu = spec.identification === 'standardized' ? 0 : M0 + rng.normal(0, 0.3);
+    let mu = spec.identification === 'standardized' ? 0 : rng.normal(0, 0.3);
     const u = new Array(citiesCount).fill(0).map(() => (spec.includeCityIntercept ? rng.normal(0, 0.2) : 0));
     const gamma = new Array(yearsCount).fill(0).map(() => (spec.includeTimeEffect ? rng.normal(0, 0.15) : 0));
 
@@ -537,6 +642,38 @@ function runCoreMCMCSampler(
             const scaleTotal = Math.max(1e-8, sigmaEpsSq[j] + seWork[j][k] * seWork[j][k]);
             omega[j][k] = rng.gamma((nu + 1) / 2, (nu + (resid * resid) / scaleTotal) / 2);
           }
+        }
+      }
+
+      // 1b. Collapsed MH update on (sigmaEpsSq[0..2], sigmaEtaSq) integrating out Y*_{it}
+      //     Includes a joint anti-correlated ridge move on (sigma_eps_anchor, sigma_eta) for Normal likelihood
+      {
+        let curVarLp = marginalVarianceLogPost(sigmaEpsSq, sigmaEtaSq, alpha, lambda, mu, u, gamma, rho, omega);
+        if (spec.likelihood === 'normal') {
+          const ridgeDelta = rng.normal(0, 0.28);
+          const propSqRidge = [...sigmaEpsSq];
+          propSqRidge[anchorIdx] = Math.min(25, Math.max(1e-5, sigmaEpsSq[anchorIdx] * Math.exp(ridgeDelta)));
+          const propEtaRidge = Math.min(25, Math.max(1e-5, sigmaEtaSq * Math.exp(-ridgeDelta)));
+          const propRidgeLp = marginalVarianceLogPost(propSqRidge, propEtaRidge, alpha, lambda, mu, u, gamma, rho, omega);
+          if (Math.log(Math.max(1e-12, rng.next())) < propRidgeLp - curVarLp) {
+            sigmaEpsSq[anchorIdx] = propSqRidge[anchorIdx];
+            sigmaEtaSq = propEtaRidge;
+            curVarLp = propRidgeLp;
+          }
+        }
+        for (let j = 0; j < 3; j++) {
+          const propSq = [...sigmaEpsSq];
+          propSq[j] = Math.min(25, Math.max(1e-5, sigmaEpsSq[j] * Math.exp(rng.normal(0, 0.25))));
+          const propLp = marginalVarianceLogPost(propSq, sigmaEtaSq, alpha, lambda, mu, u, gamma, rho, omega);
+          if (Math.log(Math.max(1e-12, rng.next())) < propLp - curVarLp) {
+            sigmaEpsSq[j] = propSq[j];
+            curVarLp = propLp;
+          }
+        }
+        const propEta = Math.min(25, Math.max(1e-5, sigmaEtaSq * Math.exp(rng.normal(0, 0.22))));
+        const propEtaLp = marginalVarianceLogPost(sigmaEpsSq, propEta, alpha, lambda, mu, u, gamma, rho, omega);
+        if (Math.log(Math.max(1e-12, rng.next())) < propEtaLp - curVarLp) {
+          sigmaEtaSq = propEta;
         }
       }
 
@@ -644,9 +781,9 @@ function runCoreMCMCSampler(
           continue;
         }
 
-        // Joint 2x2 collapsed block update for (alpha_j, lambda_j) to eliminate ridge correlation when mean(Y*) != 0
+        // Joint 2x2 collapsed block update for (alpha_j, lambda_j)
         if (spec.sourceSpecificBias && spec.sourceSpecificLoading) {
-          const priorMeanA = spec.identification === 'standardized' ? M0 : 0;
+          const priorMeanA = 0;
           const priorPrecA = 1 / ((prior.tauAlpha + (spec.identification === 'standardized' ? 2.0 : 0)) ** 2);
           const priorPrecL = 1 / (prior.tauLambda * prior.tauLambda);
 
@@ -683,7 +820,7 @@ function runCoreMCMCSampler(
         } else {
           // Single-parameter constrained conditional updates
           if (spec.sourceSpecificBias) {
-            const priorMeanA = spec.identification === 'standardized' ? M0 : 0;
+            const priorMeanA = 0;
             const priorPrecA = 1 / ((prior.tauAlpha + (spec.identification === 'standardized' ? 2.0 : 0)) ** 2);
             let sumTau = 0;
             let sumTauRes = 0;
@@ -750,7 +887,7 @@ function runCoreMCMCSampler(
           sumNum += pEta * (yStar[k] - u[obs.cityIdx] - gamma[obs.yearIdx]);
         }
         const postVarMu = 1 / (sumPrec + priorPrecMu);
-        const postMeanMu = postVarMu * (sumNum + M0 * priorPrecMu);
+        const postMeanMu = postVarMu * sumNum;
         mu = rng.normal(postMeanMu, Math.sqrt(postVarMu));
       } else {
         mu = 0;
@@ -888,14 +1025,19 @@ function runCoreMCMCSampler(
         continue;
       }
 
-      // Store post-warmup draws transformed cleanly back to working data units (× S0)
+      // Store post-warmup draws transformed cleanly back to working data units (baseMean + × S0)
       if (iter >= warmup) {
+        const yShift = spec.identification === 'anchor' ? baseMean : 0;
         for (let j = 0; j < 3; j++) {
-          alphaChains[j][c].push(alpha[j] * S0);
+          const alphaData =
+            spec.identification === 'anchor'
+              ? alpha[j] * S0 + (1 - lambda[j]) * baseMean
+              : alpha[j] * S0 + baseMean;
+          alphaChains[j][c].push(alphaData);
           lambdaChains[j][c].push(lambda[j]);
           sigmaEpsChains[j][c].push(Math.sqrt(sigmaEpsSq[j]) * S0);
         }
-        muChains[c].push(mu * S0);
+        muChains[c].push(spec.identification === 'anchor' ? mu * S0 + baseMean : 0);
         sigmaEtaChains[c].push(Math.sqrt(sigmaEtaSq) * S0);
         sigmaUChains[c].push(Math.sqrt(sigmaUSq) * S0);
         sigmaGammaChains[c].push(Math.sqrt(sigmaGammaSq) * S0);
@@ -907,7 +1049,7 @@ function runCoreMCMCSampler(
         // Accumulate latent draws, residuals, and pointwise log-likelihood for WAIC
         const repBuckets: [number[], number[], number[]] = [[], [], []];
         for (let k = 0; k < nObs; k++) {
-          const yOrig = yStar[k] * S0;
+          const yOrig = yStar[k] * S0 + yShift;
           latentSum[k] += yOrig;
           latentSqSum[k] += yOrig * yOrig;
           chainLatentSum[k] += yOrig;
@@ -917,8 +1059,8 @@ function runCoreMCMCSampler(
           for (let j = 0; j < 3; j++) {
             const xVal = xWork[j][k];
             if (xVal === null) continue;
-            const predOrig = (alpha[j] + lambda[j] * yStar[k]) * S0;
-            const xOrig = xVal * S0;
+            const predOrig = (alpha[j] + lambda[j] * yStar[k]) * S0 + baseMean;
+            const xOrig = xVal * S0 + baseMean;
             const err = xOrig - predOrig;
             residualSums[j][k] += err;
 
@@ -991,7 +1133,8 @@ export function runPanelLatentBayesianAnalysis(
     wasStandardized: boolean;
     meansBeforeStd: Record<MeasurementSourceKey, number>;
     sdsBeforeStd: Record<MeasurementSourceKey, number>;
-  }
+  },
+  options?: { lightweight?: boolean }
 ): Omit<PanelLatentFitResultPlaceholder, never> {
   const raw = runCoreMCMCSampler(observations, cities.length, years.length, spec);
   const nObs = observations.length;
@@ -1351,6 +1494,8 @@ export function runPanelLatentBayesianAnalysis(
     obsVsPred
   };
 
+  const lightweight = Boolean(options?.lightweight);
+
   // Compact Prior Sensitivity Analysis (3 regimes)
   const compactSpecBase: PanelLatentModelSpec = {
     ...spec,
@@ -1368,7 +1513,9 @@ export function runPanelLatentBayesianAnalysis(
     X2: sourceComparison[1].loadingMean,
     X3: sourceComparison[2].loadingMean
   };
-  const sensitivity: PriorSensitivityEntry[] = regimes.map(({ regime, label }) => {
+  const sensitivity: PriorSensitivityEntry[] = lightweight
+    ? []
+    : regimes.map(({ regime, label }) => {
     if (regime === spec.priorRegime) {
       return {
         regime,
@@ -1455,7 +1602,9 @@ export function runPanelLatentBayesianAnalysis(
     });
   }
 
-  const modelComparison: ModelComparisonEntry[] = altSpecs.map(alt => {
+  const modelComparison: ModelComparisonEntry[] = lightweight
+    ? []
+    : altSpecs.map(alt => {
     if (alt.id === 'active') {
       return {
         id: alt.id,

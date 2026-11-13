@@ -306,3 +306,38 @@ export interface PanelLatentFitResult {
   generatedCode: GeneratedReproducibleCode;
 }
 
+export interface PreprocessingCandidateScenario {
+  id: string;
+  label: string;
+  shortTag: string;
+  preprocessing: PanelLatentPreprocessingOptions;
+  recommendedLikelihood: LikelihoodFamily;
+  recommendedIdentification: IdentificationStrategy;
+  compositeScore: number; // 0..100
+  isConverged: boolean;
+  maxRHat: number;
+  minEssBulk: number;
+  meanReliability: number; // 0..1
+  nrmseOriginalScale: number; // dimensionless ratio RMSE / SD
+  pearsonOriginalScale: number; // correlation vs raw unclipped data
+  ppcPMean: number;
+  ppcPSd: number;
+  maxResidualCorr: number;
+  waic: number;
+  rationale: string;
+  warnings: string[];
+}
+
+export interface PreprocessingRecommendationResult {
+  evaluatedCount: number;
+  elapsedMs: number;
+  duplicateRowsDetected: number;
+  outlierCountDetected: number;
+  scaleRatioDetected: number;
+  maxAbsSkewnessDetected: number;
+  bestScenarioId: string;
+  bestScenario: PreprocessingCandidateScenario;
+  scenarios: PreprocessingCandidateScenario[];
+  summaryNote: string;
+}
+
