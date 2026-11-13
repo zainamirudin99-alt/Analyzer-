@@ -250,13 +250,31 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
     });
     const dtCols = cols.filter(c => inspectColumn(c, rows.map(r => r[c])).type === 'datetime');
 
-    setYCol(numCols[numCols.length - 1] || numCols[0] || cols[0] || '');
-    setXCols(numCols.length >= 3 ? numCols.slice(0, 2) : numCols.slice(0, 1));
-    setMraXCol(numCols[0] || cols[0] || '');
-    setMraZCol(numCols[1] || catCols[0] || cols[1] || '');
-    setContRowCol(catCols[0] || cols[0] || '');
-    setContColCol(catCols[1] || catCols[0] || cols[1] || '');
-    setTimeCol(dtCols[0] || cols[0] || '');
+    const resolvedTimeCol =
+      dtCols[0] ||
+      cols.find(c => /^(tanggal|date|periode|waktu|bulan|tahun)$/i.test(c.trim())) ||
+      cols[0] ||
+      '';
+    const candidateNumCols = numCols.filter(c => c !== resolvedTimeCol && !dtCols.includes(c));
+    const safeNumCols = candidateNumCols.length > 0 ? candidateNumCols : numCols;
+    const candidateCatCols = catCols.filter(c => c !== resolvedTimeCol);
+    const safeCatCols = candidateCatCols.length > 0 ? candidateCatCols : catCols;
+
+    const chosenY =
+      safeNumCols[safeNumCols.length - 1] ||
+      safeNumCols[0] ||
+      cols.find(c => c !== resolvedTimeCol) ||
+      cols[0] ||
+      '';
+    const xPool = safeNumCols.filter(c => c !== chosenY);
+
+    setYCol(chosenY);
+    setXCols(xPool.length >= 2 ? xPool.slice(0, 2) : xPool.slice(0, 1));
+    setMraXCol(xPool[0] || safeNumCols[0] || cols[0] || '');
+    setMraZCol(xPool[1] || safeCatCols[0] || cols[1] || '');
+    setContRowCol(safeCatCols[0] || cols[0] || '');
+    setContColCol(safeCatCols[1] || safeCatCols[0] || cols[1] || '');
+    setTimeCol(resolvedTimeCol);
     setRefCategories({});
   };
 
@@ -291,13 +309,31 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
 
   useEffect(() => {
     if (availableColumns.length > 0) {
-      setXCols(prev => prev.filter(c => availableColumns.includes(c) && c !== yCol));
-      if (yCol && !availableColumns.includes(yCol)) {
-        const firstNum = availableColumns.find(c => columnTypeMap[c]?.type === 'numeric');
-        setYCol(firstNum || availableColumns[0] || '');
+      const blockedTimeCol = isTimeSeries && timeCol ? timeCol : '';
+      setXCols(prev =>
+        prev.filter(c => availableColumns.includes(c) && c !== yCol && (!blockedTimeCol || c !== blockedTimeCol))
+      );
+      setMraCovariates(prev =>
+        prev.filter(c => availableColumns.includes(c) && c !== yCol && (!blockedTimeCol || c !== blockedTimeCol))
+      );
+      if ((yCol && !availableColumns.includes(yCol)) || (blockedTimeCol && yCol === blockedTimeCol)) {
+        const firstNum = availableColumns.find(
+          c => c !== blockedTimeCol && columnTypeMap[c]?.type === 'numeric'
+        );
+        setYCol(firstNum || availableColumns.find(c => c !== blockedTimeCol) || availableColumns[0] || '');
+      }
+      if (blockedTimeCol && mraXCol === blockedTimeCol) {
+        const altX = availableColumns.find(
+          c => c !== blockedTimeCol && c !== yCol && columnTypeMap[c]?.type === 'numeric'
+        );
+        if (altX) setMraXCol(altX);
+      }
+      if (blockedTimeCol && mraZCol === blockedTimeCol) {
+        const altZ = availableColumns.find(c => c !== blockedTimeCol && c !== yCol && c !== mraXCol);
+        if (altZ) setMraZCol(altZ);
       }
     }
-  }, [availableColumns, yCol, columnTypeMap]);
+  }, [availableColumns, yCol, isTimeSeries, timeCol, mraXCol, mraZCol, columnTypeMap]);
 
   const handleLoadSample = (variant: 'cross_section' | 'time_series') => {
     setIngestionError(null);
@@ -521,7 +557,7 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
   };
 
   const toggleXColumn = (col: string) => {
-    if (col === yCol) return;
+    if (col === yCol || (isTimeSeries && col === timeCol)) return;
     if (analysisMethod === 'SLR') {
       setXCols([col]);
       return;
@@ -1170,6 +1206,11 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '8px', flexWrap: 'wrap' }}>
                       <label style={{ fontSize: '13px', fontWeight: 700 }}>
                         Variabel Independen (X) — {analysisMethod === 'SLR' ? 'Pilih tepat 1 variabel' : `Terpilih: ${xCols.length} variabel`}
+                        {isTimeSeries && timeCol && (
+                          <span style={{ display: 'block', fontSize: '11.5px', fontWeight: 500, color: 'var(--text-muted)', marginTop: '2px' }}>
+                            Kolom waktu &quot;{timeCol}&quot; otomatis dikecualikan dari Y dan X.
+                          </span>
+                        )}
                       </label>
                       <button
                         type="button"
@@ -1255,7 +1296,9 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                       onChange={e => setYCol(e.target.value)}
                       style={{ width: '100%', minHeight: '44px', fontSize: '16px', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface-muted)', color: 'var(--text)' }}
                     >
-                      {availableColumns.map(c => <option key={c} value={c}>{c} ({columnTypeMap[c]?.type})</option>)}
+                      {availableColumns
+                        .filter(c => !isTimeSeries || c !== timeCol)
+                        .map(c => <option key={c} value={c}>{c} ({columnTypeMap[c]?.type})</option>)}
                     </select>
                   </div>
                   <div>
@@ -1265,7 +1308,9 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                       onChange={e => setMraXCol(e.target.value)}
                       style={{ width: '100%', minHeight: '44px', fontSize: '16px', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface-muted)', color: 'var(--text)' }}
                     >
-                      {availableColumns.filter(c => c !== yCol).map(c => <option key={c} value={c}>{c} ({columnTypeMap[c]?.type})</option>)}
+                      {availableColumns
+                        .filter(c => c !== yCol && (!isTimeSeries || c !== timeCol))
+                        .map(c => <option key={c} value={c}>{c} ({columnTypeMap[c]?.type})</option>)}
                     </select>
                   </div>
                   <div>
@@ -1280,7 +1325,9 @@ export const RegressionTab: React.FC<RegressionTabProps> = () => {
                       }}
                       style={{ width: '100%', minHeight: '44px', fontSize: '16px', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface-muted)', color: 'var(--text)' }}
                     >
-                      {availableColumns.filter(c => c !== yCol && c !== mraXCol).map(c => <option key={c} value={c}>{c} ({columnTypeMap[c]?.type})</option>)}
+                      {availableColumns
+                        .filter(c => c !== yCol && c !== mraXCol && (!isTimeSeries || c !== timeCol))
+                        .map(c => <option key={c} value={c}>{c} ({columnTypeMap[c]?.type})</option>)}
                     </select>
                   </div>
 
