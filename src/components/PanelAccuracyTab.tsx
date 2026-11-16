@@ -35,7 +35,10 @@ import {
   executePanelAccuracyPipeline
 } from '@/lib/panel-accuracy-orchestrator';
 import { preparePanelAccuracyObservations } from '@/lib/panel-accuracy-preprocessing';
-import { PANEL_ACCURACY_STEP_GUIDES } from '@/lib/panel-accuracy-step-guides';
+import {
+  buildActualStepInterpretationPoints,
+  PANEL_ACCURACY_STEP_GUIDES
+} from '@/lib/panel-accuracy-step-guides';
 import {
   AccuracyPreprocessingOptions,
   MeasurementSource,
@@ -68,6 +71,32 @@ const ACCURACY_STEPS = [
   { id: 8, short: '8. Ranking', title: 'Step 8 — Comparative Evaluation & Source Ranking' },
   { id: 9, short: '9. Final & Export', title: 'Step 9 — Final Results, Visualization, Code & Export' }
 ];
+
+const BulletCard: React.FC<{
+  title: string;
+  points: string[];
+  accent?: boolean;
+}> = ({ title, points, accent = true }) => (
+  <div
+    style={{
+      padding: '14px',
+      borderRadius: 'var(--radius-sm)',
+      border: accent ? '1px solid var(--primary)' : '1px solid var(--border)',
+      background: accent ? 'var(--info-bg)' : 'var(--surface-muted)',
+      fontSize: '13px',
+      lineHeight: 1.55
+    }}
+  >
+    <strong style={{ display: 'block', marginBottom: '6px', color: accent ? 'var(--primary)' : 'var(--text)' }}>
+      {title}
+    </strong>
+    <ul style={{ margin: '0 0 0 18px', padding: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+      {points.map((pt, idx) => (
+        <li key={idx} style={{ color: 'var(--text)' }}>{pt}</li>
+      ))}
+    </ul>
+  </div>
+);
 
 export const PanelAccuracyTab: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -150,6 +179,11 @@ export const PanelAccuracyTab: React.FC = () => {
   }, [panelDataset, preprocessing, qualityReport.hasBlockingError]);
 
   const activeResult = serverFitResult || liveFitResult;
+
+  const stepPoints = useMemo(
+    () => (activeResult ? buildActualStepInterpretationPoints(activeResult) : null),
+    [activeResult]
+  );
 
   const preparedPreview = useMemo(() => {
     try {
@@ -500,16 +534,22 @@ export const PanelAccuracyTab: React.FC = () => {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px', fontSize: '12.5px', lineHeight: 1.5 }}>
           <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--surface-muted)', border: '1px solid var(--border-light)' }}>
-            <strong style={{ color: 'var(--primary)', display: 'block', marginBottom: '2px' }}>Kegunaan Tahap Ini:</strong>
-            <span style={{ color: 'var(--text-secondary)' }}>{activeStepGuide.purpose}</span>
+            <strong style={{ color: 'var(--primary)', display: 'block', marginBottom: '4px' }}>Kegunaan Tahap Ini:</strong>
+            <ul style={{ margin: '0 0 0 16px', padding: 0, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+              {activeStepGuide.purposePoints.map((p, i) => <li key={i}>{p}</li>)}
+            </ul>
           </div>
           <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--surface-muted)', border: '1px solid var(--border-light)' }}>
-            <strong style={{ color: 'var(--primary)', display: 'block', marginBottom: '2px' }}>Interpretasi &amp; Maksud Hasil:</strong>
-            <span style={{ color: 'var(--text-secondary)' }}>{activeStepGuide.howToInterpret}</span>
+            <strong style={{ color: 'var(--primary)', display: 'block', marginBottom: '4px' }}>Interpretasi &amp; Maksud Hasil:</strong>
+            <ul style={{ margin: '0 0 0 16px', padding: 0, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+              {activeStepGuide.interpretPoints.map((p, i) => <li key={i}>{p}</li>)}
+            </ul>
           </div>
           <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--info-bg)', border: '1px solid var(--border-light)' }}>
-            <strong style={{ color: 'var(--text)', display: 'block', marginBottom: '2px' }}>Catatan Metodologis:</strong>
-            <span style={{ color: 'var(--text-secondary)' }}>{activeStepGuide.keyCaveat}</span>
+            <strong style={{ color: 'var(--text)', display: 'block', marginBottom: '4px' }}>Catatan Metodologis:</strong>
+            <ul style={{ margin: '0 0 0 16px', padding: 0, color: 'var(--text-secondary)' }}>
+              <li>{activeStepGuide.keyCaveat}</li>
+            </ul>
           </div>
         </div>
 
@@ -530,14 +570,24 @@ export const PanelAccuracyTab: React.FC = () => {
                     cursor: reachable ? 'pointer' : 'default',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '4px',
+                    gap: '6px',
                     fontSize: '12px',
                     lineHeight: 1.45
                   }}
                 >
                   <strong style={{ color: isCur ? 'var(--primary)' : 'var(--text)' }}>{g.fullTitle}</strong>
-                  <div><strong>Kegunaan:</strong> <span style={{ color: 'var(--text-secondary)' }}>{g.purpose}</span></div>
-                  <div><strong>Maksud &amp; Interpretasi:</strong> <span style={{ color: 'var(--text-secondary)' }}>{g.howToInterpret}</span></div>
+                  <div>
+                    <strong>Kegunaan:</strong>
+                    <ul style={{ margin: '2px 0 0 16px', padding: 0, color: 'var(--text-secondary)' }}>
+                      {g.purposePoints.map((p, idx) => <li key={idx}>{p}</li>)}
+                    </ul>
+                  </div>
+                  <div>
+                    <strong>Maksud &amp; Interpretasi:</strong>
+                    <ul style={{ margin: '2px 0 0 16px', padding: 0, color: 'var(--text-secondary)' }}>
+                      {g.interpretPoints.map((p, idx) => <li key={idx}>{p}</li>)}
+                    </ul>
+                  </div>
                 </div>
               );
             })}
@@ -696,6 +746,10 @@ export const PanelAccuracyTab: React.FC = () => {
                 </tbody>
               </table>
             </div>
+
+            {stepPoints && (
+              <BulletCard title="Interpretasi Ringkas Step 1 (Data Panel Aktual):" points={stepPoints.step1} />
+            )}
           </>
         )}
 
@@ -901,6 +955,10 @@ export const PanelAccuracyTab: React.FC = () => {
                 );
               })}
             </div>
+
+            {stepPoints && (
+              <BulletCard title="Interpretasi Ringkas Step 2 (Pemetaan & Referensi Aktif):" points={stepPoints.step2} />
+            )}
           </>
         )}
 
@@ -1076,6 +1134,10 @@ export const PanelAccuracyTab: React.FC = () => {
                 <span>Terapkan transformasi <code>log(1 + x)</code> pada seluruh sumber (evaluasi kesalahan relatif proporsional)</span>
               </label>
             </div>
+
+            {stepPoints && (
+              <BulletCard title="Interpretasi Ringkas Step 3 (Status Audit & Prapemrosesan):" points={stepPoints.step3} />
+            )}
           </>
         )}
 
@@ -1161,13 +1223,8 @@ export const PanelAccuracyTab: React.FC = () => {
               unitLabel={activeResult?.datasetMeta.workingUnitNote || refSource?.unit || 'kt CO₂'}
             />
 
-            {activeResult && (
-              <div style={{ padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', background: 'var(--info-bg)', fontSize: '13px', lineHeight: 1.55 }}>
-                <strong style={{ display: 'block', marginBottom: '4px', color: 'var(--primary)' }}>
-                  Interpretasi Hasil EDA &amp; Korelasi Panel (Data Aktual):
-                </strong>
-                <div>{activeResult.interpretations.edaAndCorrelationInterpretation}</div>
-              </div>
+            {stepPoints && (
+              <BulletCard title="Interpretasi Hasil EDA & Korelasi Panel (Per Poin):" points={stepPoints.step4} />
             )}
           </>
         )}
@@ -1261,12 +1318,9 @@ export const PanelAccuracyTab: React.FC = () => {
               unitLabel={activeResult.datasetMeta.workingUnitNote}
             />
 
-            <div style={{ padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', background: 'var(--info-bg)', fontSize: '13px', lineHeight: 1.55 }}>
-              <strong style={{ display: 'block', marginBottom: '4px', color: 'var(--primary)' }}>
-                Interpretasi Metrik Akurasi, Lin&apos;s CCC &amp; Bland-Altman (Data Aktual):
-              </strong>
-              <div>{activeResult.interpretations.accuracyAndAgreementInterpretation}</div>
-            </div>
+            {stepPoints && (
+              <BulletCard title="Interpretasi Metrik Akurasi, Lin's CCC & Bland-Altman (Per Poin):" points={stepPoints.step5} />
+            )}
           </>
         )}
 
@@ -1394,12 +1448,9 @@ export const PanelAccuracyTab: React.FC = () => {
                 </div>
               </div>
             )}
-            <div style={{ padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', background: 'var(--info-bg)', fontSize: '13px', lineHeight: 1.55 }}>
-              <strong style={{ display: 'block', marginBottom: '4px', color: 'var(--primary)' }}>
-                Interpretasi Model Pair Fixed Effects &amp; Kontras (Data Aktual):
-              </strong>
-              <div>{activeResult.interpretations.pairFixedEffectsInterpretation}</div>
-            </div>
+            {stepPoints && (
+              <BulletCard title="Interpretasi Model Pair Fixed Effects & Kontras (Per Poin):" points={stepPoints.step6} />
+            )}
           </>
         )}
 
@@ -1476,18 +1527,9 @@ export const PanelAccuracyTab: React.FC = () => {
               </div>
             </div>
 
-            {/* Normality & CLT Proportional Explanation */}
-            <div style={{ padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--info-bg)', fontSize: '13px', lineHeight: 1.55 }}>
-              <strong>Penjelasan Proporsional Normalitas &amp; Central Limit Theorem (CLT):</strong>{' '}
-              {activeResult.diagnostics.normalityAndCltNote.explanation}
-            </div>
-
-            <div style={{ padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', background: 'var(--surface-muted)', fontSize: '13px', lineHeight: 1.55 }}>
-              <strong style={{ display: 'block', marginBottom: '4px', color: 'var(--primary)' }}>
-                Interpretasi Keseluruhan Diagnostik Inferensi (Data Aktual):
-              </strong>
-              <div>{activeResult.interpretations.diagnosticsInterpretation}</div>
-            </div>
+            {stepPoints && (
+              <BulletCard title="Interpretasi Diagnostik Inferensi (Per Poin):" points={stepPoints.step7} accent={false} />
+            )}
           </>
         )}
 
@@ -1575,6 +1617,10 @@ export const PanelAccuracyTab: React.FC = () => {
                 </tbody>
               </table>
             </div>
+
+            {stepPoints && (
+              <BulletCard title="Ringkasan Keputusan & Peringkat Sumber (Per Poin):" points={stepPoints.step8} />
+            )}
           </>
         )}
 
@@ -1677,25 +1723,18 @@ export const PanelAccuracyTab: React.FC = () => {
               </div>
             )}
 
-            {resultSubTab === 'interpret' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13.5px', lineHeight: 1.65 }}>
-                {[
-                  { title: '1. Validitas Sumber Referensi & Kualitas Data', text: activeResult.interpretations.referenceValidityInterpretation },
-                  { title: '2. Analisis Korelasi Panel (Overall, Within-City, First-Difference)', text: activeResult.interpretations.edaAndCorrelationInterpretation },
-                  { title: '3. Evaluasi Akurasi (MAE, RMSE, MBE), Lin\'s CCC & Bland-Altman', text: activeResult.interpretations.accuracyAndAgreementInterpretation },
-                  { title: '4. Model Inferensial Panel — Pair Fixed Effects & Wild Cluster Bootstrap', text: activeResult.interpretations.pairFixedEffectsInterpretation },
-                  { title: '5. Diagnostik Statistik & Central Limit Theorem', text: activeResult.interpretations.diagnosticsInterpretation },
-                  { title: '6. Keputusan Pemeringkatan Sumber Pembanding', text: activeResult.interpretations.rankingDecisionInterpretation },
-                  { title: '7. Kesimpulan Akhir Penelitian', text: activeResult.interpretations.finalConclusion }
-                ].map(sec => (
-                  <div key={sec.title} style={{ padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface-muted)' }}>
-                    <strong style={{ display: 'block', marginBottom: '4px', color: 'var(--primary)' }}>{sec.title}</strong>
-                    <div>{sec.text}</div>
-                  </div>
-                ))}
-                <div style={{ padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--warn-border)', background: 'var(--warn-bg)' }}>
+            {resultSubTab === 'interpret' && stepPoints && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <BulletCard title="1. Data Panel & Sampel Lengkap (Step 1–2)" points={[...stepPoints.step1, ...stepPoints.step2]} accent={false} />
+                <BulletCard title="2. Validitas Referensi & Audit Kualitas (Step 3)" points={stepPoints.step3} accent={false} />
+                <BulletCard title="3. Korelasi Panel: Overall, Within-City & First-Diff (Step 4)" points={stepPoints.step4} accent={false} />
+                <BulletCard title="4. Akurasi Berpasangan, Lin's CCC & Bland-Altman (Step 5)" points={stepPoints.step5} accent={false} />
+                <BulletCard title="5. Model Inferensial Pair Fixed Effects & Wild Bootstrap (Step 6)" points={stepPoints.step6} accent={false} />
+                <BulletCard title="6. Diagnostik Statistik & Sensitivitas Outlier (Step 7)" points={stepPoints.step7} accent={false} />
+                <BulletCard title="7. Keputusan Pemeringkatan & Kesimpulan Akhir (Step 8)" points={[...stepPoints.step8, ...stepPoints.step9]} />
+                <div style={{ padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--warn-border)', background: 'var(--warn-bg)', fontSize: '13px', lineHeight: 1.55 }}>
                   <strong style={{ display: 'block', marginBottom: '6px' }}>8. Keterbatasan Penelitian</strong>
-                  <ul style={{ margin: '0 0 0 18px' }}>
+                  <ul style={{ margin: '0 0 0 18px', padding: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {activeResult.interpretations.researchLimitations.map((lim, i) => <li key={i}>{lim}</li>)}
                   </ul>
                 </div>

@@ -15,7 +15,10 @@ import {
 } from '../../src/lib/panel-accuracy-orchestrator';
 import { preparePanelAccuracyObservations } from '../../src/lib/panel-accuracy-preprocessing';
 import { computeComparativeSourceRanking } from '../../src/lib/panel-accuracy-ranking';
-import { PANEL_ACCURACY_STEP_GUIDES } from '../../src/lib/panel-accuracy-step-guides';
+import {
+  buildActualStepInterpretationPoints,
+  PANEL_ACCURACY_STEP_GUIDES
+} from '../../src/lib/panel-accuracy-step-guides';
 import { MeasurementSource, PanelDataset } from '../../src/lib/panel-accuracy-types';
 import {
   DEFAULT_ACCURACY_PREPROCESSING,
@@ -303,13 +306,21 @@ describe('Gerbang Verifikasi 1 — Comparative Measurement Accuracy Engine (Pane
     expect(rec.evaluatedCount).toBeGreaterThanOrEqual(4);
     expect(rec.bestScenario.id).toBe('raw_baseline');
 
-    // Step 1..9 purpose and interpretation guides complete
+    // Step 1..9 bullet guides & live step-by-step bullet interpretations
     expect(PANEL_ACCURACY_STEP_GUIDES).toHaveLength(9);
     PANEL_ACCURACY_STEP_GUIDES.forEach((g, idx) => {
       expect(g.id).toBe(idx + 1);
-      expect(g.purpose.length).toBeGreaterThan(20);
-      expect(g.howToInterpret.length).toBeGreaterThan(20);
+      expect(g.purposePoints.length).toBeGreaterThanOrEqual(2);
+      expect(g.interpretPoints.length).toBeGreaterThanOrEqual(3);
       expect(g.keyCaveat.length).toBeGreaterThan(10);
     });
+    const actualPts = buildActualStepInterpretationPoints(res);
+    expect(actualPts.step1.length).toBeGreaterThanOrEqual(3);
+    expect(actualPts.step4.length).toBeGreaterThanOrEqual(3);
+    expect(actualPts.step5.length).toBeGreaterThanOrEqual(3);
+    expect(actualPts.step6.length).toBeGreaterThanOrEqual(3);
+    expect(actualPts.step7.length).toBeGreaterThanOrEqual(5);
+    expect(actualPts.step8.length).toBeGreaterThanOrEqual(4);
+    expect(actualPts.step9.length).toBeGreaterThanOrEqual(2);
   });
 });
