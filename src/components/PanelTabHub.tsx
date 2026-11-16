@@ -3,15 +3,15 @@
 import React, { useState } from 'react';
 import { Layers, Activity } from 'lucide-react';
 import { PanelTab } from './PanelTab';
-import { PanelLatentTab } from './PanelLatentTab';
+import { PanelAccuracyTab } from './PanelAccuracyTab';
 
 /**
  * Hub selector inside menu "Regresi Data Panel Stata".
  * Strictly preserves Option 1 (existing Regresi Data Panel) with zero changes,
- * while offering Option 2 (Panel Latent Variable Measurement Model) separately.
+ * while offering Option 2 (Comparative Measurement Accuracy Assessment) separately.
  */
 export const PanelTabHub: React.FC = () => {
-  const [selectedOption, setSelectedOption] = useState<'classic' | 'latent'>('classic');
+  const [selectedOption, setSelectedOption] = useState<'classic' | 'accuracy'>('classic');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -64,13 +64,13 @@ export const PanelTabHub: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => setSelectedOption('latent')}
+            onClick={() => setSelectedOption('accuracy')}
             style={{
               textAlign: 'left',
               padding: '14px 16px',
               borderRadius: 'var(--radius)',
-              border: selectedOption === 'latent' ? '2px solid var(--primary)' : '1px solid var(--border)',
-              background: selectedOption === 'latent' ? 'var(--info-bg)' : 'var(--surface-muted)',
+              border: selectedOption === 'accuracy' ? '2px solid var(--primary)' : '1px solid var(--border)',
+              background: selectedOption === 'accuracy' ? 'var(--info-bg)' : 'var(--surface-muted)',
               cursor: 'pointer',
               display: 'flex',
               flexDirection: 'column',
@@ -80,20 +80,20 @@ export const PanelTabHub: React.FC = () => {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14.5px', fontWeight: 800, color: 'var(--text)' }}>
               <Activity size={18} color="var(--primary)" />
-              OPTION 2: PANEL LATENT VARIABLE MEASUREMENT MODEL
+              OPTION 2: COMPARATIVE MEASUREMENT ACCURACY ASSESSMENT
             </div>
             <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--primary)' }}>
-              Bayesian Hierarchical Measurement Model for Multi-Source Data Integration
+              Analisis Komparatif Akurasi Pengukuran Emisi CO₂ Berbasis Data Panel
             </span>
             <span style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-              Integrasi tiga sumber pengukuran CO₂ (Self-Reporting, Satellite, Sensor) untuk mengestimasi nilai laten Y*, bias relatif, reliabilitas, dan ketidakpastian tiap sumber.
+              Membandingkan kesesuaian dan kesalahan pengukuran beberapa sumber data emisi CO₂ terhadap sumber referensi pilihan menggunakan MAE, RMSE, MBE, Lin&apos;s CCC, Bland-Altman, dan Pair Fixed Effects.
             </span>
           </button>
         </div>
       </div>
 
       {/* Render selected module independently */}
-      {selectedOption === 'classic' ? <PanelTab /> : <PanelLatentTab />}
+      {selectedOption === 'classic' ? <PanelTab /> : <PanelAccuracyTab />}
     </div>
   );
 };

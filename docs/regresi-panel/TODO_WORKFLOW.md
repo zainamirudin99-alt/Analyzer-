@@ -149,13 +149,13 @@ Fitur "Regresi Data Panel" dinyatakan selesai dan telah memenuhi seluruh kriteri
 
 ---
 
-## 5. Fase PL: Panel Latent Variable Measurement Model (Option 2)
+## 5. Fase PA: Comparative Measurement Accuracy Assessment (Option 2 Refactor)
 
-> Desain lengkap: [2026-11-13-panel-latent-measurement-design.md](file:///c:/Users/LENOVO/Documents/Zain%202.0/Project%20AI/CED%20Analyzer/docs/superpowers/specs/2026-11-13-panel-latent-measurement-design.md)
-> Rencana implementasi: [2026-11-13-panel-latent-measurement-plan.md](file:///c:/Users/LENOVO/Documents/Zain%202.0/Project%20AI/CED%20Analyzer/docs/superpowers/plans/2026-11-13-panel-latent-measurement-plan.md)
+> Desain lengkap: [2026-11-16-panel-accuracy-design.md](file:///c:/Users/LENOVO/Documents/Zain%202.0/Project%20AI/CED%20Analyzer/docs/superpowers/specs/2026-11-16-panel-accuracy-design.md)
+> Rencana implementasi: [2026-11-16-panel-accuracy-plan.md](file:///c:/Users/LENOVO/Documents/Zain%202.0/Project%20AI/CED%20Analyzer/docs/superpowers/plans/2026-11-16-panel-accuracy-plan.md)
 
-- [x] **PL1**: Fondasi tipe & validasi/EDA 10 poin kualitas data + prapemrosesan opt-in (`panel-latent-types.ts`, `panel-latent-data.ts`).
-- [x] **PL2**: Mesin Bayesian Hierarchical MCMC (`panel-latent-mcmc.ts`) dengan multi-chain Blocked Gibbs + joint $(\alpha_j, \lambda_j)$ + AR(1), Student-$t$ scale-mixture, split-$\hat{R}$, ESS, MCSE, PPC, WAIC, dan Prior Sensitivity.
-- [x] **PL3**: Generator tabel bergaya Stata, interpretasi akademis dinamis, kode `.stan` + `.R`, serta ekspor `.docx`, `.xlsx`, `.pdf`, `.csv`.
-- [x] **PL4**: Integrasi Hub Option 1 / Option 2 (`PanelTabHub.tsx`), workflow 9 langkah (`PanelLatentTab.tsx`), dan 9 grafik interaktif SVG (`PanelLatentCharts.tsx`).
+- [x] **PA1**: Struktur sumber pengukuran dinamis ($J \ge 2$, 1 Reference Source & $J-1$ Comparison Sources), validasi 10 pemeriksaan + audit kelayakan referensi (`panel-accuracy-types.ts`, `panel-accuracy-validation.ts`, `panel-accuracy-preprocessing.ts`).
+- [x] **PA2**: Korelasi panel (Overall Pearson/Spearman, Within-City Demeaned, First-Difference), MAE, RMSE, MBE, Lin's CCC, & Bland-Altman Agreement (`panel-accuracy-correlation.ts`, `panel-accuracy-metrics.ts`, `panel-accuracy-ccc.ts`, `panel-accuracy-bland-altman.ts`).
+- [x] **PA3**: Model inferensial Pair Fixed Effects dengan City Cluster-Robust SE, kontras berpasangan, & Rademacher Wild Cluster Bootstrap (`panel-accuracy-fixed-effects.ts`, `panel-accuracy-inference.ts`, `panel-accuracy-bootstrap.ts`).
+- [x] **PA4**: Diagnostik statistik, pemeringkatan berbasis MAE primer tanpa composite score, Stata `.do` & R script generator, ekspor PDF/DOCX/XLSX/CSV, dan UI 9 tahap (`PanelAccuracyTab.tsx`, `PanelAccuracyCharts.tsx`).
 - [x] **PL5**: Pengujian simulasi parameter recovery + pengujian zero-regression Option 1 & CED (`panel-latent-measurement.test.ts`).
