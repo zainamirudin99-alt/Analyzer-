@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  BookOpen,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -14,6 +15,7 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  Info,
   Layers,
   Link2,
   Play,
@@ -33,6 +35,7 @@ import {
   executePanelAccuracyPipeline
 } from '@/lib/panel-accuracy-orchestrator';
 import { preparePanelAccuracyObservations } from '@/lib/panel-accuracy-preprocessing';
+import { PANEL_ACCURACY_STEP_GUIDES } from '@/lib/panel-accuracy-step-guides';
 import {
   AccuracyPreprocessingOptions,
   MeasurementSource,
@@ -105,6 +108,12 @@ export const PanelAccuracyTab: React.FC = () => {
   const [codeTab, setCodeTab] = useState<'stata' | 'r'>('stata');
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<string | null>(null);
+  const [showAllStepGuides, setShowAllStepGuides] = useState<boolean>(false);
+
+  const activeStepGuide = useMemo(
+    () => PANEL_ACCURACY_STEP_GUIDES.find(g => g.id === currentStep) || PANEL_ACCURACY_STEP_GUIDES[0],
+    [currentStep]
+  );
 
   const columns = useMemo(
     () => (rawRows.length > 0 ? Object.keys(rawRows[0]).filter(Boolean) : []),
@@ -457,6 +466,83 @@ export const PanelAccuracyTab: React.FC = () => {
             </button>
           );
         })}
+      </div>
+
+      {/* Kegunaan & Interpretasi Step Aktif + Peta 9 Step */}
+      <div
+        style={{
+          padding: '14px 16px',
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px'
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <BookOpen size={16} color="var(--primary)" />
+            <strong style={{ fontSize: '13.5px', color: 'var(--text)' }}>
+              Kegunaan &amp; Cara Membaca: {activeStepGuide.fullTitle}
+            </strong>
+          </div>
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={() => setShowAllStepGuides(v => !v)}
+            style={{ minHeight: '36px', fontSize: '12px', padding: '4px 10px' }}
+          >
+            <Info size={14} style={{ marginRight: '5px' }} />
+            {showAllStepGuides ? 'Tutup Peta 9 Step' : 'Lihat Kegunaan & Interpretasi Semua 9 Step'}
+          </button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px', fontSize: '12.5px', lineHeight: 1.5 }}>
+          <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--surface-muted)', border: '1px solid var(--border-light)' }}>
+            <strong style={{ color: 'var(--primary)', display: 'block', marginBottom: '2px' }}>Kegunaan Tahap Ini:</strong>
+            <span style={{ color: 'var(--text-secondary)' }}>{activeStepGuide.purpose}</span>
+          </div>
+          <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--surface-muted)', border: '1px solid var(--border-light)' }}>
+            <strong style={{ color: 'var(--primary)', display: 'block', marginBottom: '2px' }}>Interpretasi &amp; Maksud Hasil:</strong>
+            <span style={{ color: 'var(--text-secondary)' }}>{activeStepGuide.howToInterpret}</span>
+          </div>
+          <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--info-bg)', border: '1px solid var(--border-light)' }}>
+            <strong style={{ color: 'var(--text)', display: 'block', marginBottom: '2px' }}>Catatan Metodologis:</strong>
+            <span style={{ color: 'var(--text-secondary)' }}>{activeStepGuide.keyCaveat}</span>
+          </div>
+        </div>
+
+        {showAllStepGuides && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))', gap: '10px', paddingTop: '8px', borderTop: '1px solid var(--border-light)' }}>
+            {PANEL_ACCURACY_STEP_GUIDES.map(g => {
+              const reachable = g.id <= 4 || !qualityReport.hasBlockingError;
+              const isCur = g.id === currentStep;
+              return (
+                <div
+                  key={g.id}
+                  onClick={() => reachable && setCurrentStep(g.id)}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: isCur ? '1.5px solid var(--primary)' : '1px solid var(--border)',
+                    background: isCur ? 'var(--info-bg)' : 'var(--surface-muted)',
+                    cursor: reachable ? 'pointer' : 'default',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    fontSize: '12px',
+                    lineHeight: 1.45
+                  }}
+                >
+                  <strong style={{ color: isCur ? 'var(--primary)' : 'var(--text)' }}>{g.fullTitle}</strong>
+                  <div><strong>Kegunaan:</strong> <span style={{ color: 'var(--text-secondary)' }}>{g.purpose}</span></div>
+                  <div><strong>Maksud &amp; Interpretasi:</strong> <span style={{ color: 'var(--text-secondary)' }}>{g.howToInterpret}</span></div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Main Content Card */}
@@ -1074,6 +1160,15 @@ export const PanelAccuracyTab: React.FC = () => {
               sources={sources}
               unitLabel={activeResult?.datasetMeta.workingUnitNote || refSource?.unit || 'kt CO₂'}
             />
+
+            {activeResult && (
+              <div style={{ padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', background: 'var(--info-bg)', fontSize: '13px', lineHeight: 1.55 }}>
+                <strong style={{ display: 'block', marginBottom: '4px', color: 'var(--primary)' }}>
+                  Interpretasi Hasil EDA &amp; Korelasi Panel (Data Aktual):
+                </strong>
+                <div>{activeResult.interpretations.edaAndCorrelationInterpretation}</div>
+              </div>
+            )}
           </>
         )}
 
@@ -1165,6 +1260,13 @@ export const PanelAccuracyTab: React.FC = () => {
               referenceLabel={`${activeResult.referenceSource.name} (${activeResult.referenceSource.label})`}
               unitLabel={activeResult.datasetMeta.workingUnitNote}
             />
+
+            <div style={{ padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', background: 'var(--info-bg)', fontSize: '13px', lineHeight: 1.55 }}>
+              <strong style={{ display: 'block', marginBottom: '4px', color: 'var(--primary)' }}>
+                Interpretasi Metrik Akurasi, Lin&apos;s CCC &amp; Bland-Altman (Data Aktual):
+              </strong>
+              <div>{activeResult.interpretations.accuracyAndAgreementInterpretation}</div>
+            </div>
           </>
         )}
 
@@ -1292,6 +1394,12 @@ export const PanelAccuracyTab: React.FC = () => {
                 </div>
               </div>
             )}
+            <div style={{ padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', background: 'var(--info-bg)', fontSize: '13px', lineHeight: 1.55 }}>
+              <strong style={{ display: 'block', marginBottom: '4px', color: 'var(--primary)' }}>
+                Interpretasi Model Pair Fixed Effects &amp; Kontras (Data Aktual):
+              </strong>
+              <div>{activeResult.interpretations.pairFixedEffectsInterpretation}</div>
+            </div>
           </>
         )}
 
@@ -1372,6 +1480,13 @@ export const PanelAccuracyTab: React.FC = () => {
             <div style={{ padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--info-bg)', fontSize: '13px', lineHeight: 1.55 }}>
               <strong>Penjelasan Proporsional Normalitas &amp; Central Limit Theorem (CLT):</strong>{' '}
               {activeResult.diagnostics.normalityAndCltNote.explanation}
+            </div>
+
+            <div style={{ padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary)', background: 'var(--surface-muted)', fontSize: '13px', lineHeight: 1.55 }}>
+              <strong style={{ display: 'block', marginBottom: '4px', color: 'var(--primary)' }}>
+                Interpretasi Keseluruhan Diagnostik Inferensi (Data Aktual):
+              </strong>
+              <div>{activeResult.interpretations.diagnosticsInterpretation}</div>
             </div>
           </>
         )}

@@ -15,6 +15,7 @@ import {
 } from '../../src/lib/panel-accuracy-orchestrator';
 import { preparePanelAccuracyObservations } from '../../src/lib/panel-accuracy-preprocessing';
 import { computeComparativeSourceRanking } from '../../src/lib/panel-accuracy-ranking';
+import { PANEL_ACCURACY_STEP_GUIDES } from '../../src/lib/panel-accuracy-step-guides';
 import { MeasurementSource, PanelDataset } from '../../src/lib/panel-accuracy-types';
 import {
   DEFAULT_ACCURACY_PREPROCESSING,
@@ -301,5 +302,14 @@ describe('Gerbang Verifikasi 1 — Comparative Measurement Accuracy Engine (Pane
     const rec = evaluateAccuracyPreprocessingRecommendations({ dataset: preset });
     expect(rec.evaluatedCount).toBeGreaterThanOrEqual(4);
     expect(rec.bestScenario.id).toBe('raw_baseline');
+
+    // Step 1..9 purpose and interpretation guides complete
+    expect(PANEL_ACCURACY_STEP_GUIDES).toHaveLength(9);
+    PANEL_ACCURACY_STEP_GUIDES.forEach((g, idx) => {
+      expect(g.id).toBe(idx + 1);
+      expect(g.purpose.length).toBeGreaterThan(20);
+      expect(g.howToInterpret.length).toBeGreaterThan(20);
+      expect(g.keyCaveat.length).toBeGreaterThan(10);
+    });
   });
 });
