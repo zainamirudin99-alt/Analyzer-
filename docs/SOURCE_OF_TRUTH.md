@@ -125,3 +125,13 @@ Spesifikasi pengembangan lanjutan untuk menyempurnakan dan memperluas menu **Ana
 18. **Poin 18 — Ekspor Laporan Akademik**: Word (`.docx`) dan multi-sheet Excel (`.xlsx`) mencakup seluruh modul baru.
 19. **Poin 19 & 20 — Jaminan Kualitas & Benchmark SPSS**: Unit test komprehensif, stabilitas numerik, dan benchmark terhadap NIST StRD & golden fixtures SPSS/R.
 20. **Poin 21 — Perbaikan Kontras Dark Mode**: Penghapusan warna latar putih hardcoded (`#ffffff`) pada kartu pilihan di `RegressionTab.tsx` dan penyelarasan token tema gelap/terang di `globals.css`.
+
+---
+
+## 9. Ekspansi Tahap 7: Regresi Data Panel Stata Option 2 — Comparative Measurement Accuracy Assessment, Stata Code in Every Step, Intelligent Configuration & 5-Point Interpretation
+
+Spesifikasi khusus untuk **Regresi Data Panel Stata → Option 2** (`PanelAccuracyTab.tsx`):
+1. **Metodologi Utama**: *Comparative Measurement Accuracy Assessment Using Reference Measurements: A Panel Data Approach* dengan $J \ge 2$ sumber dinamis, metrik utama MAE pada pasangan Kota-Tahun lengkap (*Complete-Case*) dan terpisah *Available-Case*, Lin's CCC, Bland-Altman, Pair Fixed Effects (`areg ... absorb(pair_id) vce(cluster city_id)`), Rademacher Wild Cluster Bootstrap, dan 4 status keputusan peringkat (`TERBUKTI_BERBEDA_SIGNIFIKAN`, `PERBEDAAN_TIDAK_SIGNIFIKAN`, `KONFLIK_ANTAR_METRIK`, `REFERENSI_TIDAK_VALID`).
+2. **Stata Command & Statistical Implementation di Seluruh 9 Step**: Setiap step memiliki panel dokumentasi & kode Stata/R/Stan dinamis yang memuat 6 komponen: (1) Tujuan Analisis, (2) Kode Stata dinamis + tombol Copy & Download (`.do`/`.R`/`.stan`), (3) Kegunaan Setiap Kode, (4) Penjelasan & Cara Membaca Output Stata, (5) Interpretasi Statistik 5-poin (`Nilai`, `Artinya`, `Cara membaca`, `Implikasi`, `Batasan`) dari hasil eksekusi aktual, dan (6) Kesimpulan Step.
+3. **Intelligent Measurement Source Configuration Engine (Step 2)**: Analisis otomatis 14 indikator kolom dataset, 5 blok rekomendasi sistem (Identitas, Sumber Pengukuran & Referensi multi-kriteria, Satuan, Struktur Model, Preprocessing), Tabel Rekomendasi Sistem (`Recommended`, `Recommended with Warning`, `Needs Review`, `Not Recommended`), serta 4 tombol interaksi (`Auto Configure`, `Apply Recommendation`, `Manual Configuration`, `Reset Configuration`).
+4. **Isolasi Mutlak**: Option 1 (`PanelTab.tsx`, `panel-engine.ts`) dan seluruh menu lain di luar Option 2 tetap tidak tersentuh (`0` perubahan).

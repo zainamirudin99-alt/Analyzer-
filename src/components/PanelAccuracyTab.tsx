@@ -59,6 +59,12 @@ import {
   PanelAccuracyEDACharts,
   PanelAccuracyFullVisualizations
 } from './PanelAccuracyCharts';
+import { PanelAccuracyStepStataPanel } from './PanelAccuracyStepStataPanel';
+import {
+  RecommendationStatusBadge,
+  runIntelligentMeasurementSourceEngine
+} from '@/lib/panel-accuracy-intelligent-config';
+import { buildAllStepStataDocumentation } from '@/lib/panel-accuracy-step-stata';
 
 const ACCURACY_STEPS = [
   { id: 1, short: '1. Upload', title: 'Step 1 — Data Upload' },
@@ -138,6 +144,9 @@ export const PanelAccuracyTab: React.FC = () => {
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<string | null>(null);
   const [showAllStepGuides, setShowAllStepGuides] = useState<boolean>(false);
+  const [step2ConfigNotice, setStep2ConfigNotice] = useState<string | null>(null);
+  const [show14PointAudit, setShow14PointAudit] = useState<boolean>(false);
+  const [manualConfigActive, setManualConfigActive] = useState<boolean>(false);
 
   const activeStepGuide = useMemo(
     () => PANEL_ACCURACY_STEP_GUIDES.find(g => g.id === currentStep) || PANEL_ACCURACY_STEP_GUIDES[0],
@@ -147,6 +156,18 @@ export const PanelAccuracyTab: React.FC = () => {
   const columns = useMemo(
     () => (rawRows.length > 0 ? Object.keys(rawRows[0]).filter(Boolean) : []),
     [rawRows]
+  );
+
+  const intelligentConfig = useMemo(
+    () =>
+      runIntelligentMeasurementSourceEngine({
+        columns,
+        rows: rawRows,
+        currentCityIdColumn: cityIdColumn,
+        currentYearColumn: yearColumn,
+        currentSources: sources
+      }),
+    [columns, rawRows, cityIdColumn, yearColumn, sources]
   );
 
   const panelDataset: PanelDataset = useMemo(
@@ -163,6 +184,18 @@ export const PanelAccuracyTab: React.FC = () => {
     () => validatePanelAccuracyDataset(panelDataset, preprocessing),
     [panelDataset, preprocessing]
   );
+
+  const effectivePreprocBundle = useMemo<PreprocessingRecommendationBundle | null>(() => {
+    if (recommendation) return recommendation;
+    try {
+      return evaluateAccuracyPreprocessingRecommendations({
+        dataset: panelDataset,
+        allowNegativeValues: preprocessing.allowNegativeValues
+      });
+    } catch {
+      return null;
+    }
+  }, [recommendation, panelDataset, preprocessing.allowNegativeValues]);
 
   // Reactive live analysis result (automatically updates when Reference Source, Sources, or Preprocessing changes)
   const liveFitResult = useMemo<PanelAccuracyFitResult | null>(() => {
@@ -198,6 +231,34 @@ export const PanelAccuracyTab: React.FC = () => {
     if (!preparedPreview) return null;
     return computeAccuracyEDA(preparedPreview.completeCaseObservations, sources);
   }, [activeResult, preparedPreview, sources]);
+
+  const stepStataDocs = useMemo(
+    () =>
+      buildAllStepStataDocumentation({
+        datasetName,
+        cityIdColumn,
+        yearColumn,
+        sources,
+        preprocessing,
+        qualityReport,
+        intelligentConfig,
+        preprocBundle: effectivePreprocBundle,
+        cleanedObservations: preparedPreview?.completeCaseObservations || [],
+        fitResult: activeResult
+      }),
+    [
+      datasetName,
+      cityIdColumn,
+      yearColumn,
+      sources,
+      preprocessing,
+      qualityReport,
+      intelligentConfig,
+      effectivePreprocBundle,
+      preparedPreview,
+      activeResult
+    ]
+  );
 
   const applyNewDataset = (
     name: string,
@@ -476,7 +537,10 @@ export const PanelAccuracyTab: React.FC = () => {
       >
         {ACCURACY_STEPS.map(s => {
           const active = currentStep === s.id;
-          const reachable = s.id <= 4 || !qualityReport.hasBlockingError;
+          const reachable =
+            s.id <= 2 ||
+            (intelligentConfig.minimumRequirements.canProceed &&
+              (s.id <= 4 || !qualityReport.hasBlockingError));
           return (
             <button
               key={s.id}
@@ -753,41 +817,249 @@ export const PanelAccuracyTab: React.FC = () => {
           </>
         )}
 
-        {/* STEP 2: DYNAMIC DATA MAPPING & REFERENCE SELECTION */}
+        {/* STEP 2: INTELLIGENT DATA CONFIGURATION & SOURCE RECOMMENDATION */}
         {currentStep === 2 && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
-                  Step 2 — Pemetaan Variabel Dinamis & Pemilihan Sumber Referensi
+                  Step 2 — Intelligent Measurement Source Configuration &amp; Source Recommendation
                 </h3>
                 <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                  Tambahkan atau hapus sumber pengukuran (minimal 2 sumber), beri kode/label, dan pilih tepat <strong>1 Reference Source</strong> sebagai pembanding acuan.
+                  Mesin konfigurasi cerdas menganalisis 14 karakteristik kolom secara otomatis untuk merekomendasikan City ID, Year, Reference Source, dan Comparison Sources.
                 </p>
               </div>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button
                   type="button"
-                  className="btn btn-outline"
-                  style={{ minHeight: '44px', fontSize: '13px' }}
+                  className="btn btn-primary"
+                  style={{ minHeight: '42px', fontSize: '12.5px' }}
                   onClick={() => {
-                    const detected = autoDetectAccuracyDatasetConfig(columns, rawRows);
-                    setCityIdColumn(detected.cityIdColumn);
-                    setYearColumn(detected.yearColumn);
-                    setSources(detected.sources);
+                    setCityIdColumn(intelligentConfig.recommendedMapping.cityIdColumn);
+                    setYearColumn(intelligentConfig.recommendedMapping.yearColumn);
+                    setSources(intelligentConfig.recommendedMapping.sources.map(s => ({ ...s })));
+                    setManualConfigActive(false);
+                    setServerFitResult(null);
+                    setStep2ConfigNotice('Auto Configure: Konfigurasi kolom otomatis berhasil diterapkan dari hasil deteksi 14 dimensi.');
                   }}
                 >
-                  <RefreshCw size={14} style={{ marginRight: '6px' }} /> Deteksi Otomatis Kolom
+                  <Sparkles size={14} style={{ marginRight: '6px' }} /> Auto Configure
                 </button>
                 <button
                   type="button"
-                  className="btn btn-primary"
-                  style={{ minHeight: '44px', fontSize: '13px' }}
+                  className="btn btn-outline"
+                  style={{ minHeight: '42px', fontSize: '12.5px' }}
+                  onClick={() => {
+                    setCityIdColumn(intelligentConfig.recommendedMapping.cityIdColumn);
+                    setYearColumn(intelligentConfig.recommendedMapping.yearColumn);
+                    setSources(intelligentConfig.recommendedMapping.sources.map(s => ({ ...s })));
+                    setPreprocessing({ ...intelligentConfig.blockEPreprocessing.recommendedPreprocessing });
+                    setManualConfigActive(false);
+                    setServerFitResult(null);
+                    setStep2ConfigNotice('Apply Recommendation: Rekomendasi pemetaan sumber beserta saran prapemrosesan berhasil diterapkan.');
+                  }}
+                >
+                  <ShieldCheck size={14} style={{ marginRight: '6px' }} /> Apply Recommendation
+                </button>
+                <button
+                  type="button"
+                  className={manualConfigActive ? 'btn btn-primary' : 'btn btn-outline'}
+                  style={{ minHeight: '42px', fontSize: '12.5px' }}
+                  onClick={() => {
+                    setManualConfigActive(v => !v);
+                    setStep2ConfigNotice('Manual Configuration: Anda dapat menyesuaikan kolom, satuan, label, atau menambah/menghapus sumber secara bebas di bawah.');
+                  }}
+                >
+                  <Sliders size={14} style={{ marginRight: '6px' }} /> Manual Configuration
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  style={{ minHeight: '42px', fontSize: '12.5px' }}
+                  onClick={() => {
+                    if (sourceTab === 'preset') {
+                      const p = generateMultiSourceCO2PresetDataset();
+                      setCityIdColumn(p.cityIdColumn);
+                      setYearColumn(p.yearColumn);
+                      setSources(p.sources);
+                    } else {
+                      const detected = autoDetectAccuracyDatasetConfig(columns, rawRows);
+                      setCityIdColumn(detected.cityIdColumn);
+                      setYearColumn(detected.yearColumn);
+                      setSources(detected.sources);
+                    }
+                    setPreprocessing(DEFAULT_ACCURACY_PREPROCESSING);
+                    setManualConfigActive(false);
+                    setServerFitResult(null);
+                    setStep2ConfigNotice('Reset Configuration: Pemetaan variabel dikembalikan ke kondisi awal.');
+                  }}
+                >
+                  <RefreshCw size={14} style={{ marginRight: '6px' }} /> Reset Configuration
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  style={{ minHeight: '42px', fontSize: '12.5px' }}
                   onClick={handleAddSource}
                 >
-                  <Plus size={15} style={{ marginRight: '6px' }} /> Tambah Sumber Pengukuran
+                  <Plus size={14} style={{ marginRight: '6px' }} /> Tambah Sumber
                 </button>
               </div>
+            </div>
+
+            {step2ConfigNotice && (
+              <div style={{ padding: '10px 14px', borderRadius: 'var(--radius-sm)', background: 'var(--info-bg)', border: '1px solid var(--primary)', fontSize: '12.5px', fontWeight: 600 }}>
+                {step2ConfigNotice}
+              </div>
+            )}
+
+            {/* Minimum Requirements Validation Gate Banner */}
+            {!intelligentConfig.minimumRequirements.canProceed && (
+              <div style={{ padding: '12px 14px', borderRadius: 'var(--radius-sm)', background: 'var(--danger-bg)', border: '1.5px solid #ef4444', color: '#ef4444', fontSize: '13px' }}>
+                <strong>Konfigurasi Belum Memenuhi Syarat Minimum (Analisis Diblokir):</strong>
+                <ul style={{ margin: '4px 0 0 18px', padding: 0 }}>
+                  {intelligentConfig.minimumRequirements.blockingReasons.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Intelligent Recommendation Engine Table */}
+            <div style={{ padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface-muted)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                <div>
+                  <strong style={{ fontSize: '14px', color: 'var(--primary)', display: 'block' }}>
+                    Intelligent Measurement Source Configuration Engine — Tabel Rekomendasi Sistem
+                  </strong>
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Evaluasi multi-kriteria (struktur identitas, kelengkapan pasangan, varians, keseragaman satuan, dan independensi galat — bukan skor korelasi tunggal).
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  style={{ minHeight: '34px', fontSize: '12px', padding: '4px 10px' }}
+                  onClick={() => setShow14PointAudit(v => !v)}
+                >
+                  {show14PointAudit ? 'Sembunyikan 14 Analisis Kolom Otomatis' : 'Lihat Detail 14 Analisis Otomatis & 5 Blok Rekomendasi'}
+                </button>
+              </div>
+
+              <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--surface)' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--surface-muted)' }}>
+                      {['Komponen', 'Rekomendasi Sistem', 'Alasan Statistik', 'Status'].map(h => (
+                        <th key={h} style={{ padding: '8px 10px', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {intelligentConfig.recommendationTable.map((row, idx) => {
+                      const badgeBg =
+                        row.status === 'Recommended'
+                          ? 'var(--success)'
+                          : row.status === 'Recommended with Warning'
+                            ? '#0284c7'
+                            : row.status === 'Needs Review'
+                              ? '#f59e0b'
+                              : '#ef4444';
+                      return (
+                        <tr key={idx}>
+                          <td style={{ padding: '8px 10px', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>{row.component}</td>
+                          <td style={{ padding: '8px 10px', fontWeight: 700, color: 'var(--primary)', borderBottom: '1px solid var(--border-light)' }}>{row.systemRecommendation}</td>
+                          <td style={{ padding: '8px 10px', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border-light)' }}>{row.reason}</td>
+                          <td style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-light)' }}>
+                            <span
+                              style={{
+                                display: 'inline-block',
+                                padding: '3px 9px',
+                                borderRadius: '999px',
+                                fontSize: '11px',
+                                fontWeight: 800,
+                                background: badgeBg,
+                                color: '#fff',
+                                whiteSpace: 'nowrap'
+                              }}
+                            >
+                              {row.status}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* 5 Recommendation Blocks (A-E) + Optional 14-Point Audit */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '10px', fontSize: '12px', lineHeight: 1.5 }}>
+                <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--surface)', border: '1px solid var(--border-light)' }}>
+                  <strong style={{ color: 'var(--primary)', display: 'block', marginBottom: '4px' }}>A. Rekomendasi Variabel Identitas</strong>
+                  <ul style={{ margin: '0 0 0 16px', padding: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <li><strong>City ID:</strong> {intelligentConfig.blockAIdentity.recommendedCityId} — {intelligentConfig.blockAIdentity.cityIdReason}</li>
+                    <li><strong>Year:</strong> {intelligentConfig.blockAIdentity.recommendedYear} — {intelligentConfig.blockAIdentity.yearReason}</li>
+                    {intelligentConfig.blockAIdentity.multiCandidateWarning && (
+                      <li style={{ color: '#d97706' }}>{intelligentConfig.blockAIdentity.multiCandidateWarning}</li>
+                    )}
+                  </ul>
+                </div>
+
+                <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--surface)', border: '1px solid var(--border-light)' }}>
+                  <strong style={{ color: 'var(--primary)', display: 'block', marginBottom: '4px' }}>B. Rekomendasi Sumber Pengukuran</strong>
+                  <ul style={{ margin: '0 0 0 16px', padding: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <li><strong>Kandidat Referensi (r):</strong> {intelligentConfig.blockBSources.recommendedReferenceCol}</li>
+                    <li><strong>Layak Digunakan:</strong> {intelligentConfig.blockBSources.layakColumns.join(', ') || '-'}</li>
+                    <li><strong>Perlu Diperiksa:</strong> {intelligentConfig.blockBSources.perluDiperiksaColumns.join(', ') || 'Tidak ada'}</li>
+                    <li><strong>Tidak Direkomendasikan:</strong> {intelligentConfig.blockBSources.tidakDirekomendasikanColumns.join(', ') || 'Tidak ada'}</li>
+                  </ul>
+                </div>
+
+                <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--surface)', border: '1px solid var(--border-light)' }}>
+                  <strong style={{ color: 'var(--primary)', display: 'block', marginBottom: '4px' }}>C. Rekomendasi Konfigurasi Satuan</strong>
+                  <ul style={{ margin: '0 0 0 16px', padding: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    {intelligentConfig.blockCUnits.recommendationPoints.map((pt, i) => <li key={i}>{pt}</li>)}
+                  </ul>
+                </div>
+
+                <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--surface)', border: '1px solid var(--border-light)' }}>
+                  <strong style={{ color: 'var(--primary)', display: 'block', marginBottom: '4px' }}>D. Rekomendasi Struktur Model</strong>
+                  <ul style={{ margin: '0 0 0 16px', padding: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <li>{intelligentConfig.blockDModelStructure.latentIdentificationNote}</li>
+                    <li>{intelligentConfig.blockDModelStructure.missingnessNote}</li>
+                    <li>{intelligentConfig.blockDModelStructure.bayesianFeasibilityNote}</li>
+                  </ul>
+                </div>
+
+                <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--surface)', border: '1px solid var(--border-light)' }}>
+                  <strong style={{ color: 'var(--primary)', display: 'block', marginBottom: '4px' }}>E. Rekomendasi Preprocessing</strong>
+                  <ul style={{ margin: '0 0 0 16px', padding: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    {intelligentConfig.blockEPreprocessing.recommendationPoints.map((pt, i) => <li key={i}>{pt}</li>)}
+                  </ul>
+                </div>
+              </div>
+
+              {show14PointAudit && (
+                <div style={{ paddingTop: '8px', borderTop: '1px solid var(--border-light)' }}>
+                  <strong style={{ fontSize: '13px', display: 'block', marginBottom: '6px' }}>
+                    Hasil 14 Analisis Otomatis Karakteristik Dataset:
+                  </strong>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '8px', fontSize: '12px' }}>
+                    {intelligentConfig.fourteenPointAnalyses.map(item => (
+                      <div key={item.stepNumber} style={{ padding: '8px 10px', borderRadius: '6px', background: 'var(--surface)', border: '1px solid var(--border-light)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '6px', marginBottom: '3px' }}>
+                          <strong>{item.title}</strong>
+                          <span style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--primary)' }}>{item.status}</span>
+                        </div>
+                        <div style={{ color: 'var(--text-secondary)', lineHeight: 1.4 }}>{item.summary}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* City & Year Identifier Selectors */}
@@ -1779,6 +2051,11 @@ export const PanelAccuracyTab: React.FC = () => {
           </>
         )}
 
+        {/* MANDATORY STATA COMMAND & STATISTICAL IMPLEMENTATION PANEL IN EVERY STEP */}
+        {stepStataDocs[currentStep] && (
+          <PanelAccuracyStepStataPanel bundle={stepStataDocs[currentStep]} />
+        )}
+
         {/* Footer Step Navigation */}
         <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '12px', borderTop: '1px solid var(--border-light)' }}>
           <button
@@ -1795,7 +2072,10 @@ export const PanelAccuracyTab: React.FC = () => {
             <button
               type="button"
               className="btn btn-primary"
-              disabled={currentStep >= 4 && qualityReport.hasBlockingError}
+              disabled={
+                (currentStep >= 2 && !intelligentConfig.minimumRequirements.canProceed) ||
+                (currentStep >= 4 && qualityReport.hasBlockingError)
+              }
               onClick={() => setCurrentStep(s => Math.min(9, s + 1))}
               style={{ minHeight: '44px' }}
             >

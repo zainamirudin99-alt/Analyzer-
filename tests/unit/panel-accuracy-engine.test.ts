@@ -19,6 +19,11 @@ import {
   buildActualStepInterpretationPoints,
   PANEL_ACCURACY_STEP_GUIDES
 } from '../../src/lib/panel-accuracy-step-guides';
+import { runIntelligentMeasurementSourceEngine } from '../../src/lib/panel-accuracy-intelligent-config';
+import {
+  buildAllStepStataDocumentation,
+  computeLeaveOneCityOutSensitivity
+} from '../../src/lib/panel-accuracy-step-stata';
 import { MeasurementSource, PanelDataset } from '../../src/lib/panel-accuracy-types';
 import {
   DEFAULT_ACCURACY_PREPROCESSING,
@@ -322,5 +327,93 @@ describe('Gerbang Verifikasi 1 — Comparative Measurement Accuracy Engine (Pane
     expect(actualPts.step7.length).toBeGreaterThanOrEqual(5);
     expect(actualPts.step8.length).toBeGreaterThanOrEqual(4);
     expect(actualPts.step9.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('8. Executes 14-point Intelligent Measurement Source Configuration Engine and generates 9-Step Stata Documentation & 5-Point Interpretations', () => {
+    const preset = generateMultiSourceCO2PresetDataset();
+    const cols = Object.keys(preset.observations[0]);
+
+    const intel = runIntelligentMeasurementSourceEngine({
+      columns: cols,
+      rows: preset.observations,
+      currentCityIdColumn: preset.cityIdColumn,
+      currentYearColumn: preset.yearColumn,
+      currentSources: preset.sources
+    });
+
+    // Verify 14 automatic analyses and 5 recommendation blocks
+    expect(intel.fourteenPointAnalyses).toHaveLength(14);
+    expect(intel.recommendationTable.length).toBeGreaterThanOrEqual(6);
+    expect(intel.blockAIdentity.recommendedCityId).toBe('City');
+    expect(intel.blockAIdentity.recommendedYear).toBe('Year');
+    expect(intel.blockBSources.recommendedReferenceCol).toBe('X3_Field_Sensor_Ref');
+    expect(intel.blockDModelStructure.supportsReferenceBasedModel).toBe(true);
+    expect(intel.blockDModelStructure.supportsLatentModel).toBe(true);
+    expect(intel.minimumRequirements.canProceed).toBe(true);
+
+    // Verify minimum requirements gate blocks invalid configuration (< 2 sources)
+    const blockedIntel = runIntelligentMeasurementSourceEngine({
+      columns: cols,
+      rows: preset.observations,
+      currentCityIdColumn: preset.cityIdColumn,
+      currentYearColumn: preset.yearColumn,
+      currentSources: [preset.sources[0]]
+    });
+    expect(blockedIntel.minimumRequirements.canProceed).toBe(false);
+    expect(blockedIntel.minimumRequirements.blockingReasons.length).toBeGreaterThanOrEqual(1);
+
+    // Verify 9-Step Stata Documentation & 5-Dimension Point Interpretations
+    const quality = validatePanelAccuracyDataset(preset);
+    const preprocRec = evaluateAccuracyPreprocessingRecommendations({ dataset: preset });
+    const prepared = preparePanelAccuracyObservations(preset);
+    const fitRes = executePanelAccuracyPipeline({
+      dataset: preset,
+      bootstrapReplications: 199
+    });
+
+    const docs = buildAllStepStataDocumentation({
+      datasetName: 'panel_co2_multi_source_accuracy.xlsx',
+      cityIdColumn: preset.cityIdColumn,
+      yearColumn: preset.yearColumn,
+      sources: preset.sources,
+      preprocessing: DEFAULT_ACCURACY_PREPROCESSING,
+      qualityReport: quality,
+      intelligentConfig: intel,
+      preprocBundle: preprocRec,
+      cleanedObservations: prepared.completeCaseObservations,
+      fitResult: fitRes
+    });
+
+    for (let stepId = 1; stepId <= 9; stepId++) {
+      const b = docs[stepId];
+      expect(b).toBeDefined();
+      expect(b.stepId).toBe(stepId);
+      expect(b.analysisPurpose.whatIsAnalyzed.length).toBeGreaterThan(15);
+      expect(b.analysisPurpose.whyRequired.length).toBeGreaterThan(15);
+      expect(b.analysisPurpose.statisticalQuestionAnswered.length).toBeGreaterThan(15);
+      expect(b.stataCode).toContain(preset.cityIdColumn);
+      expect(b.commandUsages.length).toBeGreaterThanOrEqual(2);
+      expect(b.outputExplanations.length).toBeGreaterThanOrEqual(1);
+      expect(b.structuredInterpretations.length).toBeGreaterThanOrEqual(1);
+      b.structuredInterpretations.forEach(item => {
+        expect(item.nilai.length).toBeGreaterThan(2);
+        expect(item.artinya.length).toBeGreaterThan(10);
+        expect(item.caraMembaca.length).toBeGreaterThan(10);
+        expect(item.implikasi.length).toBeGreaterThan(10);
+        expect(item.batasan.length).toBeGreaterThan(10);
+      });
+      expect(b.stepConclusion.decisionSummary.length).toBeGreaterThan(10);
+    }
+
+    // Verify Leave-One-City-Out (LOCO) sensitivity on preset
+    const loco = computeLeaveOneCityOutSensitivity({
+      observations: prepared.completeCaseObservations,
+      sources: preset.sources,
+      fullTopSourceId: fitRes.ranking.bestSourceId
+    });
+    expect(loco.rows).toHaveLength(10); // 10 cities in preset
+    expect(loco.consistencyPct).toBe(100);
+    expect(docs[8].robustnessSummary?.leaveOneCityOutRows).toHaveLength(10);
+    expect(docs[5].companionStanCode).toContain('transformed parameters');
   });
 });

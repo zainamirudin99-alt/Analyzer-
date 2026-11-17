@@ -142,3 +142,10 @@ Mengacu pada `docs/superpowers/specs/2026-11-13-regression-upgrade-design.md`:
 2. **Dual-Mode Statistical Parity**:
    - Primary client/Node solver ditingkatkan dari normal equations `matInverse(X'X)` menjadi **Householder QR Decomposition** dengan verifikasi silang **SVD** dan *chronological sort* otomatis pada Time Series.
    - Endpoint Python `api/py/validate.py` (`numpy`, `scipy`, `statsmodels`, `pandas`; tanpa `matplotlib`) bertindak sebagai verifikasi silang Statsmodels di Vercel dengan *auto-fallback* mulus ke TS QR/SVD saat offline/lokal.
+
+---
+
+## 6. Arsitektur Tahap 7: Regresi Data Panel Stata Option 2 — Intelligent Configuration Engine & Per-Step Stata Documentation Panel
+1. **`src/lib/panel-accuracy-intelligent-config.ts`**: Mesin analisis otomatis 14 dimensi kolom dataset dan 5 blok rekomendasi terstruktur untuk Step 2 (`City ID`, `Year`, klasifikasi sumber pengukuran, deteksi skala/satuan, ketergantungan galat potensial, kompatibilitas model, dan saran prapemrosesan).
+2. **`src/lib/panel-accuracy-step-stata.ts`**: Generator dinamis untuk panel **Stata Command & Statistical Implementation** pada Step 1 s/d Step 9 (mencakup kode `.do`, skrip pendamping `.R`/`.stan`, rincian perintah, tabel output Stata, interpretasi 5-dimensi per poin berdasarkan angka aktual, analisis sensitivitas Leave-One-City-Out / LOCO, serta kesimpulan kelayakan per step).
+3. **`src/components/PanelAccuracyStepStataPanel.tsx`**: Komponen antarmuka terpadu untuk menampilkan 6 bagian wajib dokumentasi Stata & interpretasi per poin di setiap step `PanelAccuracyTab.tsx`.

@@ -178,3 +178,12 @@ Dokumen ini memuat daftar tugas operasional dari Tahap 1 hingga Tahap 3 beserta 
   - [x] Workspace Hasil Step 7 untuk `OLS`, `MRA` (Model 1–3, Simple Slope, Johnson-Neyman, Interaction Plot), dan `Kontingensi` (Crosstabs, Chi-Square, Symmetric Measures, Risk Estimates, Grouped/Stacked/Mosaic Plot), plus tab Advanced GLM di Advanced Mode.
   - [x] Ekspor Word (`.docx`) & Excel (`.xlsx`) terintegrasi untuk OLS, MRA, dan Kontingensi.
   - [x] Pengujian menyeluruh (Vitest unit/statistical/NIST/MRA/Contingency + Zero-regression CED & Panel + `tsc --noEmit` + `next build`).
+
+
+---
+
+## Tahap 7: Regresi Data Panel Stata Option 2 — Stata Code in Every Step, Intelligent Configuration & 5-Point Interpretation
+- [x] **T7.1**: Refactoring Option 2 menjadi *Comparative Measurement Accuracy Assessment Using Reference Measurements: A Panel Data Approach* dengan $J \ge 2$ sumber dinamis, Pair Fixed Effects, Wild Cluster Bootstrap, dan 4 status konklusif.
+- [x] **T7.2**: Implementasi `Intelligent Measurement Source Configuration Engine` (14 analisis kolom otomatis, 5 blok rekomendasi A–E, tabel status rekomendasi, dan 4 tombol konfigurasi di Step 2).
+- [x] **T7.3**: Implementasi panel `Stata Command & Statistical Implementation` pada seluruh Step 1–9 (Tujuan Analisis, Stata/R/Stan Code dinamis dengan Copy/Download, Kegunaan Setiap Kode, Penjelasan & Cara Membaca Output, Interpretasi 5-Poin Aktual, Analisis Sensitivitas Leave-One-City-Out, dan Kesimpulan Step).
+- [x] **T7.4**: Verifikasi penuh (`vitest`, `tsc --noEmit`, `next build`, dan `git diff` 0 perubahan pada Option 1 & menu lain).
