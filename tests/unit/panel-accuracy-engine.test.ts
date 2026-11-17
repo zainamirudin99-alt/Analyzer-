@@ -292,4 +292,63 @@ describe('Gerbang Verifikasi — Opsi B Reference-Free All-Source Latent & Conse
     expect(loco.rows).toHaveLength(10);
     expect(loco.consistencyPct).toBe(100);
   });
+
+  it('7. Provides Step 3 & Step 7 Intelligent Recommendations plus 499 vs 1999 Wild Bootstrap transparency', () => {
+    const preset = generateMultiSourceCO2PresetDataset();
+
+    // A. Step 3 Scale-Invariant Optimization Recommendation on clean preset
+    const cleanRec = evaluateAccuracyPreprocessingRecommendations({ dataset: preset });
+    expect(cleanRec.bestScenario.id).toBe('raw_baseline');
+    expect(cleanRec.bestScenario.compositeQualityScore).toBeGreaterThan(85);
+    expect(cleanRec.bestScenario.meanReliabilityR2).toBeGreaterThan(0.95);
+    expect(cleanRec.actionItems[0].actionType).toBe('RESET_RAW_BASELINE');
+
+    // B. Step 3 Extreme Outlier Dataset triggers Winsorization recommendation when rank stability breaks
+    const noisyObs = preset.observations.map((row, idx) =>
+      idx === 3 || idx === 17
+        ? { ...row, X3_Field_Sensor: Number(row.X3_Field_Sensor) + 18500 }
+        : { ...row }
+    );
+    const outlierRec = evaluateAccuracyPreprocessingRecommendations({
+      dataset: { ...preset, observations: noisyObs }
+    });
+    const winsorItem = outlierRec.actionItems.find(a => a.actionType === 'APPLY_WINSORIZE');
+    expect(outlierRec.bestScenario.options.applyWinsorize).toBe(true);
+    expect(winsorItem).toBeDefined();
+    expect(winsorItem?.priority).toBe('TINGGI');
+
+    // C. Step 7 Diagnostic Advisor + 499 Client Live vs 1999 Server Deep Verification
+    const live499 = executePanelAccuracyPipeline({
+      dataset: preset,
+      bootstrapReplications: 499,
+      mcmcIterations: 450,
+      executionSource: 'client_live'
+    });
+    expect(live499.executionMeta?.bootstrapReplications).toBe(499);
+    expect(live499.diagnostics.diagnosticAdvisor?.actions.some(a => a.id === 'diag_small_cluster_bootstrap')).toBe(true);
+
+    const server1999 = executePanelAccuracyPipeline({
+      dataset: preset,
+      bootstrapReplications: 1999,
+      mcmcIterations: 800,
+      executionSource: 'server_verified'
+    });
+    expect(server1999.executionMeta?.bootstrapReplications).toBe(1999);
+    expect(server1999.executionMeta?.mcmcIterations).toBe(800);
+    expect(server1999.ranking.bestSourceId).toBe(live499.ranking.bestSourceId);
+    expect(server1999.diagnostics.diagnosticAdvisor?.diagnosticScore).toBeGreaterThanOrEqual(85);
+    expect(server1999.diagnostics.diagnosticAdvisor?.actions.some(a => a.id === 'diag_small_cluster_ok')).toBe(true);
+
+    // D. Underidentified J = 2 dataset triggers KRITIS ADD_THIRD_SOURCE in Step 7 advisor
+    const j2Res = executePanelAccuracyPipeline({
+      dataset: {
+        ...preset,
+        sources: preset.sources.slice(0, 2)
+      },
+      bootstrapReplications: 499
+    });
+    expect(j2Res.diagnostics.diagnosticAdvisor?.overallHealthStatus).toBe('PERLU_PERBAIKAN_METODOLOGI');
+    expect(j2Res.diagnostics.diagnosticAdvisor?.actions[0].actionType).toBe('ADD_THIRD_SOURCE');
+    expect(j2Res.diagnostics.diagnosticAdvisor?.actions[0].priority).toBe('KRITIS');
+  });
 });

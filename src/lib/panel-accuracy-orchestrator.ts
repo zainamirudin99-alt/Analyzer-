@@ -22,7 +22,8 @@ import {
   PanelAccuracyFitResult,
   PanelDataset,
   PreprocessingRecommendationBundle,
-  PreprocessingScenarioCandidate
+  PreprocessingScenarioCandidate,
+  StepRecommendationAction
 } from './panel-accuracy-types';
 import {
   DEFAULT_ACCURACY_PREPROCESSING,
@@ -34,11 +35,15 @@ export function executePanelAccuracyPipeline(params: {
   preprocessing?: Partial<AccuracyPreprocessingOptions>;
   bootstrapReplications?: number;
   mcmcIterations?: number;
+  executionSource?: 'client_live' | 'server_verified';
 }): PanelAccuracyFitResult {
+  const startedAt = Date.now();
   const preprocessing: AccuracyPreprocessingOptions = {
     ...DEFAULT_ACCURACY_PREPROCESSING,
     ...(params.preprocessing || {})
   };
+  const usedBootstrapReps = params.bootstrapReplications ?? 999;
+  const usedMcmcIterations = params.mcmcIterations ?? 450;
 
   const qualityReport = validatePanelAccuracyDataset(params.dataset, preprocessing);
   if (qualityReport.hasBlockingError) {
@@ -61,15 +66,20 @@ export function executePanelAccuracyPipeline(params: {
   const latentOut = fitBayesianLatentMeasurementModel({
     observations: prepared.completeCaseObservations,
     sources: prepared.comparisonSources,
-    iterationsPerChain: params.mcmcIterations ?? 450,
-    burnInPerChain: 250
+    iterationsPerChain: usedMcmcIterations,
+    burnInPerChain: usedMcmcIterations >= 700 ? 350 : 250
   });
 
   const metrics = computeAllSourceAccuracyMetrics(prepared, latentOut);
   const pairFixedEffects = fitPairFixedEffectsModel(prepared, latentOut, {
-    bootstrapReplications: params.bootstrapReplications ?? 999
+    bootstrapReplications: usedBootstrapReps
   });
-  const diagnostics = computePanelAccuracyDiagnostics(prepared, latentOut);
+  const diagnostics = computePanelAccuracyDiagnostics(prepared, latentOut, {
+    qualityReport,
+    metrics,
+    pairFixedEffects,
+    preprocessing
+  });
   const ranking = computeComparativeSourceRanking({
     metrics,
     latentOut,
@@ -121,6 +131,13 @@ export function executePanelAccuracyPipeline(params: {
   return {
     engineAttribution:
       'Bayesian Hierarchical Panel Latent Measurement Model (3-Chain Gibbs MCMC + Grubbs Triangulation + Pair Fixed Effects & Rademacher Wild Cluster Bootstrap)',
+    executionMeta: {
+      bootstrapReplications: usedBootstrapReps,
+      mcmcIterations: usedMcmcIterations,
+      elapsedMs: Math.max(1, Date.now() - startedAt),
+      source: params.executionSource ?? 'server_verified',
+      executedAt: new Date().toISOString()
+    },
     ...core,
     preprocessing,
     stataOutput,
@@ -185,6 +202,8 @@ export function evaluateAccuracyPreprocessingRecommendations(params: {
   }
 
   const scenarios: PreprocessingScenarioCandidate[] = [];
+  let rawRankOrderChanged = false;
+  let rawSkewAbs = 0;
 
   for (const spec of candidateSpecs) {
     const opt: AccuracyPreprocessingOptions = {
@@ -209,27 +228,46 @@ export function evaluateAccuracyPreprocessingRecommendations(params: {
     const diag = computePanelAccuracyDiagnostics(prepared, latentOut);
     if (metrics.length === 0) continue;
 
+    if (spec.id === 'raw_baseline') {
+      rawRankOrderChanged = diag.outlierSensitivityAudit.rankOrderChanged;
+      rawSkewAbs = Math.abs(diag.normalityAndCltNote.residualSkewness);
+    }
+
     const sorted = [...metrics].sort((a, b) => a.totalLatentRmse - b.totalLatentRmse);
     const best = sorted[0];
+    const meanReliabilityR2 =
+      metrics.reduce((sum, m) => sum + m.reliabilityR2, 0) / Math.max(1, metrics.length);
+    const minReliabilityR2 = Math.min(...metrics.map(m => m.reliabilityR2), 1);
+    const maxRhat = latentOut.summary.maxRhat;
     const maxPropBiasT = Math.max(...metrics.map(m => Math.abs(m.blandAltman.propBiasTStat)), 0);
     const maxOutlierShift = Math.max(
       ...diag.outlierSensitivityAudit.entries.map(e => Math.abs(e.shiftPct)),
       0
     );
 
-    const isRecommended =
-      spec.id === 'raw_baseline'
-        ? baseQuality.outlierCountTotal === 0 || !diag.outlierSensitivityAudit.rankOrderChanged
-        : spec.id === 'winsor_25' &&
-          baseQuality.outlierCountTotal > 0 &&
-          diag.outlierSensitivityAudit.rankOrderChanged;
+    const reliabilityPts = 45 * Math.max(0, Math.min(1, meanReliabilityR2));
+    const convergencePts =
+      maxRhat <= 1.05 ? 20 : maxRhat <= 1.1 ? 15 : Math.max(0, 15 - (maxRhat - 1.1) * 40);
+    const stabilityPts = !diag.outlierSensitivityAudit.rankOrderChanged
+      ? maxOutlierShift <= 10
+        ? 20
+        : maxOutlierShift <= 20
+          ? 15
+          : 10
+      : 4;
+    const propBiasPts = maxPropBiasT <= 2.0 ? 10 : maxPropBiasT <= 3.5 ? 6 : 3;
+    const interpretabilityBonus =
+      spec.id === 'raw_baseline' ? 5 : spec.id === 'winsor_25' ? 2 : 0;
+    const compositeQualityScore = Number(
+      Math.max(0, Math.min(100, reliabilityPts + convergencePts + stabilityPts + propBiasPts + interpretabilityBonus)).toFixed(1)
+    );
 
     const rationale =
       spec.id === 'raw_baseline'
-        ? `Mempertahankan satuan fisik asli (${best.unit}); Total Latent RMSE terendah = ${best.totalLatentRmse.toFixed(2)} pada ${best.sourceLabel} (R² = ${(best.reliabilityR2 * 100).toFixed(2)}%).`
+        ? `Mempertahankan satuan fisik asli (${best.unit}); Sumber #1 = ${best.sourceLabel}, Mean Reliabilitas R² = ${(meanReliabilityR2 * 100).toFixed(2)}%, Max R-hat = ${maxRhat.toFixed(3)}.`
         : spec.id === 'winsor_25'
-          ? `Meredam ${baseQuality.outlierCountTotal} observasi ekstrem; pergeseran sensitivitas maks ${maxOutlierShift.toFixed(1)}%.`
-          : `Mengevaluasi reliabilitas proporsional pada skala logaritmik (CCC terbaik = ${best.ccc.ccc.toFixed(4)}, |t| proportional bias maks = ${maxPropBiasT.toFixed(2)}).`;
+          ? `Meredam ${baseQuality.outlierCountTotal} observasi ekstrem; pergeseran sensitivitas maks ${maxOutlierShift.toFixed(1)}% (Mean R² = ${(meanReliabilityR2 * 100).toFixed(2)}%).`
+          : `Mengevaluasi reliabilitas proporsional pada skala logaritmik (Mean R² = ${(meanReliabilityR2 * 100).toFixed(2)}%, CCC terbaik = ${best.ccc.ccc.toFixed(4)}, |t| proportional bias maks = ${maxPropBiasT.toFixed(2)}).`;
 
     scenarios.push({
       id: spec.id,
@@ -241,18 +279,124 @@ export function evaluateAccuracyPreprocessingRecommendations(params: {
       bestMae: best.mae,
       bestNmaePct: best.nmaePct,
       bestCcc: best.ccc.ccc,
+      meanReliabilityR2,
+      minReliabilityR2,
+      maxRhat,
+      topLatentRmse: best.totalLatentRmse,
+      compositeQualityScore,
       maxProportionalBiasAbsT: maxPropBiasT,
       outlierSensitivityShiftPct: maxOutlierShift,
-      isRecommended,
+      isRecommended: false,
       rationale
     });
   }
 
-  const recommended =
-    scenarios.find(s => s.isRecommended) || scenarios[0];
+  const rawScen = scenarios.find(s => s.id === 'raw_baseline') || scenarios[0];
+  const winsorScen = scenarios.find(s => s.id === 'winsor_25');
+  const logScen = scenarios.find(s => s.id === 'log1p_only');
+  const logWinsorScen = scenarios.find(s => s.id === 'log1p_winsor');
+
+  let recommended = rawScen;
+  const outlierSevere =
+    baseQuality.outlierCountTotal > 0 &&
+    (rawRankOrderChanged || (rawScen?.outlierSensitivityShiftPct ?? 0) > 20);
+  const rawPropSevere = (rawScen?.maxProportionalBiasAbsT ?? 0) > 2.5;
+  const skewSevere = rawSkewAbs > 1.5;
+
+  // Pick statistically optimal candidate based on composite score + interpretability guardrails
+  const sortedByQuality = [...scenarios].sort(
+    (a, b) => b.compositeQualityScore - a.compositeQualityScore
+  );
+  if (sortedByQuality.length > 0 && rawScen) {
+    const topQual = sortedByQuality[0];
+    // Preserve physical units (raw_baseline) unless another candidate meaningfully improves composite quality (> +2.5 pts)
+    // or specifically remediates severe outlier rank shifts / proportional bias without sacrificing reliability.
+    if (
+      topQual.id !== rawScen.id &&
+      (topQual.compositeQualityScore >= rawScen.compositeQualityScore + 2.5 ||
+        outlierSevere ||
+        (rawPropSevere && skewSevere && logScen && logScen.maxProportionalBiasAbsT < rawScen.maxProportionalBiasAbsT - 0.8))
+    ) {
+      recommended = topQual;
+    } else if (outlierSevere && winsorScen) {
+      recommended = winsorScen;
+    } else if (
+      rawPropSevere &&
+      skewSevere &&
+      !hasNegatives &&
+      logScen &&
+      logScen.compositeQualityScore >= rawScen.compositeQualityScore - 1
+    ) {
+      recommended =
+        logWinsorScen && logWinsorScen.compositeQualityScore > logScen.compositeQualityScore + 1.5
+          ? logWinsorScen
+          : logScen;
+    }
+  }
+
   scenarios.forEach(s => {
     s.isRecommended = s.id === recommended.id;
   });
+
+  const actionItems: StepRecommendationAction[] = [];
+  if (hasDuplicates) {
+    actionItems.push({
+      id: 'step3_drop_dups',
+      priority: 'KRITIS',
+      title: `Hapus ${baseQuality.duplicateKeys.length} Kunci Duplikat (City, Year)`,
+      statisticalBasis:
+        'Duplikasi City-Year melanggar identifikasi panel xtset dan menggandakan bobot kota tertentu secara tidak sah.',
+      actionLabel: 'Aktifkan Penghapusan Duplikat (Pertahankan Entri Pertama)',
+      expectedImpact: 'Menjamin struktur panel unik untuk Pair Fixed Effects dan model laten.',
+      actionType: 'DROP_DUPLICATES'
+    });
+  }
+  if (params.dataset.sources.length < 3) {
+    actionItems.push({
+      id: 'step3_need_3_sources',
+      priority: 'KRITIS',
+      title: `Tambahkan Sumber Pengukuran Ke-3 (Saat Ini J = ${params.dataset.sources.length})`,
+      statisticalBasis:
+        'Model pengukuran laten tanpa variabel referensi memerlukan minimal 3 sumber independen untuk identifikasi unik varians error.',
+      actionLabel: 'Kembali ke Step 2 untuk Menambah Sumber',
+      expectedImpact: 'Mengaktifkan status identifikasi penuh agar pemeringkatan bersifat konklusif.',
+      actionType: 'ADD_THIRD_SOURCE'
+    });
+  }
+  if (recommended.options.applyWinsorize) {
+    actionItems.push({
+      id: 'step3_apply_winsor',
+      priority: 'TINGGI',
+      title: 'Aktifkan Winsorization 2.5% untuk Meredam Pengaruh Outlier Ekstrem',
+      statisticalBasis: `Skor kualitas meningkat dari ${rawScen.compositeQualityScore} ke ${recommended.compositeQualityScore} dan menstabilkan pergeseran outlier (${recommended.outlierSensitivityShiftPct.toFixed(1)}%).`,
+      actionLabel: 'Terapkan Winsorization 2.5%',
+      expectedImpact: 'Mencegah distorsi varians error tanpa menghapus baris panel berharga.',
+      actionType: 'APPLY_WINSORIZE'
+    });
+  }
+  if (recommended.options.applyLog1p) {
+    actionItems.push({
+      id: 'step3_apply_log1p',
+      priority: 'DISARANKAN',
+      title: 'Aktifkan Transformasi log(1 + x) untuk Bias Proporsional Lintas Skala',
+      statisticalBasis: `Proportional bias pada skala asli signifikan (|t| = ${(rawScen?.maxProportionalBiasAbsT ?? 0).toFixed(2)}); skala log(1+x) mengevaluasi kesalahan relatif persentase.`,
+      actionLabel: 'Terapkan Transformasi log(1 + x)',
+      expectedImpact: `Menurunkan proportional bias menjadi |t| = ${recommended.maxProportionalBiasAbsT.toFixed(2)} dengan Mean R² ${(recommended.meanReliabilityR2 * 100).toFixed(2)}%.`,
+      actionType: 'APPLY_LOG1P'
+    });
+  }
+  if (actionItems.length === 0) {
+    actionItems.push({
+      id: 'step3_keep_optimal',
+      priority: 'OPTIMAL',
+      title: 'Pertahankan Satuan Fisik Asli (Baseline Sudah Optimal)',
+      statisticalBasis: `Data bebas duplikat bermasalah, konvergensi baik (R-hat = ${recommended.maxRhat.toFixed(3)}), dan Mean Reliabilitas R² = ${(recommended.meanReliabilityR2 * 100).toFixed(2)}% (Skor ${recommended.compositeQualityScore}/100).`,
+      actionLabel: 'Terapkan Konfigurasi Optimal Satuan Asli',
+      expectedImpact:
+        'Menjaga interpretabilitas langsung Error SD, RMSE, dan bias dalam satuan fisik asli tanpa distorsi transformasi buatan.',
+      actionType: 'RESET_RAW_BASELINE'
+    });
+  }
 
   return {
     evaluatedCount: scenarios.length,
@@ -260,8 +404,11 @@ export function evaluateAccuracyPreprocessingRecommendations(params: {
     bestScenarioId: recommended.id,
     bestScenario: recommended,
     scenarios,
+    actionItems,
+    optimalChecklistNote:
+      'Pemilihan skenario terbaik Step 3 membandingkan metrik bebas-skala (Mean Reliability R², Max R-hat, Stabilitas Outlier 95% Trim, Proportional Bias |t|) sehingga perbandingan antara skala asli vs log(1+x) bersifat adil secara statistika.',
     summaryNote:
-      `Sistem mengevaluasi ${scenarios.length} skenario prapemrosesan. ` +
-      `Rekomendasi utama adalah "${recommended.label}" agar Error SD (σ_εj), Total Latent RMSE, dan Reliabilitas R² tetap langsung bermakna pada satuan fisik asli.`
+      `Sistem mengevaluasi ${scenarios.length} skenario prapemrosesan (Skor Optimal = ${recommended.compositeQualityScore}/100). ` +
+      `Rekomendasi utama: "${recommended.label}" — mempertahankan estimasi yang valid secara statistika (Mean R² = ${(recommended.meanReliabilityR2 * 100).toFixed(2)}%, Max R-hat = ${recommended.maxRhat.toFixed(3)}).`
   };
 }

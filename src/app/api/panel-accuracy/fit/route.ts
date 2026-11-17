@@ -24,9 +24,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const bootstrapReplicationsRaw = Number(body?.bootstrapReplications);
+    const mcmcIterationsRaw = Number(body?.mcmcIterations);
+    const bootstrapReplications = Number.isFinite(bootstrapReplicationsRaw)
+      ? Math.max(499, Math.min(1999, Math.round(bootstrapReplicationsRaw)))
+      : 999;
+    const mcmcIterations = Number.isFinite(mcmcIterationsRaw)
+      ? Math.max(250, Math.min(900, Math.round(mcmcIterationsRaw)))
+      : 450;
+
     const result = executePanelAccuracyPipeline({
       dataset,
-      preprocessing
+      preprocessing,
+      bootstrapReplications,
+      mcmcIterations,
+      executionSource: 'server_verified'
     });
 
     return NextResponse.json({ success: true, data: result });

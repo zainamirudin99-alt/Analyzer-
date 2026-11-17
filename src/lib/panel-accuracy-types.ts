@@ -403,6 +403,31 @@ export interface OutlierSensitivityEntry {
   shiftPct: number;
 }
 
+export interface StepRecommendationAction {
+  id: string;
+  priority: 'KRITIS' | 'TINGGI' | 'DISARANKAN' | 'OPTIMAL';
+  title: string;
+  statisticalBasis: string;
+  actionLabel: string;
+  expectedImpact: string;
+  actionType:
+    | 'DROP_DUPLICATES'
+    | 'APPLY_WINSORIZE'
+    | 'APPLY_LOG1P'
+    | 'RESET_RAW_BASELINE'
+    | 'RUN_HIGH_PRECISION_VERIFICATION'
+    | 'ADD_THIRD_SOURCE'
+    | 'KEEP_CURRENT';
+}
+
+export interface Step7DiagnosticAdvisorBundle {
+  overallHealthStatus: 'OPTIMAL' | 'PERLU_PENYESUAIAN_RINGAN' | 'PERLU_PERBAIKAN_METODOLOGI';
+  diagnosticScore: number;
+  headline: string;
+  statisticalPrincipleNote: string;
+  actions: StepRecommendationAction[];
+}
+
 export interface PanelAccuracyDiagnosticsResult {
   heteroskedasticityTest: DiagnosticTestEntry;
   serialCorrelationTest: DiagnosticTestEntry;
@@ -432,6 +457,7 @@ export interface PanelAccuracyDiagnosticsResult {
     explanation: string;
   };
   inferenceLimitations: string[];
+  diagnosticAdvisor?: Step7DiagnosticAdvisorBundle;
 }
 
 export interface SourceRankEntry {
@@ -487,6 +513,11 @@ export interface PreprocessingScenarioCandidate {
   bestMae: number;
   bestNmaePct: number;
   bestCcc: number;
+  meanReliabilityR2: number;
+  minReliabilityR2: number;
+  maxRhat: number;
+  topLatentRmse: number;
+  compositeQualityScore: number;
   maxProportionalBiasAbsT: number;
   outlierSensitivityShiftPct: number;
   isRecommended: boolean;
@@ -499,6 +530,8 @@ export interface PreprocessingRecommendationBundle {
   bestScenarioId: string;
   bestScenario: PreprocessingScenarioCandidate;
   scenarios: PreprocessingScenarioCandidate[];
+  actionItems: StepRecommendationAction[];
+  optimalChecklistNote: string;
   summaryNote: string;
 }
 
@@ -529,6 +562,13 @@ export interface GeneratedAccuracyCode {
 
 export interface PanelAccuracyFitResult {
   engineAttribution: string;
+  executionMeta?: {
+    bootstrapReplications: number;
+    mcmcIterations: number;
+    elapsedMs: number;
+    source: 'client_live' | 'server_verified';
+    executedAt: string;
+  };
   datasetMeta: {
     cityIdColumn: string;
     yearColumn: string;

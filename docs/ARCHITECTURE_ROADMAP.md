@@ -150,3 +150,12 @@ Mengacu pada `docs/superpowers/specs/2026-11-13-regression-upgrade-design.md`:
 2. **`src/lib/panel-accuracy-intelligent-config.ts`**: Mesin analisis otomatis 14 dimensi kolom dan 5 blok rekomendasi Step 2 untuk identifikasi panel, kelayakan sumber evaluasi, skala/satuan, identifiabilitas model laten ($J \ge 3$), dan prapemrosesan.
 3. **`src/lib/panel-accuracy-step-stata.ts`**: Generator dinamis panel **Stata Command & Statistical Implementation** Step 1–9 (`.do`, `.R`, `.stan`, kegunaan perintah, output, interpretasi 5-poin aktual, Leave-One-City-Out LOCO, dan kesimpulan).
 4. **`src/components/PanelAccuracyStepStataPanel.tsx` & `src/components/PanelAccuracyTab.tsx`**: Antarmuka Wizard 9-Step Reference-Free All-Source Accuracy & Latent Reliability Ranking.
+
+---
+
+## 7. Arsitektur Tahap 9: Sistem Rekomendasi Step 3 & Step 7 + Transparansi Bootstrap Server
+
+1. **`src/lib/panel-accuracy-types.ts` & `src/lib/panel-accuracy-orchestrator.ts`**: Penambahan metrik evaluasi bebas-skala (*Mean Reliability $R^2$*, *Max $\hat{R}$*, *Composite Statistical Quality Score*) dan `actionItems` pada `PreprocessingRecommendationBundle` (Step 3), serta penerusan parameter presisi `bootstrapReplications` & `mcmcIterations` dan `executionMeta`.
+2. **`src/lib/panel-accuracy-diagnostics.ts`**: Penambahan generator `buildStep7DiagnosticAdvisor(...)` yang memproduksi `Step7AdvisorBundle` (skor kesehatan diagnostik, status kelayakan inferensi, dan aksi perbaikan metodologis satu-klik tanpa manipulasi *p-value*).
+3. **`src/app/api/panel-accuracy/fit/route.ts`**: Menerima parameter opsional tervalidasi `bootstrapReplications` (`[499, 1999]`) dan `mcmcIterations` (`[250, 900]`) dari Step 6 & Step 7.
+4. **`src/components/PanelAccuracyTab.tsx`**: Pembaruan UI Step 3 (tabel rekomendasi bebas-skala + Checklist Aksi Optimal), Step 6/7 (Banner Status & Delta Verifikasi Bootstrap Server + tombol presisi tinggi `1.999 Wild Bootstrap + 800 MCMC`), dan panel **Rekomendasi Cerdas Step 7**; plus pembersihan sisa teks lama Step 2.

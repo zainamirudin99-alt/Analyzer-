@@ -195,3 +195,11 @@ Dokumen ini memuat daftar tugas operasional dari Tahap 1 hingga Tahap 3 beserta 
 - [x] **T8.2**: Pembaruan `panel-accuracy-types.ts`, `validation`, `preprocessing`, `metrics`, `fixed-effects`, `diagnostics`, `ranking`, dan `orchestrator` agar seluruh $J$ sumber dievaluasi dan diranking bersama (#1 s/d #$J$) tanpa mengecualikan 1 sumber sebagai reference.
 - [x] **T8.3**: Pembaruan Step 2 `Intelligent Configuration`, `PanelAccuracyTab`, `PanelAccuracyCharts`, `step-guides`, `step-stata`, `codegen`, dan ekspor PDF/DOCX/XLSX/CSV.
 - [x] **T8.4**: Pembaruan & verifikasi menyeluruh (`vitest`, `tsc --noEmit`, `next build`, 0 diff di Option 1).
+
+---
+
+## Tahap 9: Sistem Rekomendasi Cerdas Step 3 & Step 7 + Transparansi Verifikasi Bootstrap Server
+- [x] **T9.1**: Pembaruan `panel-accuracy-types.ts` & `panel-accuracy-orchestrator.ts` untuk metrik rekomendasi bebas-skala Step 3 (`meanReliabilityR2`, `compositeQualityScore`, `actionItems`), parameter `bootstrapReplications`/`mcmcIterations`, dan `executionMeta`.
+- [x] **T9.2**: Penambahan `buildStep7DiagnosticAdvisor` pada `panel-accuracy-diagnostics.ts` dan pembaruan `/api/panel-accuracy/fit/route.ts`.
+- [x] **T9.3**: Pembaruan UI Step 3, Step 6, dan Step 7 di `PanelAccuracyTab.tsx` (Checklist Rekomendasi Optimal Step 3, Kartu Rekomendasi Step 7 + Tombol Aksi Langsung, Banner Status & Delta `499 vs 999/1999 Wild Bootstrap`, pembersihan teks sisa Step 2).
+- [x] **T9.4**: Penambahan unit test Tahap 9 di `tests/unit/panel-accuracy-engine.test.ts` serta verifikasi `tsc --noEmit`, `vitest`, `next build`, dan 0 diff pada Option 1.

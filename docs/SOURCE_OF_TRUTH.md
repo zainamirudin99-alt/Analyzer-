@@ -138,3 +138,16 @@ Spesifikasi terkini untuk **Regresi Data Panel Stata → Option 2** (`PanelAccur
 2. **Stata Command & Statistical Implementation di Seluruh 9 Step**: Setiap step memiliki panel 6 bagian (Tujuan Analisis, Kode Stata/R/Stan dinamis dengan Copy & Download, Kegunaan Setiap Kode, Penjelasan Output, Interpretasi 5-poin aktual, dan Kesimpulan Step).
 3. **Intelligent Measurement Source Configuration Engine (Step 2)**: Analisis 14 karakteristik kolom otomatis dan 5 blok rekomendasi sistem tanpa mewajibkan pemilihan Reference Source.
 4. **Isolasi Mutlak**: Option 1 (`PanelTab.tsx`, `panel-engine.ts`, `/api/panel/*`) dan seluruh menu lain tetap tidak tersentuh (`0` perubahan).
+
+---
+
+## 10. Ekspansi Tahap 9: Rekomendasi Cerdas Step 3 & Step 7 serta Transparansi Verifikasi Bootstrap Server
+
+1. **Rekomendasi Optimal Step 3 (`PreprocessingRecommendationBundle` + `actionItems`)**:
+   - Mengevaluasi seluruh skenario prapemrosesan secara komparatif menggunakan metrik **bebas-skala (*scale-invariant*)** yang adil antara skala asli dan `log(1+x)`: **Mean Reliability ($R^2$)**, **Max MCMC $\hat{R}$**, **Proportional Bias ($|t|$)**, **Outlier Rank Shift (%)**, dan **Skor Kualitas Statistik (0–100)** (menggantikan perbandingan MAE mentah lintas skala yang bias).
+   - Menghasilkan daftar `actionItems` konkret (duplikat, outlier ekstrem pengubah ranking, proportional bias & skewness, identifiabilitas $J \ge 3$) beserta tombol satu-klik **Terapkan Seluruh Rekomendasi Terbaik Step 3** dan ringkasan dampak *Sebelum vs Sesudah*.
+2. **Rekomendasi Optimal Step 7 (`Step7DiagnosticAdvisor`)**:
+   - Menganalisis gabungan hasil diagnostik Step 7 (Heteroskedastisitas, Autokorelasi Serial AR(1), Pesaran CD, Small Cluster $G < 30$, Sensitivitas Outlier 95% Trim, Konvergensi MCMC $\hat{R}$/ESS, PPP, Proportional Bias, Skewness) dan menghasilkan daftar aksi terprioritas yang **sah secara statistika** (tanpa *p-hacking* / fabrikasi signifikansi).
+   - Menyediakan eksekusi langsung dari Step 7 (termasuk **Verifikasi Presisi Tinggi: 1.999 Wild Bootstrap + 800 MCMC**, uji komparatif Winsorization 2.5%, evaluasi skala `log(1+x)`, atau pengembalian ke satuan asli).
+3. **Transparansi Verifikasi Bootstrap Server (Step 6 & Step 7)**:
+   - Menjelaskan perbedaan mode klien cepat (`499` replikasi) vs server penuh (`999` / `1.999` replikasi) dan menampilkan **Kartu Status & Delta Verifikasi** (`Max |\Delta p_{\text{boot}}|`, `Max |\Delta \hat{R}|`, waktu eksekusi, dan konsistensi peringkat #1) setiap kali tombol Bootstrap selesai dijalankan, sehingga pengguna melihat bukti nyata hasil verifikasi bukan perubahan senyap.

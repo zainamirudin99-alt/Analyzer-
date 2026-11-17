@@ -45,7 +45,8 @@ import {
   PanelAccuracyFitResult,
   PanelDataset,
   PreprocessingRecommendationBundle,
-  PreprocessingScenarioCandidate
+  PreprocessingScenarioCandidate,
+  StepRecommendationAction
 } from '@/lib/panel-accuracy-types';
 import {
   autoDetectAccuracyDatasetConfig,
@@ -104,6 +105,160 @@ const BulletCard: React.FC<{
   </div>
 );
 
+const RecommendationActionList: React.FC<{
+  actions: StepRecommendationAction[];
+  onAction: (actionType: StepRecommendationAction['actionType']) => void;
+  disabled?: boolean;
+}> = ({ actions, onAction, disabled }) => {
+  const priorityStyle = (p: StepRecommendationAction['priority']) => {
+    if (p === 'KRITIS') return { bg: '#ef4444', border: '#ef4444', cardBg: 'var(--danger-bg)' };
+    if (p === 'TINGGI') return { bg: '#d97706', border: 'var(--warn-border)', cardBg: 'var(--warn-bg)' };
+    if (p === 'DISARANKAN') return { bg: 'var(--primary)', border: 'var(--primary)', cardBg: 'var(--surface)' };
+    return { bg: 'var(--success)', border: 'var(--border)', cardBg: 'var(--surface)' };
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      {actions.map(act => {
+        const st = priorityStyle(act.priority);
+        return (
+          <div
+            key={act.id}
+            style={{
+              padding: '12px',
+              borderRadius: 'var(--radius-sm)',
+              border: `1px solid ${st.border}`,
+              background: st.cardBg,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '10px'
+            }}
+          >
+            <div style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    background: st.bg,
+                    color: '#fff',
+                    fontSize: '10.5px',
+                    fontWeight: 800
+                  }}
+                >
+                  {act.priority}
+                </span>
+                <strong style={{ fontSize: '13.5px', color: 'var(--text)' }}>{act.title}</strong>
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                <strong>Dasar Statistik:</strong> {act.statisticalBasis}
+              </div>
+              <div style={{ fontSize: '11.5px', color: 'var(--primary)', fontWeight: 600 }}>
+                <strong>Dampak Output:</strong> {act.expectedImpact}
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={disabled}
+              className={act.priority === 'OPTIMAL' ? 'btn btn-outline' : 'btn btn-primary'}
+              onClick={() => onAction(act.actionType)}
+              style={{ minHeight: '40px', fontSize: '12px', whiteSpace: 'nowrap' }}
+            >
+              <Sparkles size={13} style={{ marginRight: '5px' }} /> {act.actionLabel}
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const BootstrapVerificationCard: React.FC<{
+  activeResult: PanelAccuracyFitResult;
+  feedback: {
+    prevBootstrapReps: number;
+    newBootstrapReps: number;
+    prevMcmcIters: number;
+    newMcmcIters: number;
+    elapsedMs: number;
+    maxBootPDelta: number;
+    maxRhatDelta: number;
+    bestSourceBefore: string | null;
+    bestSourceAfter: string | null;
+    executedAt: string;
+  } | null;
+}> = ({ activeResult, feedback }) => {
+  if (!feedback) {
+    return (
+      <div
+        style={{
+          padding: '10px 14px',
+          borderRadius: 'var(--radius-sm)',
+          background: 'var(--surface-muted)',
+          border: '1px solid var(--border)',
+          fontSize: '12.5px',
+          color: 'var(--text-secondary)',
+          lineHeight: 1.5
+        }}
+      >
+        <strong>Status Komputasi Saat Ini (Pratinjau Klien Otomatis):</strong>{' '}
+        <code>{activeResult.pairFixedEffects.bootstrapReplications}</code> Replikasi Rademacher Wild Bootstrap &amp;{' '}
+        <code>{activeResult.latentModel.iterationsPerChain}</code> Iterasi MCMC sudah otomatis dihitung agar seluruh grafik &amp; tabel langsung tampil. Klik tombol verifikasi server untuk menguji ulang dengan{' '}
+        <strong>999 / 1.999 replikasi server</strong> dan melihat delta perubahannya.
+      </div>
+    );
+  }
+
+  const smallDelta = feedback.maxBootPDelta < 0.01 && feedback.bestSourceBefore === feedback.bestSourceAfter;
+
+  return (
+    <div
+      style={{
+        padding: '12px 14px',
+        borderRadius: 'var(--radius-sm)',
+        background: 'var(--info-bg)',
+        border: '1.5px solid var(--success)',
+        fontSize: '12.5px',
+        lineHeight: 1.5,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px'
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        <CheckCircle2 size={16} color="var(--success)" />
+        <strong style={{ color: 'var(--text)', fontSize: '13.5px' }}>
+          Verifikasi Server Berhasil ({feedback.newBootstrapReps} Replikasi Wild Bootstrap ·{' '}
+          {feedback.newMcmcIters} Iterasi MCMC · {feedback.elapsedMs} ms · pukul {feedback.executedAt})
+        </strong>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '8px', fontSize: '12px' }}>
+        <div>
+          <strong>Replikasi Bootstrap:</strong> {feedback.prevBootstrapReps} → <strong>{feedback.newBootstrapReps}</strong>
+        </div>
+        <div>
+          <strong>Max |Δ p-value Bootstrap|:</strong> <strong>{feedback.maxBootPDelta.toFixed(4)}</strong>
+        </div>
+        <div>
+          <strong>Δ Max MCMC R-hat:</strong> <strong>{feedback.maxRhatDelta.toFixed(4)}</strong> (Max R-hat ={' '}
+          {activeResult.latentModel.maxRhat.toFixed(4)})
+        </div>
+        <div>
+          <strong>Stabilitas Peringkat #1:</strong>{' '}
+          <strong>{feedback.bestSourceAfter || 'Underidentified / Tie'}</strong>
+        </div>
+      </div>
+      {smallDelta && (
+        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+          <strong>Mengapa angkanya hampir tidak berubah?</strong> Tombol berjalan normal, namun pratinjau klien sudah menjalankan {feedback.prevBootstrapReps} replikasi Wild Bootstrap deterministik dengan pemisahan sinyal yang jelas antar sumber; peningkatan ke {feedback.newBootstrapReps} replikasi mengonfirmasi bahwa p-value dan peringkat #1 bersifat stabil (tidak bergantung pada jumlah replikasi acak).
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const PanelAccuracyTab: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const initialPreset = useMemo(() => generateMultiSourceCO2PresetDataset(), []);
@@ -137,6 +292,18 @@ export const PanelAccuracyTab: React.FC = () => {
   const [isRunningFit, setIsRunningFit] = useState<boolean>(false);
   const [fitError, setFitError] = useState<string | null>(null);
   const [serverFitResult, setServerFitResult] = useState<PanelAccuracyFitResult | null>(null);
+  const [verificationFeedback, setVerificationFeedback] = useState<{
+    prevBootstrapReps: number;
+    newBootstrapReps: number;
+    prevMcmcIters: number;
+    newMcmcIters: number;
+    elapsedMs: number;
+    maxBootPDelta: number;
+    maxRhatDelta: number;
+    bestSourceBefore: string | null;
+    bestSourceAfter: string | null;
+    executedAt: string;
+  } | null>(null);
 
   // Step 9 Sub-tabs & Export
   const [resultSubTab, setResultSubTab] = useState<'stata' | 'visuals' | 'interpret' | 'code'>('stata');
@@ -197,14 +364,15 @@ export const PanelAccuracyTab: React.FC = () => {
     }
   }, [recommendation, panelDataset, preprocessing.allowNegativeValues]);
 
-  // Reactive live analysis result (automatically updates when Reference Source, Sources, or Preprocessing changes)
+  // Reactive live analysis result (automatically updates when Sources or Preprocessing changes)
   const liveFitResult = useMemo<PanelAccuracyFitResult | null>(() => {
     if (qualityReport.hasBlockingError) return null;
     try {
       return executePanelAccuracyPipeline({
         dataset: panelDataset,
         preprocessing,
-        bootstrapReplications: 499
+        bootstrapReplications: 499,
+        executionSource: 'client_live'
       });
     } catch {
       return null;
@@ -282,6 +450,7 @@ export const PanelAccuracyTab: React.FC = () => {
       setSources(detected.sources);
     }
     setServerFitResult(null);
+    setVerificationFeedback(null);
     setSourceError(null);
     setRecommendation(null);
     setAppliedNotice(null);
@@ -356,6 +525,8 @@ export const PanelAccuracyTab: React.FC = () => {
       prev.map(s => (s.id === id ? { ...s, [field]: value } : s))
     );
     setServerFitResult(null);
+    setVerificationFeedback(null);
+    setRecommendation(null);
   };
 
   const handleAddSource = () => {
@@ -373,12 +544,16 @@ export const PanelAccuracyTab: React.FC = () => {
     };
     setSources(prev => [...prev, newSource]);
     setServerFitResult(null);
+    setVerificationFeedback(null);
+    setRecommendation(null);
   };
 
   const handleRemoveSource = (id: string) => {
     if (sources.length <= 2) return;
     setSources(prev => prev.filter(s => s.id !== id));
     setServerFitResult(null);
+    setVerificationFeedback(null);
+    setRecommendation(null);
   };
 
   // Step 3 Multi-Scenario Evaluation
@@ -407,31 +582,137 @@ export const PanelAccuracyTab: React.FC = () => {
   const handleApplyPreprocessingScenario = (sc: PreprocessingScenarioCandidate) => {
     setPreprocessing({ ...sc.options });
     setServerFitResult(null);
+    setVerificationFeedback(null);
     setAppliedNotice(`Konfigurasi "${sc.label}" diterapkan pada Step 3.`);
   };
 
-  // Full API execution (999 Wild Cluster Bootstrap replications)
-  const handleRunServerPipeline = async () => {
+  // Full API execution (999 or 1.999 Wild Cluster Bootstrap replications + optional 800 MCMC)
+  const handleRunServerPipeline = async (opts?: {
+    bootstrapReplications?: 999 | 1999;
+    mcmcIterations?: 450 | 800;
+  }) => {
+    const reqBoot = opts?.bootstrapReplications ?? 999;
+    const reqMcmc = opts?.mcmcIterations ?? 450;
+    const prevResult = activeResult;
     setIsRunningFit(true);
     setFitError(null);
+    const t0 = performance.now();
     try {
       const res = await fetch('/api/panel-accuracy/fit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           dataset: panelDataset,
-          preprocessing
+          preprocessing,
+          bootstrapReplications: reqBoot,
+          mcmcIterations: reqMcmc
         })
       });
       const json = await res.json();
       if (!res.ok || !json.success || !json.data) {
         throw new Error(json.error || 'Gagal menjalankan analisis di server.');
       }
-      setServerFitResult(json.data);
+      const nextResult = json.data as PanelAccuracyFitResult;
+      const clientElapsed = Math.max(1, Math.round(performance.now() - t0));
+
+      let maxBootPDelta = 0;
+      if (prevResult) {
+        maxBootPDelta = Math.abs(
+          (prevResult.pairFixedEffects.omnibusWildBootstrapPValue ?? 0) -
+            (nextResult.pairFixedEffects.omnibusWildBootstrapPValue ?? 0)
+        );
+        prevResult.pairFixedEffects.pairwiseContrasts.forEach(prevC => {
+          const matchC = nextResult.pairFixedEffects.pairwiseContrasts.find(
+            nc =>
+              (nc.sourceAId === prevC.sourceAId && nc.sourceBId === prevC.sourceBId) ||
+              (nc.sourceAId === prevC.sourceBId && nc.sourceBId === prevC.sourceAId)
+          );
+          if (matchC) {
+            maxBootPDelta = Math.max(
+              maxBootPDelta,
+              Math.abs(prevC.wildBootstrapPValue - matchC.wildBootstrapPValue)
+            );
+          }
+        });
+      }
+
+      const maxRhatDelta = prevResult
+        ? Math.abs(prevResult.latentModel.maxRhat - nextResult.latentModel.maxRhat)
+        : 0;
+
+      setServerFitResult(nextResult);
+      setVerificationFeedback({
+        prevBootstrapReps: prevResult?.pairFixedEffects.bootstrapReplications ?? 499,
+        newBootstrapReps: nextResult.pairFixedEffects.bootstrapReplications,
+        prevMcmcIters: prevResult?.latentModel.iterationsPerChain ?? 450,
+        newMcmcIters: nextResult.latentModel.iterationsPerChain,
+        elapsedMs: nextResult.executionMeta?.elapsedMs ?? clientElapsed,
+        maxBootPDelta,
+        maxRhatDelta,
+        bestSourceBefore: prevResult?.ranking.bestSourceLabel ?? null,
+        bestSourceAfter: nextResult.ranking.bestSourceLabel ?? null,
+        executedAt: new Date().toLocaleTimeString('id-ID')
+      });
     } catch (err: any) {
       setFitError(err.message || 'Gagal menjalankan pipeline analisis.');
     } finally {
       setIsRunningFit(false);
+    }
+  };
+
+  const handleStepRecommendationAction = (
+    actionType:
+      | 'DROP_DUPLICATES'
+      | 'APPLY_WINSORIZE'
+      | 'APPLY_LOG1P'
+      | 'RESET_RAW_BASELINE'
+      | 'RUN_HIGH_PRECISION_VERIFICATION'
+      | 'ADD_THIRD_SOURCE'
+      | 'KEEP_CURRENT'
+  ) => {
+    if (actionType === 'DROP_DUPLICATES') {
+      setPreprocessing(p => ({ ...p, dropDuplicateCityYear: true }));
+      setServerFitResult(null);
+      setVerificationFeedback(null);
+      setAppliedNotice('Penghapusan duplikat (City, Year) diaktifkan.');
+      return;
+    }
+    if (actionType === 'APPLY_WINSORIZE') {
+      setPreprocessing(p => ({ ...p, applyWinsorize: true }));
+      setServerFitResult(null);
+      setVerificationFeedback(null);
+      setAppliedNotice('Winsorization 2.5% diaktifkan untuk mengendalikan pengaruh outlier ekstrem.');
+      return;
+    }
+    if (actionType === 'APPLY_LOG1P') {
+      setPreprocessing(p => ({ ...p, applyLog1p: true }));
+      setServerFitResult(null);
+      setVerificationFeedback(null);
+      setAppliedNotice('Transformasi skala log(1 + x) diaktifkan untuk mengevaluasi kesalahan relatif proporsional.');
+      return;
+    }
+    if (actionType === 'RESET_RAW_BASELINE') {
+      setPreprocessing(p => ({
+        ...p,
+        applyWinsorize: false,
+        applyLog1p: false,
+        dropDuplicateCityYear: qualityReport.duplicateKeys.length > 0
+      }));
+      setServerFitResult(null);
+      setVerificationFeedback(null);
+      setAppliedNotice('Konfigurasi satuan fisik asli optimal diterapkan.');
+      return;
+    }
+    if (actionType === 'ADD_THIRD_SOURCE') {
+      setCurrentStep(2);
+      return;
+    }
+    if (actionType === 'RUN_HIGH_PRECISION_VERIFICATION') {
+      void handleRunServerPipeline({ bootstrapReplications: 1999, mcmcIterations: 800 });
+      return;
+    }
+    if (actionType === 'KEEP_CURRENT') {
+      setCurrentStep(8);
     }
   };
 
@@ -499,8 +780,6 @@ export const PanelAccuracyTab: React.FC = () => {
         : 'panel_comparative_accuracy.R';
     triggerDownload(new Blob([activeCodeText], { type: 'text/plain;charset=utf-8' }), fname);
   };
-
-  const refSource = sources.find(s => s.role === 'reference');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '28px' }}>
@@ -807,7 +1086,7 @@ export const PanelAccuracyTab: React.FC = () => {
                   Step 2 — Intelligent Measurement Source Configuration &amp; Source Recommendation
                 </h3>
                 <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                  Mesin konfigurasi cerdas menganalisis 14 karakteristik kolom secara otomatis untuk merekomendasikan City ID, Year, Reference Source, dan Comparison Sources.
+                  Mesin konfigurasi cerdas menganalisis 14 karakteristik kolom secara otomatis untuk merekomendasikan City ID, Year, dan seluruh sumber pengukuran secara setara (tanpa Reference Source terkunci).
                 </p>
               </div>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -821,6 +1100,8 @@ export const PanelAccuracyTab: React.FC = () => {
                     setSources(intelligentConfig.recommendedMapping.sources.map(s => ({ ...s })));
                     setManualConfigActive(false);
                     setServerFitResult(null);
+                    setVerificationFeedback(null);
+                    setRecommendation(null);
                     setStep2ConfigNotice('Auto Configure: Konfigurasi kolom otomatis berhasil diterapkan dari hasil deteksi 14 dimensi.');
                   }}
                 >
@@ -837,6 +1118,8 @@ export const PanelAccuracyTab: React.FC = () => {
                     setPreprocessing({ ...intelligentConfig.blockEPreprocessing.recommendedPreprocessing });
                     setManualConfigActive(false);
                     setServerFitResult(null);
+                    setVerificationFeedback(null);
+                    setRecommendation(null);
                     setStep2ConfigNotice('Apply Recommendation: Rekomendasi pemetaan sumber beserta saran prapemrosesan berhasil diterapkan.');
                   }}
                 >
@@ -872,6 +1155,8 @@ export const PanelAccuracyTab: React.FC = () => {
                     setPreprocessing(DEFAULT_ACCURACY_PREPROCESSING);
                     setManualConfigActive(false);
                     setServerFitResult(null);
+                    setVerificationFeedback(null);
+                    setRecommendation(null);
                     setStep2ConfigNotice('Reset Configuration: Pemetaan variabel dikembalikan ke kondisi awal.');
                   }}
                 >
@@ -1268,12 +1553,15 @@ export const PanelAccuracyTab: React.FC = () => {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                         <span style={{ padding: '3px 9px', borderRadius: '999px', background: 'var(--primary)', color: '#fff', fontSize: '11.5px', fontWeight: 800 }}>
                           <ShieldCheck size={13} style={{ marginRight: '4px', verticalAlign: 'text-bottom' }} />
-                          REKOMENDASI UTAMA
+                          REKOMENDASI UTAMA (SKOR {recommendation.bestScenario.compositeQualityScore}/100)
                         </span>
                         <strong style={{ fontSize: '14px' }}>{recommendation.bestScenario.label}</strong>
                       </div>
                       <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
                         {recommendation.bestScenario.rationale}
+                      </div>
+                      <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                        {recommendation.optimalChecklistNote}
                       </div>
                     </div>
                     <button
@@ -1282,9 +1570,21 @@ export const PanelAccuracyTab: React.FC = () => {
                       onClick={() => handleApplyPreprocessingScenario(recommendation.bestScenario)}
                       style={{ minHeight: '42px', fontSize: '13px' }}
                     >
-                      <Sparkles size={14} style={{ marginRight: '6px' }} /> Terapkan Rekomendasi
+                      <Sparkles size={14} style={{ marginRight: '6px' }} /> Terapkan Seluruh Rekomendasi Terbaik Step 3
                     </button>
                   </div>
+
+                  {recommendation.actionItems && recommendation.actionItems.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <strong style={{ fontSize: '13px', color: 'var(--primary)' }}>
+                        Rekomendasi Tindakan Optimal Step 3 (Berbasis Audit Kualitas &amp; Reliabilitas Bebas-Skala):
+                      </strong>
+                      <RecommendationActionList
+                        actions={recommendation.actionItems}
+                        onAction={handleStepRecommendationAction}
+                      />
+                    </div>
+                  )}
 
                   <div>
                     <button
@@ -1300,8 +1600,8 @@ export const PanelAccuracyTab: React.FC = () => {
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
                           <thead>
                             <tr style={{ background: 'var(--surface-muted)' }}>
-                              {['Skenario', 'N (CC)', 'Sumber MAE Terbaik', 'MAE Terbaik', 'Lin CCC Terbaik', 'Shift Outlier (%)', 'Aksi'].map(h => (
-                                <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Skenario' || h === 'Sumber MAE Terbaik' ? 'left' : 'right', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                              {['Skenario', 'N (CC)', 'Sumber #1', 'Mean R²', 'Max R-hat', 'Prop Bias |t|', 'Shift Outlier (%)', 'Skor Statistik', 'Aksi'].map(h => (
+                                <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Skenario' || h === 'Sumber #1' ? 'left' : 'right', borderBottom: '1px solid var(--border)' }}>{h}</th>
                               ))}
                             </tr>
                           </thead>
@@ -1311,9 +1611,11 @@ export const PanelAccuracyTab: React.FC = () => {
                                 <td style={{ padding: '8px 10px', fontWeight: 700 }}>{sc.label}</td>
                                 <td style={{ padding: '8px 10px', textAlign: 'right' }}>{sc.nCompletePairs}</td>
                                 <td style={{ padding: '8px 10px' }}>{sc.bestComparisonLabel}</td>
-                                <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700 }}>{sc.bestMae.toFixed(3)}</td>
-                                <td style={{ padding: '8px 10px', textAlign: 'right' }}>{sc.bestCcc.toFixed(4)}</td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700 }}>{(sc.meanReliabilityR2 * 100).toFixed(2)}%</td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right' }}>{sc.maxRhat.toFixed(3)}</td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right' }}>{sc.maxProportionalBiasAbsT.toFixed(2)}</td>
                                 <td style={{ padding: '8px 10px', textAlign: 'right' }}>{sc.outlierSensitivityShiftPct.toFixed(1)}%</td>
+                                <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: 'var(--primary)' }}>{sc.compositeQualityScore.toFixed(1)}/100</td>
                                 <td style={{ padding: '8px 10px', textAlign: 'right' }}>
                                   <button
                                     type="button"
@@ -1342,7 +1644,11 @@ export const PanelAccuracyTab: React.FC = () => {
                 <input
                   type="checkbox"
                   checked={preprocessing.dropDuplicateCityYear}
-                  onChange={e => setPreprocessing(p => ({ ...p, dropDuplicateCityYear: e.target.checked }))}
+                  onChange={e => {
+                    setPreprocessing(p => ({ ...p, dropDuplicateCityYear: e.target.checked }));
+                    setServerFitResult(null);
+                    setVerificationFeedback(null);
+                  }}
                 />
                 <span>Hapus baris duplikat (City, Year) dan pertahankan entri pertama</span>
               </label>
@@ -1350,7 +1656,11 @@ export const PanelAccuracyTab: React.FC = () => {
                 <input
                   type="checkbox"
                   checked={preprocessing.applyWinsorize}
-                  onChange={e => setPreprocessing(p => ({ ...p, applyWinsorize: e.target.checked }))}
+                  onChange={e => {
+                    setPreprocessing(p => ({ ...p, applyWinsorize: e.target.checked }));
+                    setServerFitResult(null);
+                    setVerificationFeedback(null);
+                  }}
                 />
                 <span>Terapkan Winsorization 2.5% ekor bawah &amp; atas untuk meredam outlier input ekstrem</span>
               </label>
@@ -1358,7 +1668,11 @@ export const PanelAccuracyTab: React.FC = () => {
                 <input
                   type="checkbox"
                   checked={preprocessing.applyLog1p}
-                  onChange={e => setPreprocessing(p => ({ ...p, applyLog1p: e.target.checked }))}
+                  onChange={e => {
+                    setPreprocessing(p => ({ ...p, applyLog1p: e.target.checked }));
+                    setServerFitResult(null);
+                    setVerificationFeedback(null);
+                  }}
                 />
                 <span>Terapkan transformasi <code>log(1 + x)</code> pada seluruh sumber (evaluasi kesalahan relatif proporsional)</span>
               </label>
@@ -1449,7 +1763,7 @@ export const PanelAccuracyTab: React.FC = () => {
             <PanelAccuracyEDACharts
               eda={edaResult}
               sources={sources}
-              unitLabel={activeResult?.datasetMeta.workingUnitNote || refSource?.unit || 'kt CO₂'}
+              unitLabel={activeResult?.datasetMeta.workingUnitNote || sources[0]?.unit || 'kt CO₂'}
             />
 
             {stepPoints && (
@@ -1574,13 +1888,15 @@ export const PanelAccuracyTab: React.FC = () => {
                 type="button"
                 className="btn btn-primary"
                 disabled={isRunningFit}
-                onClick={handleRunServerPipeline}
+                onClick={() => handleRunServerPipeline({ bootstrapReplications: 999, mcmcIterations: 450 })}
                 style={{ minHeight: '44px', fontSize: '13px' }}
               >
                 <Play size={15} style={{ marginRight: '6px' }} />
                 {isRunningFit ? 'Menjalankan 999 Wild Bootstrap...' : 'Verifikasi Penuh Server (999 Replikasi Bootstrap)'}
               </button>
             </div>
+
+            <BootstrapVerificationCard activeResult={activeResult} feedback={verificationFeedback} />
 
             {fitError && (
               <div style={{ padding: '12px', borderRadius: 'var(--radius-sm)', background: 'var(--danger-bg)', color: '#ef4444', fontSize: '13px' }}>
@@ -1691,14 +2007,100 @@ export const PanelAccuracyTab: React.FC = () => {
         {/* STEP 7: STATISTICAL DIAGNOSTICS & INFERENCE */}
         {currentStep === 7 && activeResult && (
           <>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
-                Step 7 — Diagnostik Statistik, Sensitivitas Outlier &amp; Keterbatasan Inferensi
-              </h3>
-              <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                Pemeriksaan heteroskedastisitas antarsumber, korelasi serial dalam-kota, ketergantungan lintas-kota (Pesaran CD), jumlah klaster, sensitivitas outlier, serta sifat distribusi residual.
-              </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
+                  Step 7 — Diagnostik Statistik, Sensitivitas Outlier &amp; Keterbatasan Inferensi
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Pemeriksaan heteroskedastisitas antarsumber, korelasi serial dalam-kota, ketergantungan lintas-kota (Pesaran CD), jumlah klaster, sensitivitas outlier, serta rekomendasi optimasi inferensi.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={isRunningFit}
+                onClick={() => handleRunServerPipeline({ bootstrapReplications: 1999, mcmcIterations: 800 })}
+                style={{ minHeight: '44px', fontSize: '13px' }}
+              >
+                <Play size={15} style={{ marginRight: '6px' }} />
+                {isRunningFit
+                  ? 'Menjalankan 1.999 Bootstrap + 800 MCMC...'
+                  : 'Verifikasi Presisi Penuh (1.999 Bootstrap + 800 MCMC)'}
+              </button>
             </div>
+
+            <BootstrapVerificationCard activeResult={activeResult} feedback={verificationFeedback} />
+
+            {appliedNotice && (
+              <div style={{ padding: '10px 12px', borderRadius: '6px', background: 'var(--info-bg)', border: '1px solid var(--primary)', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CheckCircle2 size={15} color="var(--success)" /> {appliedNotice}
+              </div>
+            )}
+
+            {fitError && (
+              <div style={{ padding: '12px', borderRadius: 'var(--radius-sm)', background: 'var(--danger-bg)', color: '#ef4444', fontSize: '13px' }}>
+                {fitError}
+              </div>
+            )}
+
+            {activeResult.diagnostics.diagnosticAdvisor && (
+              <div
+                style={{
+                  padding: '16px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: `1.5px solid ${
+                    activeResult.diagnostics.diagnosticAdvisor.overallHealthStatus === 'OPTIMAL'
+                      ? 'var(--success)'
+                      : activeResult.diagnostics.diagnosticAdvisor.overallHealthStatus === 'PERLU_PENYESUAIAN_RINGAN'
+                        ? 'var(--primary)'
+                        : '#ef4444'
+                  }`,
+                  background: 'var(--surface-muted)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <ShieldCheck size={18} color="var(--primary)" />
+                    <strong style={{ fontSize: '14.5px' }}>
+                      Rekomendasi Sistem Step 7 — Analisis Diagnostik &amp; Aksi Hasil Terbaik
+                    </strong>
+                  </div>
+                  <span
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '999px',
+                      background:
+                        activeResult.diagnostics.diagnosticAdvisor.overallHealthStatus === 'OPTIMAL'
+                          ? 'var(--success)'
+                          : activeResult.diagnostics.diagnosticAdvisor.overallHealthStatus === 'PERLU_PENYESUAIAN_RINGAN'
+                            ? 'var(--primary)'
+                            : '#ef4444',
+                      color: '#fff',
+                      fontSize: '11.5px',
+                      fontWeight: 800
+                    }}
+                  >
+                    SKOR DIAGNOSTIK: {activeResult.diagnostics.diagnosticAdvisor.diagnosticScore}/100 (
+                    {activeResult.diagnostics.diagnosticAdvisor.overallHealthStatus})
+                  </span>
+                </div>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>
+                  {activeResult.diagnostics.diagnosticAdvisor.headline}
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                  {activeResult.diagnostics.diagnosticAdvisor.statisticalPrincipleNote}
+                </div>
+                <RecommendationActionList
+                  actions={activeResult.diagnostics.diagnosticAdvisor.actions}
+                  onAction={handleStepRecommendationAction}
+                  disabled={isRunningFit}
+                />
+              </div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: '12px' }}>
               {[

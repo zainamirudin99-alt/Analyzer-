@@ -14,13 +14,27 @@ import { fDistPValue } from './panel-accuracy-inference';
 import { LatentEngineInternalOutput } from './panel-accuracy-latent';
 import { PreparedPanelAccuracyData } from './panel-accuracy-preprocessing';
 import {
+  AccuracyPreprocessingOptions,
   OutlierSensitivityEntry,
-  PanelAccuracyDiagnosticsResult
+  PairFixedEffectsResult,
+  PanelAccuracyDiagnosticsResult,
+  PanelAccuracyQualityReport,
+  SourceAccuracyMetricRow,
+  Step7DiagnosticAdvisorBundle,
+  StepRecommendationAction
 } from './panel-accuracy-types';
+
+export interface Step7DiagnosticsContext {
+  qualityReport?: PanelAccuracyQualityReport;
+  metrics?: SourceAccuracyMetricRow[];
+  pairFixedEffects?: PairFixedEffectsResult;
+  preprocessing?: AccuracyPreprocessingOptions;
+}
 
 export function computePanelAccuracyDiagnostics(
   prepared: PreparedPanelAccuracyData,
-  latentOut: LatentEngineInternalOutput
+  latentOut: LatentEngineInternalOutput,
+  context?: Step7DiagnosticsContext
 ): PanelAccuracyDiagnosticsResult {
   const { completeCaseObservations, comparisonSources, cities } = prepared;
   const P = completeCaseObservations.length;
@@ -282,6 +296,22 @@ export function computePanelAccuracyDiagnostics(
       : [])
   ];
 
+  const diagnosticAdvisor = buildStep7DiagnosticAdvisor({
+    nSources: latentSummary.nSources,
+    nClusters: G,
+    maxRhat: latentSummary.maxRhat,
+    minEss: latentSummary.minEss,
+    converged: latentSummary.converged,
+    ppp: latentSummary.posteriorPredictivePValue,
+    rankOrderChanged,
+    maxOutlierShift: Math.max(...rawEntries.map(e => Math.abs(e.shiftPct)), 0),
+    heteroskedasticityWarning: heteroskedasticityTest.status === 'warning',
+    serialWarning: serialCorrelationTest.status === 'warning',
+    cdWarning: crossSectionalDependenceTest.status === 'warning',
+    skew,
+    context
+  });
+
   return {
     heteroskedasticityTest,
     serialCorrelationTest,
@@ -290,6 +320,238 @@ export function computePanelAccuracyDiagnostics(
     outlierSensitivityAudit,
     bayesianConvergenceAudit,
     normalityAndCltNote,
-    inferenceLimitations
+    inferenceLimitations,
+    diagnosticAdvisor
+  };
+}
+
+function buildStep7DiagnosticAdvisor(params: {
+  nSources: number;
+  nClusters: number;
+  maxRhat: number;
+  minEss: number;
+  converged: boolean;
+  ppp: number;
+  rankOrderChanged: boolean;
+  maxOutlierShift: number;
+  heteroskedasticityWarning: boolean;
+  serialWarning: boolean;
+  cdWarning: boolean;
+  skew: number;
+  context?: Step7DiagnosticsContext;
+}): Step7DiagnosticAdvisorBundle {
+  const {
+    nSources,
+    nClusters,
+    maxRhat,
+    minEss,
+    converged,
+    ppp,
+    rankOrderChanged,
+    maxOutlierShift,
+    heteroskedasticityWarning,
+    serialWarning,
+    cdWarning,
+    skew,
+    context
+  } = params;
+
+  const actions: StepRecommendationAction[] = [];
+  let score = 100;
+  const bootReps = context?.pairFixedEffects?.bootstrapReplications ?? 499;
+  const preproc = context?.preprocessing;
+  const hasNegatives =
+    (context?.qualityReport?.checks.find(c => c.id === 'negative_or_zero')?.count || 0) > 0;
+  const maxPropBiasAbsT = Math.max(
+    ...(context?.metrics?.map(m => Math.abs(m.blandAltman.propBiasTStat)) || [0]),
+    0
+  );
+
+  if (nSources < 3) {
+    score -= 35;
+    actions.push({
+      id: 'diag_add_3rd_source',
+      priority: 'KRITIS',
+      title: `Model Laten Underidentified (Hanya J = ${nSources} Sumber)`,
+      statisticalBasis:
+        'Tanpa variabel referensi terkunci, model kongenerik memerlukan J ≥ 3 sumber independen agar varians error (σ²_εj) tiap sumber teridentifikasi unik (df ≥ 0).',
+      actionLabel: 'Kembali ke Step 2 & Tambah Sumber Ke-3',
+      expectedImpact:
+        'Membuka identifikasi penuh Error SD, Reliability R², dan mengubah status dari MODEL_TIDAK_TERIDENTIFIKASI menjadi kesimpulan definitif.',
+      actionType: 'ADD_THIRD_SOURCE'
+    });
+  }
+
+  if (!converged || maxRhat > 1.1 || minEss < 80) {
+    score -= 18;
+    actions.push({
+      id: 'diag_mcmc_high_precision',
+      priority: 'TINGGI',
+      title: `Tingkatkan Presisi Rantai MCMC (R-hat = ${maxRhat.toFixed(4)}, ESS = ${minEss})`,
+      statisticalBasis:
+        'Konvergensi Bayesian optimal mensyaratkan Split R-hat ≤ 1.05 dan ESS ≥ 150 agar estimasi ekor Error SD dan Posterior Probability stabil.',
+      actionLabel: 'Jalankan Verifikasi Presisi Tinggi (1.999 Bootstrap + 800 MCMC)',
+      expectedImpact:
+        'Menambah jumlah penarikan posterior hingga 800 iterasi per rantai (3 rantai = 2.400 draw) sehingga R-hat turun mendekati 1.00 dan ESS meningkat.',
+      actionType: 'RUN_HIGH_PRECISION_VERIFICATION'
+    });
+  } else if (maxRhat > 1.05 || minEss < 150) {
+    score -= 5;
+    actions.push({
+      id: 'diag_mcmc_refine',
+      priority: 'DISARANKAN',
+      title: `Perhalus Konvergensi & Bootstrap (R-hat = ${maxRhat.toFixed(4)}, ESS = ${minEss})`,
+      statisticalBasis:
+        'Konvergensi sudah memenuhi ambang dasar (≤ 1.10), namun peningkatan iterasi MCMC ke 800 serta 1.999 replikasi Bootstrap meningkatkan stabilitas interval kepercayaan 95%.',
+      actionLabel: 'Jalankan Verifikasi Presisi Tinggi (1.999 Bootstrap + 800 MCMC)',
+      expectedImpact:
+        'Memperhalus p-value Rademacher Wild Bootstrap hingga presisi 0.0005 dan memperbesar ESS.',
+      actionType: 'RUN_HIGH_PRECISION_VERIFICATION'
+    });
+  }
+
+  if (rankOrderChanged || maxOutlierShift > 20) {
+    if (!preproc?.applyWinsorize) {
+      score -= 16;
+      actions.push({
+        id: 'diag_outlier_winsor',
+        priority: 'TINGGI',
+        title: `Sensitivitas Outlier Ekstrem (Pergeseran ${maxOutlierShift.toFixed(1)}%${rankOrderChanged ? ', Peringkat Berubah' : ''})`,
+        statisticalBasis:
+          'Pemangkasan 5% residu ekstrem menggeser MAE/peringkat secara substansial, menandakan segelintir observasi ekstrem mendistorsi estimasi deviasi rata-rata.',
+        actionLabel: 'Uji & Terapkan Winsorization 2.5%',
+        expectedImpact:
+          'Meredam pengaruh ekstrem tanpa menghapus baris kota-tahun sehingga peringkat antar sumber lebih robust dan stabil.',
+        actionType: 'APPLY_WINSORIZE'
+      });
+    } else {
+      actions.push({
+        id: 'diag_winsor_active',
+        priority: 'OPTIMAL',
+        title: 'Winsorization 2.5% Aktif Mengendalikan Outlier',
+        statisticalBasis:
+          'Winsorization telah aktif; bila perbedaan jauh dari data mentah, bandingkan laporan sensitivitas antara data asli vs tersaring di Step 8.',
+        actionLabel: 'Bandingkan Kembali ke Satuan Asli (Opsional)',
+        expectedImpact: 'Menjaga transparansi akademik antara sampel penuh vs sampel ter-winsorize.',
+        actionType: 'RESET_RAW_BASELINE'
+      });
+    }
+  }
+
+  if (maxPropBiasAbsT > 2.5 && !preproc?.applyLog1p && !hasNegatives) {
+    score -= 6;
+    actions.push({
+      id: 'diag_prop_bias_log1p',
+      priority: 'DISARANKAN',
+      title: `Terdeteksi Proportional Bias Kuat (|t| = ${maxPropBiasAbsT.toFixed(2)}, Skew = ${skew.toFixed(2)})`,
+      statisticalBasis:
+        'Selisih pengukuran meningkat proporsional seiring besarnya emisi kota. Transformasi log(1+x) mengevaluasi kesalahan relatif persentase agar homoskedastis lintas skala.',
+      actionLabel: 'Evaluasi Skala Logaritmik log(1 + x)',
+      expectedImpact:
+        'Menghilangkan bias proporsional antar kota emisi kecil vs besar, namun satuan hasil bergeser menjadi log-skala.',
+      actionType: 'APPLY_LOG1P'
+    });
+  } else if ((ppp < 0.05 || ppp > 0.95) && !preproc?.applyLog1p && !hasNegatives) {
+    score -= 8;
+    actions.push({
+      id: 'diag_ppp_calibration',
+      priority: 'DISARANKAN',
+      title: `Posterior Predictive p-value di Tepi Ekor (PPP = ${ppp.toFixed(3)})`,
+      statisticalBasis:
+        'PPP di luar [0.05, 0.95] menunjukkan variasi dispersi antar sumber atau non-linearitas skala. Evaluasi log(1+x) atau verifikasi presisi MCMC dianjurkan.',
+      actionLabel: 'Evaluasi Skala Logaritmik log(1 + x)',
+      expectedImpact: 'Menguji apakah skala logaritmik memperbaiki kecocokan Posterior Predictive Check.',
+      actionType: 'APPLY_LOG1P'
+    });
+  }
+
+  if (nClusters < 30) {
+    if (bootReps < 999) {
+      score -= 6;
+      actions.push({
+        id: 'diag_small_cluster_bootstrap',
+        priority: 'DISARANKAN',
+        title: `Small Cluster G = ${nClusters} (< 30): Tingkatkan Replikasi Wild Bootstrap`,
+        statisticalBasis:
+          'Pada jumlah kota < 30, SE klaster asimtotik rentan downward bias. Pratinjau klien hanya memakai 499 replikasi; verifikasi server memakai 999–1.999 replikasi.',
+        actionLabel: 'Jalankan Verifikasi Presisi Tinggi (1.999 Bootstrap + 800 MCMC)',
+        expectedImpact:
+          'Memberikan p-value Rademacher Wild Cluster Bootstrap resolusi tinggi yang diakui literatur untuk klaster kecil.',
+        actionType: 'RUN_HIGH_PRECISION_VERIFICATION'
+      });
+    } else {
+      actions.push({
+        id: 'diag_small_cluster_ok',
+        priority: 'OPTIMAL',
+        title: `Perlindungan Small Cluster G = ${nClusters} Aktif (${bootReps} Replikasi Wild Bootstrap)`,
+        statisticalBasis:
+          'Rademacher Wild Cluster Bootstrap telah dijalankan bersama Bayesian Credible Interval sehingga keputusan inferensi tetap sah meski jumlah kota < 30.',
+        actionLabel: 'Tingkatkan ke 1.999 Bootstrap + 800 MCMC (Opsional)',
+        expectedImpact: 'Menguji kestabilan ekstrem replikasi bootstrap dari 999 ke 1.999.',
+        actionType: 'RUN_HIGH_PRECISION_VERIFICATION'
+      });
+    }
+  }
+
+  if (heteroskedasticityWarning || serialWarning || cdWarning) {
+    const activeFlags = [
+      heteroskedasticityWarning ? 'Heteroskedastisitas' : null,
+      serialWarning ? 'Korelasi Serial AR(1)' : null,
+      cdWarning ? 'Ketergantungan Lintas-Kota (Pesaran CD)' : null
+    ]
+      .filter(Boolean)
+      .join(', ');
+
+    actions.push({
+      id: 'diag_panel_cov_ok',
+      priority: cdWarning ? 'DISARANKAN' : 'OPTIMAL',
+      title: `Penanganan Struktur Error Panel (${activeFlags})`,
+      statisticalBasis:
+        'Pair Fixed Effects (α_it) sudah menyerap guncangan makro tahun-kota bersama, sedangkan SE klaster tingkat kota (vce(cluster city)) + Wild Bootstrap menangani korelasi serial & heteroskedastisitas.',
+      actionLabel: cdWarning
+        ? 'Salin & Jalankan Uji Sensitivitas xtscc di Stata + Verifikasi 1.999 Bootstrap'
+        : 'Jalankan Verifikasi Penuh (1.999 Bootstrap + 800 MCMC)',
+      expectedImpact:
+        'Memastikan seluruh p-value & peringkat pada Step 8 kebal terhadap pelanggaran asumsi klasik i.i.d.',
+      actionType: 'RUN_HIGH_PRECISION_VERIFICATION'
+    });
+  }
+
+  if (actions.every(a => a.priority === 'OPTIMAL') || actions.length === 0) {
+    actions.unshift({
+      id: 'diag_all_optimal',
+      priority: 'OPTIMAL',
+      title: 'Konfigurasi Statistik & Diagnostik Sudah Berada pada Kondisi Terbaik',
+      statisticalBasis:
+        'Identifiabilitas model laten (J ≥ 3), konvergensi MCMC, stabilitas outlier 95% trim, serta perlindungan Pair FE + City-Clustered/Wild Bootstrap sudah terpenuhi.',
+      actionLabel: 'Pertahankan Konfigurasi & Lanjutkan ke Step 8',
+      expectedImpact:
+        'Hasil pemeringkatan akurasi di Step 8 dan laporan Step 9 mencerminkan bukti empiris paling objektif tanpa modifikasi buatan.',
+      actionType: 'KEEP_CURRENT'
+    });
+  }
+
+  const clampedScore = Math.max(15, Math.min(100, Math.round(score)));
+  const overallHealthStatus: Step7DiagnosticAdvisorBundle['overallHealthStatus'] =
+    nSources < 3 || !converged || clampedScore < 65
+      ? 'PERLU_PERBAIKAN_METODOLOGI'
+      : clampedScore < 88 || actions.some(a => a.priority === 'TINGGI' || a.priority === 'DISARANKAN')
+        ? 'PERLU_PENYESUAIAN_RINGAN'
+        : 'OPTIMAL';
+
+  const headline =
+    overallHealthStatus === 'OPTIMAL'
+      ? `Skor Kesehatan Diagnostik ${clampedScore}/100 — Model & Inferensi Optimal Tanpa Perlu Intervensi Tambahan`
+      : overallHealthStatus === 'PERLU_PENYESUAIAN_RINGAN'
+        ? `Skor Kesehatan Diagnostik ${clampedScore}/100 — Tersedia Penyempurnaan Presisi Estimasi & Inferensi`
+        : `Skor Kesehatan Diagnostik ${clampedScore}/100 — Tindakan Perbaikan Metodologis Diperlukan Sebelum Kesimpulan Akhir`;
+
+  return {
+    overallHealthStatus,
+    diagnosticScore: clampedScore,
+    headline,
+    statisticalPrincipleNote:
+      'Prinsip Hasil Apa Adanya: Seluruh rekomendasi Step 7 bertujuan memperbaiki presisi varians error, konvergensi MCMC, serta ketepatan standar error/bootstrap — BUKAN memodifikasi data agar p-value menjadi < 0.05.',
+    actions
   };
 }
