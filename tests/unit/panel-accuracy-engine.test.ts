@@ -392,4 +392,55 @@ describe('Gerbang Verifikasi — Opsi B Reference-Free All-Source Latent & Conse
     expect(cleanFirst.recommendedSheetName).toBe('Data_Panel_Utama');
     expect(cleanFirst.autoSwitchedFromFirst).toBe(false);
   });
+
+  it('9. Converges cleanly (R-hat <= 1.10) & selects conclusive winner on small-scale J=3 data even when biased source has smaller Error SD', () => {
+    let s = 445566;
+    const rn = () => {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      const u1 = Math.max(1e-7, s / 4294967296);
+      s = (s * 1664525 + 1013904223) >>> 0;
+      const u2 = Math.max(1e-7, s / 4294967296);
+      return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    };
+
+    const obs: Record<string, unknown>[] = [];
+    for (let c = 1; c <= 10; c++) {
+      for (let t = 2020; t <= 2024; t++) {
+        const theta = 1.5 + c * 0.25 + (t - 2020) * 0.12 + rn() * 0.2;
+        obs.push({
+          City: `Kota_${c}`,
+          Year: t,
+          X1_Report: Number((theta - 5.16 + rn() * 0.19).toFixed(4)),
+          X2_Sat: Number((theta + 1.97 + rn() * 0.01).toFixed(4)),
+          X3_Sensor: Number((theta + rn() * 0.05).toFixed(4))
+        });
+      }
+    }
+
+    const smallDataset: PanelDataset = {
+      cityIdColumn: 'City',
+      yearColumn: 'Year',
+      sources: [
+        { id: 'x1', name: 'X1', label: 'Self-Reporting', columnKey: 'X1_Report', unit: 'Mt', role: 'evaluated' },
+        { id: 'x2', name: 'X2', label: 'Satellite Measurement', columnKey: 'X2_Sat', unit: 'Mt', role: 'evaluated' },
+        { id: 'x3', name: 'X3', label: 'Field Sensor', columnKey: 'X3_Sensor', unit: 'Mt', role: 'evaluated' }
+      ],
+      observations: obs
+    };
+
+    const res = executePanelAccuracyPipeline({
+      dataset: smallDataset,
+      bootstrapReplications: 499,
+      mcmcIterations: 450
+    });
+
+    expect(res.latentModel.maxRhat).toBeLessThanOrEqual(1.1);
+    expect(res.latentModel.converged).toBe(true);
+    expect(res.ranking.conclusivenessStatus).toBe('TERBUKTI_BERBEDA_SIGNIFIKAN');
+    expect(res.ranking.isConclusive).toBe(true);
+    expect(res.ranking.bestSourceId).toBe('x3');
+    expect(res.ranking.ranks[0].sourceName).toBe('X3');
+    expect(res.ranking.ranks[1].sourceName).toBe('X2');
+    expect(res.ranking.ranks[2].sourceName).toBe('X1');
+  });
 });

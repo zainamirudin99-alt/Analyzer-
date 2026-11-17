@@ -162,3 +162,15 @@ Spesifikasi terkini untuk **Regresi Data Panel Stata → Option 2** (`PanelAccur
    - Menandai sheet yang layak sebagai tabel panel (`isPanelReady`) vs non-tabel/cover/dashboard. Jika `sheets[0]` berupa sheet cover/dashboard (`__EMPTY`), sistem otomatis memilih sheet tabel data terbaik sebagai sheet aktif awal dan menampilkan notifikasi jelas beserta daftar seluruh sheet agar pengguna tetap bebas berpindah sheet kapan saja.
 3. **Antarmuka Pemilihan Sheet Unified (Step 1)**:
    - Menampilkan panel **Pemilihan Sheet Workbook** di bawah kotak input `Upload Excel/CSV` maupun `Google Sheets`, berisi ringkasan jumlah sheet, daftar tombol kartu/pil sheet (`min-height: 44px`, jumlah baris × kolom, badge status `Siap Panel` / `Disarankan` / `Cover/Non-Tabel`), dan dropdown `<select>` tersinkronisasi (`font-size >= 15px`) untuk workbook dengan banyak sheet. Memilih sheet langsung memperbarui `rawRows`, preview tabel, KPI Step 1, dan auto-deteksi Step 2.
+
+---
+
+## 12. Ekspansi Tahap 11: Invariansi Skala MCMC (`globalScale` + Burn-In Adaptation) & Aturan Konflik Metrik Berbasis Akurasi Total (ISO 5725)
+
+1. **Invariansi Skala Mesin Bayesian (`panel-accuracy-latent.ts`)**:
+   - Menormalisasi matriks pengamatan terpusat dengan faktor skala sampel global (`globalScale = sqrt(median(var))`) sebelum menjalankan Gibbs/MH *Marginalized Woodbury* sehingga data berskala kecil (`0.01–5.0`) maupun besar (`10^3–10^9`) terpetakan pada varians internal `O(1)`.
+   - Menerapkan adaptasi lebar proposal burn-in pada seluruh blok parameter (`stepLogSig`, `stepAlpha`, `stepLogLambda`, `stepMuTheta`, `stepLogVarT`) serta langkah penyejajaran *ridge shift* (`μ_θ ↔ α`) agar `max R-hat ≤ 1.05` untuk seluruh skala $J \ge 3$ tanpa kegagalan konvergensi semu.
+2. **Eskalasi Iterasi Konvergensi Otomatis (`panel-accuracy-orchestrator.ts`)**:
+   - Bila pada dataset $J \ge 3$ hasil MCMC awal mencatat `max R-hat > 1.08`, orkestrator melakukan 1 kali eskalasi otomatis hingga `1.000` iterasi (`burn-in = 550`) agar model $J \ge 3$ yang teridentifikasi secara teoretis tidak tertolak sebagai `MODEL_TIDAK_TERIDENTIFIKASI`.
+3. **Aturan Konflik Metrik Berbasis Total Accuracy (`panel-accuracy-ranking.ts`)**:
+   - Menyelaraskan definisi konflik metrik dengan metrologi **ISO 5725 (Trueness + Precision = Total RMSE)**: sumber pemenang dengan `Total Latent RMSE` terendah, `Reliabilitas R² >= 70%` (misal 97.2%), `Posterior P(Best) >= 95%`, dan `WildBoot p < 0.05` **tetap konklusif sebagai pemenang mutlak** meskipun sumber lain memiliki `Error SD` lebih kecil namun membawa bias sistematis besar (`α_j` tinggi sehingga `Total RMSE` jauh lebih buruk). Juga menghilangkan tanda kurung kosong `()` bila `warnings` kosong dan membedakan pesan tidak konvergen vs kurang sumber ($J < 3$).

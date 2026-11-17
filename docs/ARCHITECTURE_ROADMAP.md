@@ -167,3 +167,11 @@ Mengacu pada `docs/superpowers/specs/2026-11-13-regression-upgrade-design.md`:
 1. **`src/lib/panel-accuracy-types.ts`**: Penambahan tipe `ImportedSheetData` dan `EvaluatedSheetCandidate`.
 2. **`src/lib/panel-accuracy-validation.ts`**: Penambahan fungsi murni `evaluateImportedWorkbookSheets(sheets)` untuk menilai kelayakan tabel panel per sheet (deteksi rasio `__EMPTY`, baris minimal, jumlah kolom numerik) dan menentukan `recommendedSheetName`.
 3. **`src/components/PanelAccuracyTab.tsx`**: Pembaruan `handleFileUpload`, `handleImportLink`, serta penambahan panel terpadu **WorkbookSheetSelector** pada Step 1 yang tampil baik untuk **Upload Excel/CSV** maupun **Google Sheets** dengan kartu pil sheet interaktif + dropdown tersinkronisasi dan koreksi pembacaan `json.data.originalName`.
+
+---
+
+## 9. Arsitektur Tahap 11: Stabilitas Konvergensi Lintas-Skala & Aturan Konflik Metrik Step 8
+
+1. **`src/lib/panel-accuracy-latent.ts`**: Normalisasi `globalScale` internal pada MCMC Woodbury + adaptasi step-size seluruh blok burn-in + moves *ridge alignment* + skala ulang presisi balik ke satuan asli (`α`, `σ_ε`, `Total RMSE`, `θ̂`).
+2. **`src/lib/panel-accuracy-orchestrator.ts`**: Auto-eskalasi iterasi MCMC bila $J \ge 3$ awal memiliki `maxRhat > 1.08`.
+3. **`src/lib/panel-accuracy-ranking.ts` & `src/components/PanelAccuracyTab.tsx`**: Koreksi aturan `precisionConflict` agar tidak menolak pemenang ber-bias rendah hanya karena sumber ber-bias besar punya `Error SD` kecil; pembersihan format teks alasan dan panduan syarat konklusif di Step 8.

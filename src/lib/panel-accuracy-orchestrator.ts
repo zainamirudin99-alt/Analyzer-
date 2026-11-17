@@ -63,12 +63,20 @@ export function executePanelAccuracyPipeline(params: {
 
   const eda = computeAccuracyEDA(prepared.completeCaseObservations, params.dataset.sources);
 
-  const latentOut = fitBayesianLatentMeasurementModel({
+  let latentOut = fitBayesianLatentMeasurementModel({
     observations: prepared.completeCaseObservations,
     sources: prepared.comparisonSources,
     iterationsPerChain: usedMcmcIterations,
-    burnInPerChain: usedMcmcIterations >= 700 ? 350 : 250
+    burnInPerChain: usedMcmcIterations >= 700 ? 400 : 350
   });
+  if (prepared.comparisonSources.length >= 3 && latentOut.summary.maxRhat > 1.08) {
+    latentOut = fitBayesianLatentMeasurementModel({
+      observations: prepared.completeCaseObservations,
+      sources: prepared.comparisonSources,
+      iterationsPerChain: Math.max(usedMcmcIterations * 2, 1000),
+      burnInPerChain: 600
+    });
+  }
 
   const metrics = computeAllSourceAccuracyMetrics(prepared, latentOut);
   const pairFixedEffects = fitPairFixedEffectsModel(prepared, latentOut, {
@@ -133,7 +141,7 @@ export function executePanelAccuracyPipeline(params: {
       'Bayesian Hierarchical Panel Latent Measurement Model (3-Chain Gibbs MCMC + Grubbs Triangulation + Pair Fixed Effects & Rademacher Wild Cluster Bootstrap)',
     executionMeta: {
       bootstrapReplications: usedBootstrapReps,
-      mcmcIterations: usedMcmcIterations,
+      mcmcIterations: latentOut.summary.iterationsPerChain,
       elapsedMs: Math.max(1, Date.now() - startedAt),
       source: params.executionSource ?? 'server_verified',
       executedAt: new Date().toISOString()

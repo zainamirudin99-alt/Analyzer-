@@ -2361,8 +2361,62 @@ export const PanelAccuracyTab: React.FC = () => {
               </div>
               <div style={{ fontSize: '13px', lineHeight: 1.55 }}>{activeResult.ranking.rankingSummary}</div>
               <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                <strong>Keterbatasan Epistemologis:</strong> {activeResult.ranking.methodologicalCaveat}
+                {activeResult.ranking.methodologicalCaveat}
               </div>
+              {!activeResult.ranking.isConclusive && (
+                <div
+                  style={{
+                    marginTop: '6px',
+                    padding: '10px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--surface)',
+                    border: '1px solid var(--border)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                    fontSize: '12px'
+                  }}
+                >
+                  <strong style={{ color: 'var(--text)' }}>
+                    Audit 4 Syarat agar Status Menjadi TERBUKTI_BERBEDA_SIGNIFIKAN:
+                  </strong>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '6px' }}>
+                    {[
+                      {
+                        label: `1. Sumber Independen J ≥ 3 (Saat ini J = ${activeResult.latentModel.nSources})`,
+                        ok: activeResult.latentModel.nSources >= 3
+                      },
+                      {
+                        label: `2. Konvergensi MCMC R-hat ≤ 1.10 (Saat ini ${activeResult.latentModel.maxRhat.toFixed(4)})`,
+                        ok: activeResult.latentModel.converged
+                      },
+                      {
+                        label: '3. Konsistensi Lintas Metrik & Bebas Outlier Flip',
+                        ok: !activeResult.diagnostics.outlierSensitivityAudit.rankOrderChanged && activeResult.ranking.conclusivenessStatus !== 'KONFLIK_ANTAR_METRIK'
+                      },
+                      {
+                        label: '4. P_Bayes(#1 vs #2) ≥ 95% & WildBoot p < 0.05',
+                        ok: activeResult.ranking.ranks[1] ? !activeResult.ranking.ranks[1].isStatisticallyIndistinguishableFromTop : false
+                      }
+                    ].map(g => (
+                      <div
+                        key={g.label}
+                        style={{
+                          padding: '6px 8px',
+                          borderRadius: '6px',
+                          border: `1px solid ${g.ok ? 'var(--success)' : '#d97706'}`,
+                          background: g.ok ? 'var(--info-bg)' : 'var(--warn-bg)',
+                          color: 'var(--text)',
+                          fontWeight: 600
+                        }}
+                      >
+                        {g.ok ? '✓ ' : '✗ '}
+                        {g.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Ranking Table (ALL J Sources #1..#J) */}
@@ -2380,13 +2434,19 @@ export const PanelAccuracyTab: React.FC = () => {
                     <tr key={r.sourceId} style={{ background: r.rank === 1 ? 'var(--info-bg)' : 'transparent' }}>
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, borderBottom: '1px solid var(--border-light)' }}>#{r.rank}</td>
                       <td style={{ padding: '8px 10px', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>{r.sourceLabel}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: 'var(--primary)', borderBottom: '1px solid var(--border-light)' }}>{r.totalLatentRmse.toFixed(2)}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{r.errorSd.toFixed(2)}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: 'var(--primary)', borderBottom: '1px solid var(--border-light)' }}>
+                        {Math.abs(r.totalLatentRmse) < 10 ? r.totalLatentRmse.toFixed(3) : r.totalLatentRmse.toFixed(2)}
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
+                        {Math.abs(r.errorSd) < 10 ? r.errorSd.toFixed(3) : r.errorSd.toFixed(2)}
+                      </td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>{(r.reliabilityR2 * 100).toFixed(2)}%</td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: r.rank === 1 ? 'var(--success)' : 'var(--text)', borderBottom: '1px solid var(--border-light)' }}>
                         {(r.posteriorProbBest * 100).toFixed(1)}%
                       </td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{r.mae.toFixed(2)}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
+                        {Math.abs(r.mae) < 10 ? r.mae.toFixed(3) : r.mae.toFixed(2)}
+                      </td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
                         {r.posteriorProbBetterThanSecond !== null ? `${(r.posteriorProbBetterThanSecond * 100).toFixed(1)}%` : '-'}
                       </td>

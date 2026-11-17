@@ -85,12 +85,17 @@ export function computeComparativeSourceRanking(params: {
     const isIndistinguishable = idx === 0 ? false : !(bayesClear && freqClear);
     const loaWidth = m.blandAltman.loaUpper - m.blandAltman.loaLower;
 
+    const biasHeavyNote =
+      idx > 0 && m.reliabilityR2 > top.reliabilityR2 && m.totalLatentRmse > top.totalLatentRmse * 1.25
+        ? ` Meski presisi R² tinggi (${(m.reliabilityR2 * 100).toFixed(2)}%), bias sistematisnya membuat Total RMSE jauh lebih besar.`
+        : '';
+
     const rankNote =
       idx === 0
         ? `Akurasi tertinggi (#1 dari ${sorted.length} sumber): Total Latent RMSE = ${m.totalLatentRmse.toFixed(3)}, Error SD = ${m.errorSd.toFixed(3)}, Reliabilitas R² = ${(m.reliabilityR2 * 100).toFixed(2)}%, Posterior Prob Best = ${(m.posteriorProbBest * 100).toFixed(1)}%.`
         : isIndistinguishable
           ? `Selisih Total RMSE +${(m.totalLatentRmse - top.totalLatentRmse).toFixed(3)} terhadap #1 (P(Best>${m.sourceName})=${((postProbBetter ?? 0.5) * 100).toFixed(1)}%, Wild p=${(effectiveP ?? 1).toFixed(4)}): perbedaan belum cukup kuat secara simultan.`
-          : `Kalah signifikan dibanding #1: Total Latent RMSE +${(m.totalLatentRmse - top.totalLatentRmse).toFixed(3)} lebih tinggi (P(#1 lebih baik)=${((postProbBetter ?? 1) * 100).toFixed(1)}%, Wild p=${(effectiveP ?? 0).toFixed(4)} < 0.05).`;
+          : `Kalah signifikan dibanding #1: Total Latent RMSE +${(m.totalLatentRmse - top.totalLatentRmse).toFixed(3)} lebih tinggi (P(#1 lebih baik)=${((postProbBetter ?? 1) * 100).toFixed(1)}%, Wild p=${(effectiveP ?? 0).toFixed(4)} < 0.05).${biasHeavyNote}`;
 
     return {
       rank: idx + 1,
@@ -120,6 +125,7 @@ export function computeComparativeSourceRanking(params: {
 
   // 1. Check Latent Model Identifiability (requires J >= 3, no zero variance, MCMC convergence)
   if (!qualityReport.latentAudit.isIdentifiedForAllSourceRanking || !latentOut.summary.converged) {
+    const warnText = qualityReport.latentAudit.warnings.filter(Boolean).join('; ');
     return {
       primaryMetric: 'TOTAL_LATENT_RMSE',
       referenceSourceId: 'latent_consensus',
@@ -132,19 +138,25 @@ export function computeComparativeSourceRanking(params: {
       rankingSummary:
         qualityReport.latentAudit.nSources < 3
           ? `Model pengukuran laten tanpa variabel referensi membutuhkan minimal J = 3 sumber independen agar varians galat tiap sumber dapat dipisahkan secara unik (saat ini J = ${qualityReport.latentAudit.nSources}).`
-          : `Model pengukuran laten belum mencapai konvergensi memadai (max R-hat = ${latentOut.summary.maxRhat.toFixed(4)}) atau terdapat kendala kualitas data (${qualityReport.latentAudit.warnings.join(' ')}).`,
+          : !latentOut.summary.converged
+            ? `Rantai MCMC belum mencapai konvergensi memadai (max R-hat = ${latentOut.summary.maxRhat.toFixed(4)} > 1.10). Jalankan "Verifikasi Presisi Penuh (800–1.000 MCMC)" di Step 7 atau aktifkan Winsorization / periksa kolinearitas sumber di Step 2–3.${warnText ? ` Catatan: ${warnText}` : ''}`
+            : `Terdapat kendala kualitas atau identifikasi data panel (${warnText || 'periksa kelengkapan pasangan data & varians nol pada sumber'}).`,
       methodologicalCaveat: latentOut.summary.epistemologicalCaveat,
       ranks
     };
   }
 
-  // 2. Check cross-metric consistency across Total Latent RMSE, Precision Error SD / Reliability, LOSO MAE, and Outlier sensitivity
+  // 2. Check cross-metric consistency across Total Latent RMSE (ISO 5725 Accuracy = Trueness + Precision), LOSO MAE, CCC & Outlier sensitivity
   const minErrorSd = Math.min(...ranks.map(r => r.errorSd));
   const maxR2 = Math.max(...ranks.map(r => r.reliabilityR2));
   const maxCcc = Math.max(...ranks.map(r => r.ccc));
 
-  const precisionConflict = top.errorSd > minErrorSd * 1.15 || top.reliabilityR2 < maxR2 - 0.03;
-  const losoMaeConflict = top.mae > minMae * 1.12;
+  // Another biased instrument having tiny random noise (Error SD) does NOT conflict with a low-bias, high-R² Total RMSE winner.
+  // Flag precision conflict only when #1 has genuinely weak reliability (< 70%) or substantially trails max R² (> 12%) with > 2x larger error SD.
+  const precisionConflict =
+    top.reliabilityR2 < 0.7 ||
+    (top.reliabilityR2 < maxR2 - 0.12 && top.errorSd > minErrorSd * 2.0);
+  const losoMaeConflict = top.mae > minMae * 1.15;
   const cccConflict = top.ccc.ccc < maxCcc - 0.08;
   const outlierFlip = diagnostics.outlierSensitivityAudit.rankOrderChanged;
 

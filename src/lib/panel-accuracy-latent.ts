@@ -160,21 +160,36 @@ function evalMarginalLogPosterior(params: {
   P: number;
   J: number;
   sampleMean: number[];
-  covMat: number[][]; // 1/P sum (x - xbar)(x - xbar)'
+  covMat: number[][]; // 1/P sum (x - xbar)(x - xbar)' on normalized O(1) scale
   alpha: number[];
   lambda: number[];
   errVar: number[];
   muTheta: number;
   varTheta: number;
   priorScaleSig: number;
+  priorAlphaSd: number;
+  priorMedianVar: number;
 }): number {
-  const { P, J, sampleMean, covMat, alpha, lambda, errVar, muTheta, varTheta, priorScaleSig } = params;
+  const {
+    P,
+    J,
+    sampleMean,
+    covMat,
+    alpha,
+    lambda,
+    errVar,
+    muTheta,
+    varTheta,
+    priorScaleSig,
+    priorAlphaSd,
+    priorMedianVar
+  } = params;
 
-  let D = 1 / Math.max(1e-8, varTheta);
+  let D = 1 / Math.max(1e-10, varTheta);
   let sumLogPsi = 0;
   const v = new Array(J);
   for (let j = 0; j < J; j++) {
-    const psi = Math.max(1e-6, errVar[j]);
+    const psi = Math.max(1e-10, errVar[j]);
     sumLogPsi += Math.log(psi);
     v[j] = lambda[j] / psi;
     D += lambda[j] * v[j];
@@ -186,7 +201,7 @@ function evalMarginalLogPosterior(params: {
   let trTerm = 0;
   let quadV = 0;
   for (let a = 0; a < J; a++) {
-    const psiA = Math.max(1e-6, errVar[a]);
+    const psiA = Math.max(1e-10, errVar[a]);
     trTerm += covMat[a][a] / psiA;
     for (let b = 0; b < J; b++) {
       quadV += v[a] * covMat[a][b] * v[b];
@@ -199,28 +214,31 @@ function evalMarginalLogPosterior(params: {
   let dotDeltaV = 0;
   for (let j = 0; j < J; j++) {
     const d = sampleMean[j] - alpha[j] - lambda[j] * muTheta;
-    quadDeltaPsi += (d * d) / Math.max(1e-6, errVar[j]);
+    quadDeltaPsi += (d * d) / Math.max(1e-10, errVar[j]);
     dotDeltaV += d * v[j];
   }
   const meanMahal = quadDeltaPsi - factor * dotDeltaV * dotDeltaV;
 
   const logLik = -0.5 * P * (logDetSigma + trTerm + meanMahal);
 
-  // Weakly informative priors + EXACT change-of-variables Jacobians for log-parameterization!
-  // Sampling in log(varTheta) -> Jacobian +log(varTheta); Half-Cauchy(0, S) on sigJ sampled in log(psi) -> Jacobian +log(sigJ)
-  let logPrior = 0.5 * Math.log(Math.max(1e-6, varTheta));
+  // Weakly informative priors + EXACT change-of-variables Jacobians on dimensionless scale:
+  // log(varTheta) Jacobian +0.5*log(varTheta); Half-Cauchy(0, priorScaleSig) on sigJ with Jacobian +log(sigJ)
+  let logPrior =
+    0.5 * Math.log(Math.max(1e-10, varTheta)) -
+    0.5 * (Math.log(Math.max(1e-8, varTheta) / Math.max(0.05, priorMedianVar)) / 2.5) ** 2;
   for (let j = 0; j < J; j++) {
-    // Log-normal(0, 0.5) prior on lambda_j; proposal on log(lambda_j) absorbs -log(lambda_j) Jacobian cleanly
     const logL = Math.log(Math.max(0.05, lambda[j]));
     logPrior -= 0.5 * (logL / 0.5) ** 2;
-    // Proper Half-Cauchy prior on error SD sigJ (with Jacobian +log(sigJ) when stepping in log(errVar))
-    const sigJ = Math.sqrt(Math.max(1e-6, errVar[j]));
-    logPrior += Math.log(sigJ) - Math.log(1 + (sigJ / Math.max(1, priorScaleSig)) ** 2);
-    // Diffuse prior on intercept offset alpha_j
-    logPrior -= 0.5 * (alpha[j] / Math.max(50, 2 * priorScaleSig)) ** 2;
+    const sigJ = Math.sqrt(Math.max(1e-10, errVar[j]));
+    logPrior += Math.log(sigJ) - Math.log(1 + (sigJ / Math.max(0.2, priorScaleSig)) ** 2);
+    logPrior -= 0.5 * (alpha[j] / Math.max(10, priorAlphaSd)) ** 2;
   }
 
   return logLik + logPrior;
+}
+
+function adaptStep(cur: number, accepted: boolean, minS: number, maxS: number): number {
+  return accepted ? Math.min(maxS, cur * 1.05) : Math.max(minS, cur * 0.975);
 }
 
 export function fitBayesianLatentMeasurementModel(params: {
@@ -235,8 +253,8 @@ export function fitBayesianLatentMeasurementModel(params: {
     observations,
     sources,
     nChains = 3,
-    iterationsPerChain = 450,
-    burnInPerChain = 250,
+    iterationsPerChain = 550,
+    burnInPerChain = 350,
     seed = 20261117
   } = params;
 
@@ -244,17 +262,36 @@ export function fitBayesianLatentMeasurementModel(params: {
   const J = sources.length;
   const matX: number[][] = observations.map(o => sources.map(s => o.values[s.id] as number));
 
-  // Center at overall mean so intercept and loading parameters are cleanly orthogonal
+  // Center at overall median-row average, then normalize by globalScale so ALL datasets (0.01 or 1e9) mix cleanly on O(1) scale
   const rowMedians = matX.map(row => medianOf(row));
   const globalCenter =
     rowMedians.reduce((a, b) => a + b, 0) / Math.max(1, rowMedians.length);
   const centeredX: number[][] = matX.map(row => row.map(v => v - globalCenter));
 
-  const { grubbsVar, sampleMean, sampleVar, covMat } = computeGrubbsTriangulation(centeredX, J);
-  const medianSampleVar = Math.max(1, medianOf(sampleVar));
-  const priorScaleSig = Math.max(10, Math.sqrt(medianSampleVar));
+  const rawColVars: number[] = [];
+  for (let j = 0; j < J; j++) {
+    let m = 0;
+    for (let p = 0; p < P; p++) m += centeredX[p][j];
+    m /= Math.max(1, P);
+    let s2 = 0;
+    for (let p = 0; p < P; p++) s2 += (centeredX[p][j] - m) ** 2;
+    rawColVars.push(s2 / Math.max(1, P - 1));
+  }
+  const rawMedianVar = medianOf(rawColVars);
+  const globalScale = rawMedianVar > 1e-18 ? Math.sqrt(rawMedianVar) : 1;
+  const globalScaleSq = globalScale * globalScale;
+  const normX: number[][] = centeredX.map(row => row.map(v => v / globalScale));
 
-  // Storage for post-burn-in identified MCMC chains [chain][iter][j]
+  const { grubbsVar: grubbsVarNorm, sampleMean, sampleVar, covMat } = computeGrubbsTriangulation(
+    normX,
+    J
+  );
+  const grubbsVar = grubbsVarNorm.map(v => v * globalScaleSq);
+  const medianSampleVar = Math.max(0.05, medianOf(sampleVar));
+  const priorScaleSig = Math.max(1.5, Math.sqrt(medianSampleVar));
+  const priorAlphaSd = Math.max(15, 5 * Math.max(...sampleMean.map(v => Math.abs(v)), 1));
+
+  // Storage for post-burn-in identified MCMC chains [chain][iter][j] (converted back to original units)
   const alphaChains: number[][][] = Array.from({ length: nChains }, () => []);
   const lambdaChains: number[][][] = Array.from({ length: nChains }, () => []);
   const errVarChains: number[][][] = Array.from({ length: nChains }, () => []);
@@ -269,85 +306,82 @@ export function fitBayesianLatentMeasurementModel(params: {
   for (let c = 0; c < nChains; c++) {
     const rng = createRng(seed + c * 9173);
 
-    // Initialize dispersed around analytical Grubbs triangulation
+    // Initialize dispersed around analytical Grubbs triangulation on dimensionless O(1) scale
     const initOffset = medianOf(sampleMean);
-    const alpha = sampleMean.map((m, j) => m - initOffset + rng.nextNormal() * 0.08 * Math.sqrt(grubbsVar[j]));
-    const lambda = sources.map(() => Math.max(0.5, 1 + rng.nextNormal() * 0.04));
-    const logErrVar = grubbsVar.map(v => Math.log(Math.max(1e-4 * medianSampleVar, v)) + rng.nextNormal() * 0.12);
-    let muTheta = initOffset + rng.nextNormal() * 1.0;
-    let logVarTheta = Math.log(Math.max(1, medianOf(sampleVar.map((sv, j) => Math.max(0.5, sv - grubbsVar[j])))));
+    const alpha = sampleMean.map(
+      (m, j) => m - initOffset + rng.nextNormal() * 0.05 * Math.sqrt(Math.max(1e-5, grubbsVarNorm[j]))
+    );
+    const lambda = sources.map(() => Math.max(0.4, 1 + rng.nextNormal() * 0.04));
+    const logErrVar = grubbsVarNorm.map(
+      v => Math.log(Math.max(1e-7, v)) + rng.nextNormal() * 0.12
+    );
+    let muTheta = initOffset + rng.nextNormal() * 0.06 * Math.sqrt(medianSampleVar);
+    let logVarTheta =
+      Math.log(
+        Math.max(
+          0.05,
+          medianOf(sampleVar.map((sv, j) => Math.max(0.02, sv - grubbsVarNorm[j])))
+        )
+      ) +
+      rng.nextNormal() * 0.1;
 
-    let currentLogPost = evalMarginalLogPosterior({
-      P,
-      J,
-      sampleMean,
-      covMat,
-      alpha,
-      lambda,
-      errVar: logErrVar.map(lv => Math.exp(lv)),
-      muTheta,
-      varTheta: Math.exp(logVarTheta),
-      priorScaleSig
-    });
+    const evalCur = () =>
+      evalMarginalLogPosterior({
+        P,
+        J,
+        sampleMean,
+        covMat,
+        alpha,
+        lambda,
+        errVar: logErrVar.map(lv => Math.exp(lv)),
+        muTheta,
+        varTheta: Math.exp(logVarTheta),
+        priorScaleSig,
+        priorAlphaSd,
+        priorMedianVar: medianSampleVar
+      });
 
+    let currentLogPost = evalCur();
     const totalIters = burnInPerChain + iterationsPerChain;
 
-    // Adaptive proposal step widths (scaled gently after initial burn-in)
-    const stepLogSig = logErrVar.map(() => 0.25);
-    const stepAlpha = grubbsVar.map(v => Math.max(0.4, Math.sqrt(v / Math.max(1, P)) * 1.6));
-    const stepLogLambda = 0.015;
-    const stepMuTheta = Math.max(0.5, Math.sqrt(medianOf(grubbsVar) / Math.max(1, P)) * 1.4);
-    const stepLogVarT = 0.22;
+    // Adaptive proposal step widths across ALL blocks (normalized scale -> works identically on small & huge units)
+    const stepLogSig = logErrVar.map(() => 0.28);
+    const stepAlpha = grubbsVarNorm.map(v =>
+      Math.max(0.002, Math.sqrt(Math.max(1e-7, v) / Math.max(1, P)) * 1.6)
+    );
+    let stepLogLambda = 0.025;
+    let stepMuTheta = Math.max(0.005, Math.sqrt(medianSampleVar / Math.max(1, P)) * 1.2);
+    let stepLogVarT = 0.22;
 
     for (let it = 0; it < totalIters; it++) {
-      // 1. Update log(errVar_j) one-by-one on exact marginal posterior
+      // 1. Update log(errVar_j) one-by-one
       for (let j = 0; j < J; j++) {
         const oldVal = logErrVar[j];
         const prop = oldVal + rng.nextNormal() * stepLogSig[j];
-        if (prop < Math.log(1e-6 * medianSampleVar) || prop > Math.log(5 * sampleVar[j])) continue;
+        if (prop < Math.log(1e-8) || prop > Math.log(Math.max(5, 8 * sampleVar[j]))) continue;
         logErrVar[j] = prop;
-        const propLogPost = evalMarginalLogPosterior({
-          P,
-          J,
-          sampleMean,
-          covMat,
-          alpha,
-          lambda,
-          errVar: logErrVar.map(lv => Math.exp(lv)),
-          muTheta,
-          varTheta: Math.exp(logVarTheta),
-          priorScaleSig
-        });
-        if (Math.log(rng.nextUniform()) < propLogPost - currentLogPost) {
+        const propLogPost = evalCur();
+        const accepted = Math.log(rng.nextUniform()) < propLogPost - currentLogPost;
+        if (accepted) {
           currentLogPost = propLogPost;
-          if (it < burnInPerChain) stepLogSig[j] = Math.min(1.5, stepLogSig[j] * 1.04);
         } else {
           logErrVar[j] = oldVal;
-          if (it < burnInPerChain) stepLogSig[j] = Math.max(0.03, stepLogSig[j] * 0.98);
         }
+        if (it < burnInPerChain) stepLogSig[j] = adaptStep(stepLogSig[j], accepted, 0.03, 1.5);
       }
 
       // 2. Update alpha_j (source intercept offset)
       for (let j = 0; j < J; j++) {
         const oldVal = alpha[j];
         alpha[j] = oldVal + rng.nextNormal() * stepAlpha[j];
-        const propLogPost = evalMarginalLogPosterior({
-          P,
-          J,
-          sampleMean,
-          covMat,
-          alpha,
-          lambda,
-          errVar: logErrVar.map(lv => Math.exp(lv)),
-          muTheta,
-          varTheta: Math.exp(logVarTheta),
-          priorScaleSig
-        });
-        if (Math.log(rng.nextUniform()) < propLogPost - currentLogPost) {
+        const propLogPost = evalCur();
+        const accepted = Math.log(rng.nextUniform()) < propLogPost - currentLogPost;
+        if (accepted) {
           currentLogPost = propLogPost;
         } else {
           alpha[j] = oldVal;
         }
+        if (it < burnInPerChain) stepAlpha[j] = adaptStep(stepAlpha[j], accepted, 0.0002, 2.5);
       }
 
       // 3. Update log(lambda_j) (multiplicative scale)
@@ -356,23 +390,15 @@ export function fitBayesianLatentMeasurementModel(params: {
         const propL = oldL * Math.exp(rng.nextNormal() * stepLogLambda);
         if (propL < 0.2 || propL > 4.0) continue;
         lambda[j] = propL;
-        const propLogPost = evalMarginalLogPosterior({
-          P,
-          J,
-          sampleMean,
-          covMat,
-          alpha,
-          lambda,
-          errVar: logErrVar.map(lv => Math.exp(lv)),
-          muTheta,
-          varTheta: Math.exp(logVarTheta),
-          priorScaleSig
-        });
-        // Jacobian +log(propL/oldL) handled cleanly on log scale proposal
-        if (Math.log(rng.nextUniform()) < propLogPost - currentLogPost) {
+        const propLogPost = evalCur();
+        const accepted = Math.log(rng.nextUniform()) < propLogPost - currentLogPost;
+        if (accepted) {
           currentLogPost = propLogPost;
         } else {
           lambda[j] = oldL;
+        }
+        if (it < burnInPerChain && j === 0) {
+          stepLogLambda = adaptStep(stepLogLambda, accepted, 0.002, 0.4);
         }
       }
 
@@ -382,21 +408,12 @@ export function fitBayesianLatentMeasurementModel(params: {
         const oldLVT = logVarTheta;
         muTheta = oldMu + rng.nextNormal() * stepMuTheta;
         logVarTheta = oldLVT + rng.nextNormal() * stepLogVarT;
-        if (logVarTheta > -5 && logVarTheta < Math.log(100 * medianSampleVar)) {
-          const propLogPost = evalMarginalLogPosterior({
-            P,
-            J,
-            sampleMean,
-            covMat,
-            alpha,
-            lambda,
-            errVar: logErrVar.map(lv => Math.exp(lv)),
-            muTheta,
-            varTheta: Math.exp(logVarTheta),
-            priorScaleSig
-          });
+        let accepted = false;
+        if (logVarTheta > Math.log(1e-4) && logVarTheta < Math.log(Math.max(20, 100 * medianSampleVar))) {
+          const propLogPost = evalCur();
           if (Math.log(rng.nextUniform()) < propLogPost - currentLogPost) {
             currentLogPost = propLogPost;
+            accepted = true;
           } else {
             muTheta = oldMu;
             logVarTheta = oldLVT;
@@ -405,60 +422,80 @@ export function fitBayesianLatentMeasurementModel(params: {
           muTheta = oldMu;
           logVarTheta = oldLVT;
         }
+        if (it < burnInPerChain) {
+          stepMuTheta = adaptStep(stepMuTheta, accepted, 0.0005, 1.5);
+          stepLogVarT = adaptStep(stepLogVarT, accepted, 0.02, 1.2);
+        }
       }
 
-      // Post-burn-in identification, Rao-Blackwellized θ conditional draw & PPC
+      // 5. Ridge-alignment move: muTheta + delta, alpha_j - lambda_j * delta (keeps marginal mean invariant)
+      {
+        const delta = rng.nextNormal() * Math.max(0.02, stepMuTheta);
+        const oldMu = muTheta;
+        const oldAlpha = [...alpha];
+        muTheta = oldMu + delta;
+        for (let j = 0; j < J; j++) alpha[j] = oldAlpha[j] - lambda[j] * delta;
+        const propLogPost = evalCur();
+        if (Math.log(rng.nextUniform()) < propLogPost - currentLogPost) {
+          currentLogPost = propLogPost;
+        } else {
+          muTheta = oldMu;
+          for (let j = 0; j < J; j++) alpha[j] = oldAlpha[j];
+        }
+      }
+
+      // Post-burn-in identification, Rao-Blackwellized θ conditional draw & PPC (rescaled back to original units)
       if (it >= burnInPerChain) {
         const gLambda = Math.pow(lambda.reduce((prod, v) => prod * v, 1), 1 / Math.max(1, J));
         const lambdaStar = lambda.map(v => v / Math.max(1e-6, gLambda));
         const cAnchor = medianOf(alpha.map((a, j) => a / Math.max(1e-6, lambdaStar[j])));
-        const alphaStar = alpha.map((a, j) => a - lambdaStar[j] * cAnchor);
-        const varThetaStar = gLambda * gLambda * Math.exp(logVarTheta);
-        const muThetaStar = cAnchor + gLambda * muTheta;
-        const errVarCur = logErrVar.map(lv => Math.exp(lv));
+        const alphaStarNorm = alpha.map((a, j) => a - lambdaStar[j] * cAnchor);
+        const varThetaStarNorm = gLambda * gLambda * Math.exp(logVarTheta);
+        const muThetaStarNorm = cAnchor + gLambda * muTheta;
+        const errVarNorm = logErrVar.map(lv => Math.exp(lv));
 
-        alphaChains[c].push(alphaStar);
+        alphaChains[c].push(alphaStarNorm.map(a => a * globalScale));
         lambdaChains[c].push(lambdaStar);
-        errVarChains[c].push(errVarCur);
-        thetaVarianceDraws.push(varThetaStar);
+        errVarChains[c].push(errVarNorm.map(ev => ev * globalScaleSq));
 
-        // Conditional draw of theta_p | X, alpha*, lambda*, errVar (Rao-Blackwellized)
-        let precSum = 1 / Math.max(1e-6, varThetaStar);
+        // Conditional draw of theta_p | X_norm, alpha*, lambda*, errVar_norm (Rao-Blackwellized)
+        let precSum = 1 / Math.max(1e-10, varThetaStarNorm);
         for (let j = 0; j < J; j++) {
-          precSum += (lambdaStar[j] * lambdaStar[j]) / Math.max(1e-6, errVarCur[j]);
+          precSum += (lambdaStar[j] * lambdaStar[j]) / Math.max(1e-10, errVarNorm[j]);
         }
         const postVarT = 1 / precSum;
         const postSdT = Math.sqrt(postVarT);
 
-        let empThetaMean = 0;
-        const thetaDraw = new Array(P);
+        let empThetaMeanNorm = 0;
+        const thetaDrawNorm = new Array(P);
         for (let p = 0; p < P; p++) {
-          let info = muThetaStar / Math.max(1e-6, varThetaStar);
+          let info = muThetaStarNorm / Math.max(1e-10, varThetaStarNorm);
           for (let j = 0; j < J; j++) {
-            info += (lambdaStar[j] * (centeredX[p][j] - alphaStar[j])) / Math.max(1e-6, errVarCur[j]);
+            info += (lambdaStar[j] * (normX[p][j] - alphaStarNorm[j])) / Math.max(1e-10, errVarNorm[j]);
           }
-          const tp = postVarT * info + rng.nextNormal() * postSdT;
-          thetaDraw[p] = tp;
-          empThetaMean += tp;
-          const absTheta = globalCenter + tp;
-          thetaMeanAccum[p] += absTheta;
-          thetaSqAccum[p] += absTheta * absTheta;
+          const tpNorm = postVarT * info + rng.nextNormal() * postSdT;
+          thetaDrawNorm[p] = tpNorm;
+          empThetaMeanNorm += tpNorm;
+          const absThetaOrig = globalCenter + tpNorm * globalScale;
+          thetaMeanAccum[p] += absThetaOrig;
+          thetaSqAccum[p] += absThetaOrig * absThetaOrig;
         }
-        empThetaMean /= Math.max(1, P);
-        let empVarTheta = 0;
-        for (let p = 0; p < P; p++) empVarTheta += (thetaDraw[p] - empThetaMean) ** 2;
-        empVarTheta /= Math.max(1, P - 1);
+        empThetaMeanNorm /= Math.max(1, P);
+        let empVarThetaNorm = 0;
+        for (let p = 0; p < P; p++) empVarThetaNorm += (thetaDrawNorm[p] - empThetaMeanNorm) ** 2;
+        empVarThetaNorm /= Math.max(1, P - 1);
+        thetaVarianceDraws.push(empVarThetaNorm * globalScaleSq);
 
-        // Posterior Predictive Discrepancy Check (Chi-square scaled residuals)
+        // Posterior Predictive Discrepancy Check (Chi-square scaled residuals on norm scale -> exact match)
         let obsSse = 0;
         let repSse = 0;
         for (let j = 0; j < J; j++) {
-          const sdJ = Math.sqrt(Math.max(1e-6, errVarCur[j]));
+          const sdJ = Math.sqrt(Math.max(1e-10, errVarNorm[j]));
           for (let p = 0; p < P; p++) {
-            const res = centeredX[p][j] - (alphaStar[j] + lambdaStar[j] * thetaDraw[p]);
-            obsSse += (res * res) / Math.max(1e-6, errVarCur[j]);
+            const res = normX[p][j] - (alphaStarNorm[j] + lambdaStar[j] * thetaDrawNorm[p]);
+            obsSse += (res * res) / Math.max(1e-10, errVarNorm[j]);
             const rep = rng.nextNormal() * sdJ;
-            repSse += (rep * rep) / Math.max(1e-6, errVarCur[j]);
+            repSse += (rep * rep) / Math.max(1e-10, errVarNorm[j]);
           }
         }
         if (repSse >= obsSse) ppcCount++;
@@ -466,13 +503,13 @@ export function fitBayesianLatentMeasurementModel(params: {
         const rmseDraw = new Array(J);
         const r2Draw = new Array(J);
         for (let j = 0; j < J; j++) {
-          const signalVar = lambdaStar[j] * lambdaStar[j] * empVarTheta;
-          const mseTot =
-            alphaStar[j] * alphaStar[j] +
-            (lambdaStar[j] - 1) * (lambdaStar[j] - 1) * empVarTheta +
-            errVarCur[j];
-          rmseDraw[j] = Math.sqrt(Math.max(0, mseTot));
-          r2Draw[j] = signalVar / Math.max(1e-12, signalVar + errVarCur[j]);
+          const signalVarNorm = lambdaStar[j] * lambdaStar[j] * empVarThetaNorm;
+          const mseTotNorm =
+            alphaStarNorm[j] * alphaStarNorm[j] +
+            (lambdaStar[j] - 1) * (lambdaStar[j] - 1) * empVarThetaNorm +
+            errVarNorm[j];
+          rmseDraw[j] = Math.sqrt(Math.max(0, mseTotNorm)) * globalScale;
+          r2Draw[j] = signalVarNorm / Math.max(1e-12, signalVarNorm + errVarNorm[j]);
         }
         totalRmseChains[c].push(rmseDraw);
         r2Chains[c].push(r2Draw);
@@ -617,7 +654,7 @@ export function fitBayesianLatentMeasurementModel(params: {
       let valSum = 0;
       peerIndices.forEach(m => {
         const est = sourceEstimates[m];
-        const w = (est.loadingLambda * est.loadingLambda) / Math.max(1e-6, est.errorVariance);
+        const w = (est.loadingLambda * est.loadingLambda) / Math.max(1e-12, est.errorVariance);
         const deBiasedPeer =
           globalCenter +
           (centeredX[p][m] - est.interceptBiasAlpha) / Math.max(0.1, est.loadingLambda);

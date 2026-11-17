@@ -210,3 +210,10 @@ Dokumen ini memuat daftar tugas operasional dari Tahap 1 hingga Tahap 3 beserta 
 - [x] **T10.1**: Penambahan tipe `ImportedSheetData` / `EvaluatedSheetCandidate` di `panel-accuracy-types.ts` dan fungsi `evaluateImportedWorkbookSheets` di `panel-accuracy-validation.ts`.
 - [x] **T10.2**: Pembaruan `PanelAccuracyTab.tsx` Step 1 (`handleFileUpload`, `handleImportLink`, panel Pemilihan Sheet interaktif untuk Excel dan Google Sheets, koreksi `originalName`, serta status deteksi cover vs tabel panel).
 - [x] **T10.3**: Penambahan unit test Tahap 10 di `tests/unit/panel-accuracy-engine.test.ts` dan verifikasi menyeluruh (`tsc --noEmit`, `vitest`, `next build`, 0 diff pada Option 1).
+
+---
+
+## Tahap 11: Perbaikan Konvergensi Skala Kecil MCMC & Aturan Konflik Metrik Step 8
+- [x] **T11.1**: Normalisasi `globalScale` pada `panel-accuracy-latent.ts`, adaptasi burn-in seluruh blok MH + langkah ridge-shift `(muTheta, alpha)`, serta rescaling output ke satuan fisik asli.
+- [x] **T11.2**: Auto-eskalasi iterasi MCMC di `panel-accuracy-orchestrator.ts` saat $J \ge 3$ awal `maxRhat > 1.08`, serta perbaikan aturan konflik metrik ISO 5725 & format pesan di `panel-accuracy-ranking.ts` + kartu panduan aksi di Step 8 `PanelAccuracyTab.tsx`.
+- [x] **T11.3**: Unit test skenario dataset berskala kecil ($J=3$, bias besar-presisi tinggi vs akurat-rendah bias) di `tests/unit/panel-accuracy-engine.test.ts` serta verifikasi `tsc --noEmit`, `vitest`, `next build`, dan 0 diff Option 1.
