@@ -151,3 +151,14 @@ Spesifikasi terkini untuk **Regresi Data Panel Stata → Option 2** (`PanelAccur
    - Menyediakan eksekusi langsung dari Step 7 (termasuk **Verifikasi Presisi Tinggi: 1.999 Wild Bootstrap + 800 MCMC**, uji komparatif Winsorization 2.5%, evaluasi skala `log(1+x)`, atau pengembalian ke satuan asli).
 3. **Transparansi Verifikasi Bootstrap Server (Step 6 & Step 7)**:
    - Menjelaskan perbedaan mode klien cepat (`499` replikasi) vs server penuh (`999` / `1.999` replikasi) dan menampilkan **Kartu Status & Delta Verifikasi** (`Max |\Delta p_{\text{boot}}|`, `Max |\Delta \hat{R}|`, waktu eksekusi, dan konsistensi peringkat #1) setiap kali tombol Bootstrap selesai dijalankan, sehingga pengguna melihat bukti nyata hasil verifikasi bukan perubahan senyap.
+
+---
+
+## 11. Ekspansi Tahap 10: Pemilihan Sheet Workbook Multi-Sheet (Excel & Google Sheets) pada Step 1 Option 2
+
+1. **Cakupan**: Berlaku pada menu **Regresi Data Panel Stata → Option 2 (`PanelAccuracyTab.tsx`)** untuk sumber unggahan **Upload Excel/CSV** (`.xlsx`, `.xls`, `.csv`) maupun **Google Sheets Link**. Option 1 dan menu lain tidak tersentuh.
+2. **Evaluasi & Seleksi Awal Cerdas (`evaluateImportedWorkbookSheets`)**:
+   - Memeriksa setiap sheet yang dikembalikan API (`sheetName`, `rowCount`, `columnCount`, rasio header `__EMPTY`, dan jumlah kolom numerik).
+   - Menandai sheet yang layak sebagai tabel panel (`isPanelReady`) vs non-tabel/cover/dashboard. Jika `sheets[0]` berupa sheet cover/dashboard (`__EMPTY`), sistem otomatis memilih sheet tabel data terbaik sebagai sheet aktif awal dan menampilkan notifikasi jelas beserta daftar seluruh sheet agar pengguna tetap bebas berpindah sheet kapan saja.
+3. **Antarmuka Pemilihan Sheet Unified (Step 1)**:
+   - Menampilkan panel **Pemilihan Sheet Workbook** di bawah kotak input `Upload Excel/CSV` maupun `Google Sheets`, berisi ringkasan jumlah sheet, daftar tombol kartu/pil sheet (`min-height: 44px`, jumlah baris × kolom, badge status `Siap Panel` / `Disarankan` / `Cover/Non-Tabel`), dan dropdown `<select>` tersinkronisasi (`font-size >= 15px`) untuk workbook dengan banyak sheet. Memilih sheet langsung memperbarui `rawRows`, preview tabel, KPI Step 1, dan auto-deteksi Step 2.

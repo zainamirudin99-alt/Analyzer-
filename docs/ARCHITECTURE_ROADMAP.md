@@ -159,3 +159,11 @@ Mengacu pada `docs/superpowers/specs/2026-11-13-regression-upgrade-design.md`:
 2. **`src/lib/panel-accuracy-diagnostics.ts`**: Penambahan generator `buildStep7DiagnosticAdvisor(...)` yang memproduksi `Step7AdvisorBundle` (skor kesehatan diagnostik, status kelayakan inferensi, dan aksi perbaikan metodologis satu-klik tanpa manipulasi *p-value*).
 3. **`src/app/api/panel-accuracy/fit/route.ts`**: Menerima parameter opsional tervalidasi `bootstrapReplications` (`[499, 1999]`) dan `mcmcIterations` (`[250, 900]`) dari Step 6 & Step 7.
 4. **`src/components/PanelAccuracyTab.tsx`**: Pembaruan UI Step 3 (tabel rekomendasi bebas-skala + Checklist Aksi Optimal), Step 6/7 (Banner Status & Delta Verifikasi Bootstrap Server + tombol presisi tinggi `1.999 Wild Bootstrap + 800 MCMC`), dan panel **Rekomendasi Cerdas Step 7**; plus pembersihan sisa teks lama Step 2.
+
+---
+
+## 8. Arsitektur Tahap 10: Pemilihan Sheet Excel & Google Sheets di Step 1 Option 2
+
+1. **`src/lib/panel-accuracy-types.ts`**: Penambahan tipe `ImportedSheetData` dan `EvaluatedSheetCandidate`.
+2. **`src/lib/panel-accuracy-validation.ts`**: Penambahan fungsi murni `evaluateImportedWorkbookSheets(sheets)` untuk menilai kelayakan tabel panel per sheet (deteksi rasio `__EMPTY`, baris minimal, jumlah kolom numerik) dan menentukan `recommendedSheetName`.
+3. **`src/components/PanelAccuracyTab.tsx`**: Pembaruan `handleFileUpload`, `handleImportLink`, serta penambahan panel terpadu **WorkbookSheetSelector** pada Step 1 yang tampil baik untuk **Upload Excel/CSV** maupun **Google Sheets** dengan kartu pil sheet interaktif + dropdown tersinkronisasi dan koreksi pembacaan `json.data.originalName`.

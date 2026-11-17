@@ -203,3 +203,10 @@ Dokumen ini memuat daftar tugas operasional dari Tahap 1 hingga Tahap 3 beserta 
 - [x] **T9.2**: Penambahan `buildStep7DiagnosticAdvisor` pada `panel-accuracy-diagnostics.ts` dan pembaruan `/api/panel-accuracy/fit/route.ts`.
 - [x] **T9.3**: Pembaruan UI Step 3, Step 6, dan Step 7 di `PanelAccuracyTab.tsx` (Checklist Rekomendasi Optimal Step 3, Kartu Rekomendasi Step 7 + Tombol Aksi Langsung, Banner Status & Delta `499 vs 999/1999 Wild Bootstrap`, pembersihan teks sisa Step 2).
 - [x] **T9.4**: Penambahan unit test Tahap 9 di `tests/unit/panel-accuracy-engine.test.ts` serta verifikasi `tsc --noEmit`, `vitest`, `next build`, dan 0 diff pada Option 1.
+
+---
+
+## Tahap 10: Pemilihan Sheet Excel & Google Sheets (Step 1 Option 2)
+- [x] **T10.1**: Penambahan tipe `ImportedSheetData` / `EvaluatedSheetCandidate` di `panel-accuracy-types.ts` dan fungsi `evaluateImportedWorkbookSheets` di `panel-accuracy-validation.ts`.
+- [x] **T10.2**: Pembaruan `PanelAccuracyTab.tsx` Step 1 (`handleFileUpload`, `handleImportLink`, panel Pemilihan Sheet interaktif untuk Excel dan Google Sheets, koreksi `originalName`, serta status deteksi cover vs tabel panel).
+- [x] **T10.3**: Penambahan unit test Tahap 10 di `tests/unit/panel-accuracy-engine.test.ts` dan verifikasi menyeluruh (`tsc --noEmit`, `vitest`, `next build`, 0 diff pada Option 1).

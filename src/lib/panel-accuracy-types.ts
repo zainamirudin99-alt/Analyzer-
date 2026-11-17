@@ -594,3 +594,23 @@ export interface PanelAccuracyFitResult {
   interpretations: AccuracyAcademicInterpretations;
   generatedCode: GeneratedAccuracyCode;
 }
+
+export interface ImportedSheetData {
+  sheetName: string;
+  rowCount: number;
+  columnCount: number;
+  columns: string[];
+  previewRows: Record<string, unknown>[];
+  allRows?: Record<string, unknown>[];
+}
+
+export interface EvaluatedSheetCandidate {
+  sheetName: string;
+  rowCount: number;
+  columnCount: number;
+  emptyHeaderRatio: number;
+  numericColumnCount: number;
+  isPanelReady: boolean;
+  isRecommended: boolean;
+  statusNote: string;
+}

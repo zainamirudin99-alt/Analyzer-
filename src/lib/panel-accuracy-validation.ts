@@ -6,6 +6,8 @@
 import {
   AccuracyPreprocessingOptions,
   DataQualityCheckItem,
+  EvaluatedSheetCandidate,
+  ImportedSheetData,
   LatentIdentificationAudit,
   MeasurementSource,
   PanelAccuracyQualityReport,
@@ -746,5 +748,89 @@ export function generateMultiSourceCO2PresetDataset(): {
     yearColumn: 'Year',
     sources,
     observations
+  };
+}
+
+/**
+ * Evaluate multi-sheet workbooks (Excel / Google Sheets) to identify clean tabular sheets
+ * versus dashboard/cover sheets with __EMPTY headers so Step 1 picks a usable initial sheet
+ * while allowing the user to switch between any sheet freely.
+ */
+export function evaluateImportedWorkbookSheets(sheets: ImportedSheetData[]): {
+  recommendedSheetName: string;
+  autoSwitchedFromFirst: boolean;
+  evaluations: EvaluatedSheetCandidate[];
+} {
+  if (!sheets || sheets.length === 0) {
+    return { recommendedSheetName: '', autoSwitchedFromFirst: false, evaluations: [] };
+  }
+
+  const scored = sheets.map(s => {
+    const rows = s.allRows && s.allRows.length > 0 ? s.allRows : s.previewRows || [];
+    const cols = s.columns && s.columns.length > 0 ? s.columns : rows[0] ? Object.keys(rows[0]) : [];
+    const rowCount = s.rowCount || rows.length;
+    const colCount = s.columnCount || cols.length;
+
+    const emptyCols = cols.filter(c => !c.trim() || c.startsWith('__EMPTY')).length;
+    const emptyHeaderRatio = colCount > 0 ? emptyCols / colCount : 1;
+
+    let numericColumnCount = 0;
+    const minNumericHits = Math.max(1, Math.min(3, rows.length));
+    cols.forEach(c => {
+      if (!c.trim() || c.startsWith('__EMPTY')) return;
+      let hits = 0;
+      for (let i = 0; i < Math.min(rows.length, 30); i++) {
+        if (parseNumericCell(rows[i]?.[c]) !== null) hits++;
+      }
+      if (hits >= minNumericHits) numericColumnCount++;
+    });
+
+    const isPanelReady =
+      rows.length >= 4 && colCount >= 3 && emptyHeaderRatio < 0.4 && numericColumnCount >= 2;
+
+    const score =
+      (isPanelReady ? 60 : 0) +
+      (1 - emptyHeaderRatio) * 20 +
+      Math.min(15, numericColumnCount * 4) +
+      (rows.length >= 4 ? Math.min(5, Math.log10(rows.length + 1) * 2.5) : 0);
+
+    let statusNote = `Siap Panel · ${numericColumnCount} kol numerik`;
+    if (rows.length < 4 || colCount < 3) {
+      statusNote = `Baris/kolom minim (${rowCount} × ${colCount})`;
+    } else if (emptyHeaderRatio >= 0.4) {
+      statusNote = `Terdeteksi cover/dashboard (${Math.round(emptyHeaderRatio * 100)}% __EMPTY)`;
+    } else if (numericColumnCount < 2) {
+      statusNote = `Kolom numerik kurang (${numericColumnCount} kol)`;
+    }
+
+    return {
+      sheetName: s.sheetName,
+      rowCount,
+      columnCount: colCount,
+      emptyHeaderRatio,
+      numericColumnCount,
+      isPanelReady,
+      score,
+      statusNote
+    };
+  });
+
+  const first = scored[0];
+  let best = first;
+  for (const cand of scored) {
+    if (!first.isPanelReady) {
+      if (cand.score > best.score) best = cand;
+    } else if (cand.isPanelReady && cand.score > first.score + 20 && cand.score > best.score) {
+      best = cand;
+    }
+  }
+
+  return {
+    recommendedSheetName: best.sheetName,
+    autoSwitchedFromFirst: best.sheetName !== first.sheetName,
+    evaluations: scored.map(({ score: _score, ...rest }) => ({
+      ...rest,
+      isRecommended: rest.sheetName === best.sheetName
+    }))
   };
 }

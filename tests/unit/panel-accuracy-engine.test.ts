@@ -25,9 +25,10 @@ import {
   buildAllStepStataDocumentation,
   computeLeaveOneCityOutSensitivity
 } from '../../src/lib/panel-accuracy-step-stata';
-import { MeasurementSource, PanelDataset } from '../../src/lib/panel-accuracy-types';
+import { ImportedSheetData, MeasurementSource, PanelDataset } from '../../src/lib/panel-accuracy-types';
 import {
   DEFAULT_ACCURACY_PREPROCESSING,
+  evaluateImportedWorkbookSheets,
   generateMultiSourceCO2PresetDataset,
   validatePanelAccuracyDataset
 } from '../../src/lib/panel-accuracy-validation';
@@ -350,5 +351,45 @@ describe('Gerbang Verifikasi — Opsi B Reference-Free All-Source Latent & Conse
     expect(j2Res.diagnostics.diagnosticAdvisor?.overallHealthStatus).toBe('PERLU_PERBAIKAN_METODOLOGI');
     expect(j2Res.diagnostics.diagnosticAdvisor?.actions[0].actionType).toBe('ADD_THIRD_SOURCE');
     expect(j2Res.diagnostics.diagnosticAdvisor?.actions[0].priority).toBe('KRITIS');
+  });
+
+  it('8. Evaluates multi-sheet Excel & Google Sheets workbooks and auto-skips cover/__EMPTY sheets', () => {
+    const preset = generateMultiSourceCO2PresetDataset();
+    const coverRows = [
+      { DASHBOARD_ANALISIS: 'Profil', __EMPTY: 'BBCA', __EMPTY_1: 'BBRI', __EMPTY_2: 'BMRI' },
+      { DASHBOARD_ANALISIS: 'Keterangan', __EMPTY: 'BCA', __EMPTY_1: 'BRI', __EMPTY_2: 'Mandiri' },
+      { DASHBOARD_ANALISIS: 'Ringkasan', __EMPTY: '-', __EMPTY_1: '-', __EMPTY_2: '-' },
+      { DASHBOARD_ANALISIS: 'Catatan', __EMPTY: 'A', __EMPTY_1: 'B', __EMPTY_2: 'C' }
+    ];
+    const sheets: ImportedSheetData[] = [
+      {
+        sheetName: 'Dashboard_Ringkasan',
+        rowCount: coverRows.length,
+        columnCount: 4,
+        columns: ['DASHBOARD_ANALISIS', '__EMPTY', '__EMPTY_1', '__EMPTY_2'],
+        previewRows: coverRows,
+        allRows: coverRows
+      },
+      {
+        sheetName: 'Data_Panel_Utama',
+        rowCount: preset.observations.length,
+        columnCount: 6,
+        columns: Object.keys(preset.observations[0]),
+        previewRows: preset.observations.slice(0, 10),
+        allRows: preset.observations
+      }
+    ];
+
+    const evalRes = evaluateImportedWorkbookSheets(sheets);
+    expect(evalRes.recommendedSheetName).toBe('Data_Panel_Utama');
+    expect(evalRes.autoSwitchedFromFirst).toBe(true);
+    expect(evalRes.evaluations[0].isPanelReady).toBe(false);
+    expect(evalRes.evaluations[1].isPanelReady).toBe(true);
+    expect(evalRes.evaluations[1].isRecommended).toBe(true);
+
+    // When sheet 1 is already a valid tabular panel table, keep sheet 1 selected by default
+    const cleanFirst = evaluateImportedWorkbookSheets([sheets[1], sheets[0]]);
+    expect(cleanFirst.recommendedSheetName).toBe('Data_Panel_Utama');
+    expect(cleanFirst.autoSwitchedFromFirst).toBe(false);
   });
 });

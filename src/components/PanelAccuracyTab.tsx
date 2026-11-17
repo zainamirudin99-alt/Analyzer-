@@ -41,6 +41,7 @@ import {
 } from '@/lib/panel-accuracy-step-guides';
 import {
   AccuracyPreprocessingOptions,
+  ImportedSheetData,
   MeasurementSource,
   PanelAccuracyFitResult,
   PanelDataset,
@@ -51,6 +52,7 @@ import {
 import {
   autoDetectAccuracyDatasetConfig,
   DEFAULT_ACCURACY_PREPROCESSING,
+  evaluateImportedWorkbookSheets,
   generateMultiSourceCO2PresetDataset,
   parsePastedAccuracyData,
   validatePanelAccuracyDataset
@@ -266,8 +268,9 @@ export const PanelAccuracyTab: React.FC = () => {
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [sourceTab, setSourceTab] = useState<'preset' | 'upload' | 'link' | 'paste'>('preset');
   const [datasetName, setDatasetName] = useState<string>('panel_co2_multi_source_accuracy.xlsx');
-  const [sheetsData, setSheetsData] = useState<any[]>([]);
+  const [sheetsData, setSheetsData] = useState<ImportedSheetData[]>([]);
   const [selectedSheet, setSelectedSheet] = useState<string>('');
+  const [sheetSelectionNote, setSheetSelectionNote] = useState<string | null>(null);
 
   const [rawRows, setRawRows] = useState<Record<string, unknown>[]>(initialPreset.observations);
   const [cityIdColumn, setCityIdColumn] = useState<string>(initialPreset.cityIdColumn);
@@ -428,10 +431,15 @@ export const PanelAccuracyTab: React.FC = () => {
     ]
   );
 
+  const sheetAudit = useMemo(
+    () => evaluateImportedWorkbookSheets(sheetsData),
+    [sheetsData]
+  );
+
   const applyNewDataset = (
     name: string,
     rows: Record<string, unknown>[],
-    sheetList: any[] = [],
+    sheetList: ImportedSheetData[] = [],
     sheetName = '',
     presetConfig?: { cityIdColumn: string; yearColumn: string; sources: MeasurementSource[] }
   ) => {
@@ -456,8 +464,41 @@ export const PanelAccuracyTab: React.FC = () => {
     setAppliedNotice(null);
   };
 
+  const loadWorkbookSheets = (resolvedName: string, sheets: ImportedSheetData[]) => {
+    const evalSummary = evaluateImportedWorkbookSheets(sheets);
+    const chosen =
+      sheets.find(s => s.sheetName === evalSummary.recommendedSheetName) || sheets[0];
+    const rows = chosen.allRows || chosen.previewRows || [];
+    applyNewDataset(resolvedName, rows, sheets, chosen.sheetName);
+
+    if (sheets.length > 1 && evalSummary.autoSwitchedFromFirst) {
+      setSheetSelectionNote(
+        `Workbook memiliki ${sheets.length} sheet. Sheet pertama ("${sheets[0].sheetName}") terdeteksi sebagai cover/dashboard (__EMPTY), sehingga sistem memilih otomatis sheet "${chosen.sheetName}". Anda tetap dapat mengganti sheet di bawah.`
+      );
+    } else if (sheets.length > 1) {
+      setSheetSelectionNote(
+        `Ditemukan ${sheets.length} sheet pada "${resolvedName}". Pilih sheet yang berisi tabel panel untuk analisis (aktif: "${chosen.sheetName}").`
+      );
+    } else {
+      setSheetSelectionNote(
+        `Workbook memuat 1 sheet aktif: "${chosen.sheetName}" (${chosen.rowCount} baris × ${chosen.columnCount} kolom).`
+      );
+    }
+  };
+
+  const handleSelectSheet = (sheetName: string) => {
+    const target = sheetsData.find(s => s.sheetName === sheetName);
+    if (!target) return;
+    const rows = target.allRows || target.previewRows || [];
+    applyNewDataset(datasetName, rows, sheetsData, target.sheetName);
+    setSheetSelectionNote(
+      `Sheet aktif beralih ke "${target.sheetName}" (${target.rowCount} baris × ${target.columnCount} kolom).`
+    );
+  };
+
   const handleLoadPreset = () => {
     setSourceTab('preset');
+    setSheetSelectionNote(null);
     const p = generateMultiSourceCO2PresetDataset();
     applyNewDataset('panel_co2_multi_source_accuracy.xlsx', p.observations, [], '', p);
   };
@@ -471,11 +512,10 @@ export const PanelAccuracyTab: React.FC = () => {
       const res = await fetch('/api/regression/upload', { method: 'POST', body: fd });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || 'Gagal membaca berkas.');
-      const sheets = json.data?.sheets || [];
+      const sheets: ImportedSheetData[] = json.data?.sheets || [];
       if (sheets.length === 0) throw new Error('Berkas spreadsheet kosong.');
-      const first = sheets[0];
-      const rows = first.allRows || first.previewRows || [];
-      applyNewDataset(json.data.fileName || file.name, rows, sheets, first.sheetName);
+      const resolvedName = json.data?.originalName || json.data?.fileName || file.name;
+      loadWorkbookSheets(resolvedName, sheets);
     } catch (err: any) {
       setSourceError(err.message || 'Gagal mengunggah berkas.');
     } finally {
@@ -484,21 +524,25 @@ export const PanelAccuracyTab: React.FC = () => {
   };
 
   const handleImportLink = async () => {
+    if (!sheetsUrl.trim()) {
+      setSourceError('Masukkan tautan Google Sheets terlebih dahulu.');
+      return;
+    }
     setIsLoadingSource(true);
     setSourceError(null);
     try {
       const res = await fetch('/api/regression/import-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: sheetsUrl })
+        body: JSON.stringify({ url: sheetsUrl.trim() })
       });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || 'Gagal mengimpor Google Sheets.');
-      const sheets = json.data?.sheets || [];
+      const sheets: ImportedSheetData[] = json.data?.sheets || [];
       if (sheets.length === 0) throw new Error('Spreadsheet tidak memiliki data.');
-      const first = sheets[0];
-      const rows = first.allRows || first.previewRows || [];
-      applyNewDataset(json.data.fileName || 'Google_Sheets_Panel.xlsx', rows, sheets, first.sheetName);
+      const resolvedName =
+        json.data?.originalName || json.data?.fileName || 'Google_Sheets_Panel.xlsx';
+      loadWorkbookSheets(resolvedName, sheets);
     } catch (err: any) {
       setSourceError(err.message || 'Gagal mengimpor Google Sheets.');
     } finally {
@@ -512,6 +556,7 @@ export const PanelAccuracyTab: React.FC = () => {
       setSourceError(parsed.error || 'Data paste tidak valid.');
       return;
     }
+    setSheetSelectionNote(null);
     applyNewDataset('data_paste_panel_accuracy.csv', parsed.rows);
   };
 
@@ -970,25 +1015,6 @@ export const PanelAccuracyTab: React.FC = () => {
                   <UploadCloud size={16} style={{ marginRight: '8px' }} />
                   {isLoadingSource ? 'Memproses Berkas...' : 'Pilih Berkas (.xlsx, .xls, .csv)'}
                 </button>
-                {sheetsData.length > 1 && (
-                  <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'center', gap: '8px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 700 }}>Pilih Sheet:</span>
-                    <select
-                      value={selectedSheet}
-                      onChange={e => {
-                        const target = sheetsData.find(s => s.sheetName === e.target.value);
-                        if (target) applyNewDataset(datasetName, target.allRows || target.previewRows || [], sheetsData, target.sheetName);
-                      }}
-                      style={{ minHeight: '42px', fontSize: '15px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
-                    >
-                      {sheetsData.map(s => (
-                        <option key={s.sheetName} value={s.sheetName}>
-                          {s.sheetName} ({s.rowCount} baris)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
               </div>
             )}
 
@@ -1004,6 +1030,127 @@ export const PanelAccuracyTab: React.FC = () => {
                 <button type="button" className="btn btn-primary" disabled={isLoadingSource} onClick={handleImportLink} style={{ minHeight: '44px' }}>
                   {isLoadingSource ? 'Mengunduh...' : 'Impor Google Sheets'}
                 </button>
+              </div>
+            )}
+
+            {/* Tahap Pemilihan Sheet Workbook (Berlaku untuk Upload Excel & Google Sheets) */}
+            {(sourceTab === 'upload' || sourceTab === 'link') && sheetsData.length > 0 && (
+              <div
+                style={{
+                  padding: '16px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1.5px solid var(--primary)',
+                  background: 'var(--surface-muted)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <Layers size={18} color="var(--primary)" />
+                    <div>
+                      <strong style={{ fontSize: '14px', color: 'var(--text)', display: 'block' }}>
+                        Pemilihan Sheet Workbook ({sheetsData.length} Sheet Tersedia)
+                      </strong>
+                      <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                        Berkas: <strong>{datasetName}</strong> · Sheet Aktif: <strong>{selectedSheet || sheetsData[0]?.sheetName}</strong>
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <label htmlFor="option2-sheet-select" style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text)' }}>
+                      Pilih Sheet:
+                    </label>
+                    <select
+                      id="option2-sheet-select"
+                      value={selectedSheet}
+                      onChange={e => handleSelectSheet(e.target.value)}
+                      style={{
+                        minHeight: '44px',
+                        minWidth: '210px',
+                        fontSize: '15px',
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border)',
+                        background: 'var(--surface)',
+                        color: 'var(--text)'
+                      }}
+                    >
+                      {sheetAudit.evaluations.map(ev => (
+                        <option key={ev.sheetName} value={ev.sheetName}>
+                          {ev.sheetName} ({ev.rowCount} baris × {ev.columnCount} kol)
+                          {ev.isRecommended ? ' ★ Disarankan' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {sheetSelectionNote && (
+                  <div
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: '6px',
+                      background: 'var(--info-bg)',
+                      border: '1px solid var(--border)',
+                      fontSize: '12.5px',
+                      color: 'var(--text)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      lineHeight: 1.45
+                    }}
+                  >
+                    <Info size={15} color="var(--primary)" style={{ flexShrink: 0 }} />
+                    <span>{sheetSelectionNote}</span>
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '8px' }}>
+                  {sheetAudit.evaluations.map(ev => {
+                    const isActive = ev.sheetName === selectedSheet;
+                    return (
+                      <button
+                        key={ev.sheetName}
+                        type="button"
+                        onClick={() => handleSelectSheet(ev.sheetName)}
+                        aria-pressed={isActive}
+                        style={{
+                          minHeight: '56px',
+                          padding: '10px 12px',
+                          borderRadius: 'var(--radius-sm)',
+                          border: isActive ? '2px solid var(--primary)' : '1px solid var(--border)',
+                          background: isActive ? 'var(--info-bg)' : 'var(--surface)',
+                          textAlign: 'left',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '4px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px', width: '100%' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 800, color: isActive ? 'var(--primary)' : 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {ev.sheetName}
+                          </span>
+                          {ev.isRecommended && (
+                            <span style={{ padding: '2px 7px', borderRadius: '999px', background: 'var(--primary)', color: '#fff', fontSize: '10px', fontWeight: 800, flexShrink: 0 }}>
+                              DISARANKAN
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px', width: '100%', fontSize: '11.5px', color: 'var(--text-secondary)' }}>
+                          <span>{ev.rowCount} baris × {ev.columnCount} kol</span>
+                          <span style={{ fontWeight: 700, color: ev.isPanelReady ? 'var(--success)' : '#d97706', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                            {ev.isPanelReady ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
+                            {ev.isPanelReady ? 'Siap Panel' : 'Non-Tabel'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{ev.statusNote}</div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
