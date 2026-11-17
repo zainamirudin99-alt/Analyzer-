@@ -1,7 +1,6 @@
 // ============================================================
-// Comparative Measurement Accuracy Assessment — Pipeline Orchestrator
-// Coordinates validation, preprocessing, EDA, MAE/RMSE/MBE/CCC/Bland-Altman,
-// Pair Fixed Effects, Wild Cluster Bootstrap, Diagnostics, Ranking & Codegen
+// Reference-Free All-Source Latent & Consensus Measurement Accuracy
+// Pipeline Orchestrator (Opsi B: Evaluates & Ranks All J Sources Equally)
 // ============================================================
 
 import { generateAccuracyRScript } from './panel-accuracy-codegen-r';
@@ -14,6 +13,7 @@ import {
   generateAccuracyAcademicInterpretations,
   generateStataAccuracyOutputBundle
 } from './panel-accuracy-interpretation';
+import { fitBayesianLatentMeasurementModel } from './panel-accuracy-latent';
 import { computeAllSourceAccuracyMetrics } from './panel-accuracy-metrics';
 import { preparePanelAccuracyObservations } from './panel-accuracy-preprocessing';
 import { computeComparativeSourceRanking } from './panel-accuracy-ranking';
@@ -33,6 +33,7 @@ export function executePanelAccuracyPipeline(params: {
   dataset: PanelDataset;
   preprocessing?: Partial<AccuracyPreprocessingOptions>;
   bootstrapReplications?: number;
+  mcmcIterations?: number;
 }): PanelAccuracyFitResult {
   const preprocessing: AccuracyPreprocessingOptions = {
     ...DEFAULT_ACCURACY_PREPROCESSING,
@@ -46,7 +47,7 @@ export function executePanelAccuracyPipeline(params: {
       .map(c => c.message)
       .join(' ');
     throw new Error(
-      `Validasi dataset komparasi akurasi gagal: ${errMsgs || 'Periksa pemetaan kolom, sumber referensi, dan duplikat City-Year.'}`
+      `Validasi dataset evaluasi akurasi gagal: ${errMsgs || 'Periksa pemetaan kolom, jumlah sumber, dan duplikat City-Year.'}`
     );
   }
 
@@ -56,14 +57,22 @@ export function executePanelAccuracyPipeline(params: {
   }
 
   const eda = computeAccuracyEDA(prepared.completeCaseObservations, params.dataset.sources);
-  const metrics = computeAllSourceAccuracyMetrics(prepared);
-  const pairFixedEffects = fitPairFixedEffectsModel(prepared, {
+
+  const latentOut = fitBayesianLatentMeasurementModel({
+    observations: prepared.completeCaseObservations,
+    sources: prepared.comparisonSources,
+    iterationsPerChain: params.mcmcIterations ?? 450,
+    burnInPerChain: 250
+  });
+
+  const metrics = computeAllSourceAccuracyMetrics(prepared, latentOut);
+  const pairFixedEffects = fitPairFixedEffectsModel(prepared, latentOut, {
     bootstrapReplications: params.bootstrapReplications ?? 999
   });
-  const diagnostics = computePanelAccuracyDiagnostics(prepared);
+  const diagnostics = computePanelAccuracyDiagnostics(prepared, latentOut);
   const ranking = computeComparativeSourceRanking({
-    referenceSource: prepared.referenceSource,
     metrics,
+    latentOut,
     pairFixedEffects,
     diagnostics,
     qualityReport
@@ -85,6 +94,7 @@ export function executePanelAccuracyPipeline(params: {
     comparisonSources: prepared.comparisonSources,
     qualityReport,
     eda,
+    latentModel: latentOut.summary,
     metrics,
     pairFixedEffects,
     diagnostics,
@@ -110,7 +120,7 @@ export function executePanelAccuracyPipeline(params: {
 
   return {
     engineAttribution:
-      'Native TypeScript Reference-Based Panel Measurement Accuracy & Pair Fixed Effects Engine (City Cluster-Robust & Rademacher Wild Cluster Bootstrap)',
+      'Bayesian Hierarchical Panel Latent Measurement Model (3-Chain Gibbs MCMC + Grubbs Triangulation + Pair Fixed Effects & Rademacher Wild Cluster Bootstrap)',
     ...core,
     preprocessing,
     stataOutput,
@@ -120,7 +130,7 @@ export function executePanelAccuracyPipeline(params: {
 }
 
 /**
- * Evaluate candidate preprocessing configurations in Step 3 without automatically altering user data.
+ * Evaluate candidate preprocessing configurations in Step 3 without altering user data.
  */
 export function evaluateAccuracyPreprocessingRecommendations(params: {
   dataset: PanelDataset;
@@ -188,11 +198,18 @@ export function evaluateAccuracyPreprocessingRecommendations(params: {
     const prepared = preparePanelAccuracyObservations(params.dataset, opt);
     if (prepared.completeCaseObservations.length < 3) continue;
 
-    const metrics = computeAllSourceAccuracyMetrics(prepared);
-    const diag = computePanelAccuracyDiagnostics(prepared);
+    const latentOut = fitBayesianLatentMeasurementModel({
+      observations: prepared.completeCaseObservations,
+      sources: prepared.comparisonSources,
+      nChains: 2,
+      iterationsPerChain: 180,
+      burnInPerChain: 100
+    });
+    const metrics = computeAllSourceAccuracyMetrics(prepared, latentOut);
+    const diag = computePanelAccuracyDiagnostics(prepared, latentOut);
     if (metrics.length === 0) continue;
 
-    const sorted = [...metrics].sort((a, b) => a.mae - b.mae);
+    const sorted = [...metrics].sort((a, b) => a.totalLatentRmse - b.totalLatentRmse);
     const best = sorted[0];
     const maxPropBiasT = Math.max(...metrics.map(m => Math.abs(m.blandAltman.propBiasTStat)), 0);
     const maxOutlierShift = Math.max(
@@ -209,10 +226,10 @@ export function evaluateAccuracyPreprocessingRecommendations(params: {
 
     const rationale =
       spec.id === 'raw_baseline'
-        ? `Mempertahankan satuan fisik asli (${best.unit}); MAE terendah = ${best.mae.toFixed(3)} pada ${best.sourceLabel} (CCC = ${best.ccc.ccc.toFixed(4)}).`
+        ? `Mempertahankan satuan fisik asli (${best.unit}); Total Latent RMSE terendah = ${best.totalLatentRmse.toFixed(2)} pada ${best.sourceLabel} (R² = ${(best.reliabilityR2 * 100).toFixed(2)}%).`
         : spec.id === 'winsor_25'
-        ? `Meredam ${baseQuality.outlierCountTotal} observasi ekstrem; pergeseran sensitivitas outlier maks ${maxOutlierShift.toFixed(1)}%.`
-        : `Mengevaluasi kesalahan proporsional pada skala logaritmik (CCC terbaik = ${best.ccc.ccc.toFixed(4)}, |t| proportional bias maks = ${maxPropBiasT.toFixed(2)}).`;
+          ? `Meredam ${baseQuality.outlierCountTotal} observasi ekstrem; pergeseran sensitivitas maks ${maxOutlierShift.toFixed(1)}%.`
+          : `Mengevaluasi reliabilitas proporsional pada skala logaritmik (CCC terbaik = ${best.ccc.ccc.toFixed(4)}, |t| proportional bias maks = ${maxPropBiasT.toFixed(2)}).`;
 
     scenarios.push({
       id: spec.id,
@@ -231,7 +248,6 @@ export function evaluateAccuracyPreprocessingRecommendations(params: {
     });
   }
 
-  // Ensure exactly one scenario is flagged as primary recommendation
   const recommended =
     scenarios.find(s => s.isRecommended) || scenarios[0];
   scenarios.forEach(s => {
@@ -246,6 +262,6 @@ export function evaluateAccuracyPreprocessingRecommendations(params: {
     scenarios,
     summaryNote:
       `Sistem mengevaluasi ${scenarios.length} skenario prapemrosesan. ` +
-      `Rekomendasi utama adalah "${recommended.label}" agar interpretasi MAE dan RMSE tetap langsung bermakna pada satuan fisik sumber referensi.`
+      `Rekomendasi utama adalah "${recommended.label}" agar Error SD (σ_εj), Total Latent RMSE, dan Reliabilitas R² tetap langsung bermakna pada satuan fisik asli.`
   };
 }

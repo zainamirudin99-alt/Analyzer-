@@ -1,12 +1,9 @@
 // ============================================================
-// Comparative Measurement Accuracy Assessment — 9-Step Bullet Guides
-// Concise Point-by-Point Purpose, Reading Guide & Live Interpretations
+// Reference-Free All-Source Latent & Consensus Assessment
+// 9-Step Bullet Guides + Live Actual Point-by-Point Interpretations
 // ============================================================
 
-import {
-  PanelAccuracyFitResult,
-  PanelAccuracyQualityReport
-} from './panel-accuracy-types';
+import { PanelAccuracyFitResult } from './panel-accuracy-types';
 
 export interface AccuracyStepGuide {
   id: number;
@@ -23,150 +20,147 @@ export const PANEL_ACCURACY_STEP_GUIDES: AccuracyStepGuide[] = [
     pillLabel: '1. Upload',
     fullTitle: 'Step 1 — Data Upload Multi-Sumber Panel',
     purposePoints: [
-      'Memuat data panel Kota-Tahun dengan ≥ 2 sumber pengukuran CO₂.',
-      'Mendukung Excel (.xlsx/.xls), CSV, tempel tabel (paste), Google Sheets, atau preset 4 sumber.'
+      'Memuat data panel Kota-Tahun dengan minimal 3 sumber pengukuran CO₂ yang akan dinilai bersama (tanpa mengunci 1 sumber referensi).',
+      'Mendukung Excel (.xlsx/.xls), CSV, tempel tabel (paste), Google Sheets, atau preset 4 sumber CO₂.'
     ],
     interpretPoints: [
       'Total Baris: jumlah baris mentah pada berkas asal.',
-      'Pasangan Lengkap (CC): baris Kota-Tahun di mana seluruh sumber terisi valid (tanpa NA).',
-      'Status Balanced: setiap kota memiliki tahun pengamatan yang lengkap dan seragam.'
+      'Pasangan Lengkap (CC): baris Kota-Tahun di mana seluruh J sumber terisi valid tanpa missing value.',
+      'Status Balanced: setiap kota memiliki periode tahun pengamatan yang lengkap dan seragam.'
     ],
     keyCaveat:
-      'Sampel Complete-Case (CC) menjadi dasar evaluasi berpasangan agar seluruh sumber diuji pada sel Kota-Tahun yang sama.'
+      'Untuk memisahkan error varians dan menemukan variabel paling benar tanpa patokan eksternal, secara teoretis dibutuhkan minimal J >= 3 sumber pengukuran independen.'
   },
   {
     id: 2,
-    pillLabel: '2. Mapping & Ref',
-    fullTitle: 'Step 2 — Pemetaan Sumber Dinamis & Pemilihan Referensi',
+    pillLabel: '2. Config All',
+    fullTitle: 'Step 2 — Intelligent All-Source Mapping (Tanpa Reference Terkunci)',
     purposePoints: [
-      'Memetakan kolom City ID, Year, satuan, metode, dan SE opsional untuk jumlah sumber dinamis (2, 3, 4, 5+).',
-      'Menetapkan tepat 1 Reference Source (r) sebagai pembanding acuan.'
+      'Menganalisis 14 karakteristik kolom untuk memetakan City ID, Year, dan seluruh J sumber pengukuran secara setara.',
+      'Menjamin SEMUA variabel yang dipetakan ikut dinilai dan berpeluang menempati Peringkat #1.'
     ],
     interpretPoints: [
-      'Reference Source (r): menjadi patokan nol untuk menghitung selisih error = X_pembanding − X_referensi.',
-      'Comparison Source: seluruh sumber selain referensi yang akurasi relatifnya dievaluasi.',
-      'Mengubah pilihan referensi otomatis menghitung ulang seluruh metrik, grafik, Pair FE, kode, dan peringkat.'
+      'Evaluated Source (1..J): seluruh variabel diposisikan sejajar tanpa ada yang dikecualikan sebagai patokan nol.',
+      'Recommended vs Warning: menilai kesiapan cakupan, varians positif, dan konsistensi skala/satuan.',
+      'Identifiabilitas Laten (J >= 3): memastikan model triangulasi dan Bayesian MCMC dapat mengurai reliabilitas tiap variabel.'
     ],
     keyCaveat:
-      'Sumber referensi dipilih sebagai pembanding empiris (benchmark), bukan kebenaran absolut bebas galat.'
+      'Tidak menetapkan satu sumber pun sebagai kebenaran mutlak; akurasi tiap variabel diukur melalui model laten bersama dan triangulasi.'
   },
   {
     id: 3,
     pillLabel: '3. Audit & Prep',
-    fullTitle: 'Step 3 — Audit Kualitas Data, Validitas Referensi & Prapemrosesan',
+    fullTitle: 'Step 3 — Audit Kualitas, Identifiabilitas Laten & Prapemrosesan',
     purposePoints: [
-      'Menguji 10 potensi risiko data panel sekaligus kredibilitas sumber referensi.',
-      'Menyediakan prapemrosesan opt-in hanya dengan persetujuan eksplisit pengguna.'
+      'Menguji 10 potensi risiko data panel sekaligus syarat identifiabilitas model pengukuran laten (J >= 3, varians > 0).',
+      'Menyediakan opsi prapemrosesan eksplisit (Hapus Duplikat, Winsorization 2.5%, Transformasi log(1+x)).'
     ],
     interpretPoints: [
-      'OK (Hijau): indikator kualitas memenuhi syarat analisis.',
-      'Warning (Kuning): ada catatan penting (misal beda sampel CC vs Available-Case atau outlier 1.5×IQR).',
-      'Error (Merah): masalah kritis memblokir analisis (misal referensi varians nol atau duplikat City-Year belum dibersihkan).'
+      'OK (Hijau): seluruh sumber memenuhi syarat identifikasi dan kualitas panel.',
+      'Warning (Kuning): ada sel kosong parsial, perbedaan skala, outlier 1.5×IQR, atau J = 2 (underidentified).',
+      'Error (Merah): masalah pemblokir (varians nol pada salah satu sumber atau duplikat City-Year aktif).'
     ],
     keyCaveat:
-      'Disarankan mempertahankan satuan fisik asli agar nilai MAE dan RMSE mudah dimaknai secara substantif.'
+      'Pertahankan satuan fisik asli agar Error SD (σ_εj), Total Latent RMSE, dan alpha bias mudah dimaknai secara substantif.'
   },
   {
     id: 4,
     pillLabel: '4. EDA',
     fullTitle: 'Step 4 — Exploratory Data Analysis & Korelasi Panel',
     purposePoints: [
-      'Menilai sebaran deskriptif tiap sumber (Mean, SD, Median, IQR, CV, Skewness).',
-      'Membedakan korelasi lintas-kota dari pergerakan temporal dalam-kota yang sama.'
+      'Menilai sebaran deskriptif seluruh J sumber (Mean, SD, Median, IQR, CV, Skewness).',
+      'Membedakan korelasi antar-kota dari dinamika perubahan tahunan di dalam kota yang sama.'
     ],
     interpretPoints: [
-      'Overall Pearson / Spearman: keterkaitan nilai secara keseluruhan antar sumber.',
-      'Within-City r: konsistensi fluktuasi dari tahun ke tahun di dalam kota yang sama.',
-      'First-Difference r (ΔX_t): kesamaan arah perubahan tahunan.',
-      'Garis diagonal 45° pada scatterplot: posisi kesepakatan sempurna tanpa bias maupun penyebaran.'
+      'Overall Pearson / Spearman: keterkaitan linear dan monotonik seluruh pasangan sumber.',
+      'Within-City r: konsistensi naik-turun tahunan di dalam kota yang sama.',
+      'First-Difference r (ΔX_t): kesamaan arah perubahan emisi tahunan antarsumber.',
+      'Tren Tahunan & Scatter vs θ̂: posisi masing-masing sumber terhadap estimasi konsensus.'
     ],
     keyCaveat:
-      'Korelasi tinggi hanya mengukur kesamaan arah linear/monotonik, BUKAN jaminan bebas bias sistematis.'
+      'Korelasi tinggi belum membuktikan variabel paling benar — variabel dengan r tinggi masih bisa memiliki bias aditif besar atau skala miring.'
   },
   {
     id: 5,
-    pillLabel: '5. Accuracy',
-    fullTitle: 'Step 5 — Metrik Akurasi, Lin\'s CCC & Bland-Altman',
+    pillLabel: '5. Latent Bayes',
+    fullTitle: 'Step 5 — Bayesian Hierarchical Latent Model & Agreement Assessment',
     purposePoints: [
-      'Mengukur selisih error berpasangan setiap comparison source terhadap sumber referensi.',
-      'Menggabungkan ukuran error (MAE, RMSE, MBE) dengan ukuran kesepakatan (Lin CCC & Bland-Altman LoA).'
+      'Mengestimasi nilai emisi sejati laten (θ_it) beserta bias aditif (α_j), loading (λ_j), Error SD (σ_εj), dan Reliabilitas (R²) untuk SEMUA J sumber.',
+      'Menghitung Total Latent RMSE, Posterior Probability of Being Best, serta Leave-One-Source-Out MAE, Lin CCC & Bland-Altman.'
     ],
     interpretPoints: [
-      'MAE & RMSE: makin kecil berarti makin dekat dengan referensi (RMSE lebih sensitif terhadap outlier ekstrem).',
-      'MBE: arah bias rata-rata (+ overestimation, − underestimation; ideal mendekati 0).',
-      'Lin CCC & Cb: mendekati 1 menandakan presisi dan akurasi skala/lokasi tinggi secara bersamaan.',
-      '95% LoA Bland-Altman: rentang selisih 95% pengamatan; slope proportional bias signifikan (p < 0.05) menandakan bias berubah theo besar emisi.',
-      'Complete-Case vs Available-Case: ditampilkan terpisah bila terdapat missing data parsial.'
+      'Total Latent RMSE & Error SD: semakin mendekati 0 berarti variabel paling dekat ke emisi laten sejati dan error randomnya paling kecil.',
+      'Reliabilitas R²: porsi variasi data variabel tersebut yang mencerminkan sinyal emisi sejati (mendekati 100% = paling konsisten).',
+      'Posterior Prob Best (%): peluang posterior bahwa variabel tersebut menjadi yang paling akurat di antara seluruh J variabel.',
+      'LOSO MAE & Lin CCC: uji kesepakatan tiap variabel terhadap konsensus gabungan J−1 variabel lainnya (bebas self-inclusion).'
     ],
     keyCaveat:
-      'Jangan menyembunyikan perbedaan jumlah observasi antara sampel lengkap dan sampel tersedia per sumber.'
+      'Identifikasi memakai Median(α_j/λ_j) = 0 & GeoMean(λ_j) = 1; bias kolektif bila seluruh instrumen menyimpang seragam tetap merupakan batasan statistik.'
   },
   {
     id: 6,
     pillLabel: '6. Pair FE',
-    fullTitle: 'Step 6 — Model Inferensial Pair Fixed Effects & Wild Bootstrap',
+    fullTitle: 'Step 6 — Pair Fixed Effects & Posterior Contrasts Semua Sumber',
     purposePoints: [
-      'Menguji apakah perbedaan MAE antarsumber pembanding signifikan secara statistik pada pasangan Kota-Tahun yang sama.',
-      'Menyerap efek tetap City-Year (α_it) serta mengelompokkan standar error pada level City ID.'
+      'Menguji signifikansi perbedaan kesalahan absolut (AE_ijt = |X_ijt − θ̂_it|) antarseluruh J sumber pada sel Kota-Tahun yang sama.',
+      'Menggabungkan uji frequentist (City Cluster SE + Rademacher Wild Bootstrap) dengan probabilitas posterior Bayesian P(RMSE_A < RMSE_B).'
     ],
     interpretPoints: [
-      'Koefisien β < 0: MAE sumber tersebut lebih kecil (lebih akurat) dibanding sumber pembanding acuan.',
-      'p-value Cluster < 0.05: perbedaan akurasi signifikan secara statistik pada α = 5%.',
-      'Wild Bootstrap p-val: p-value acuan utama bila jumlah klaster kota kecil (G < 30) untuk mencegah bias ke bawah SE.'
+      'Beta Diff < 0: deviasi variabel tersebut lebih kecil dibanding kategori pembanding acuan.',
+      'Wild Bootstrap p < 0.05 & P_Bayes >= 95%: perbedaan akurasi antar kedua sumber terbukti kuat.',
+      'Seluruh C(J, 2) pasangan dievaluasi agar peringkat #1 benar-benar diuji melawan peringkat #2, #3, ..., #J.'
     ],
     keyCaveat:
-      'Tidak memakai Uji Chow, Hausman, atau LM karena α_it langsung menyerap pasangan Kota-Tahun.'
+      'Untuk jumlah kota G < 30, prioritaskan p-value Wild Cluster Bootstrap dan Credible Interval Bayesian dibanding SE asimtotik.'
   },
   {
     id: 7,
     pillLabel: '7. Diagnostics',
-    fullTitle: 'Step 7 — Diagnostik Statistik & Sensitivitas Outlier',
+    fullTitle: 'Step 7 — Diagnostik MCMC (R-hat/ESS), Panel Error & Outlier Sensitivity',
     purposePoints: [
-      'Memeriksa heteroskedastisitas antarsumber, korelasi serial dalam-kota, ketergantungan lintas-kota (Pesaran CD), dan jumlah klaster G.',
-      'Menguji ketahanan peringkat MAE ketika 5% error ekstrem disingkirkan.'
+      'Memeriksa konvergensi MCMC (max R-hat <= 1.10, min ESS, Posterior Predictive p-value) dan keandalan Grubbs triangulation.',
+      'Menguji heteroskedastisitas, autokorelasi AR(1), Pesaran CD, jumlah klaster G, dan sensitivitas 95% Trimmed MAE.'
     ],
     interpretPoints: [
-      'Warning Heteroskedastisitas / AR(1): tetap aman karena inference memakai City Cluster-Robust SE & Wild Bootstrap.',
-      'Pesaran CD p < 0.05: menandakan adanya guncangan lintas kota; efek tetap pasangan α_it membantu menyerap guncangan umum.',
-      'Outlier Sensitivity: jika peringkat Full MAE vs Trimmed 95% berubah, hasil dipengaruhi segelintir nilai ekstrem.',
-      'Normality & CLT: distribusi AE ≥ 0 wajar miring kanan; tidak menuntut normalitas mutlak berkat CLT & bootstrap.'
+      'R-hat <= 1.05–1.10: seluruh rantai MCMC telah menyatu stabil pada distribusi posterior sejati.',
+      'Heteroskedastisitas / AR(1) Warning: aman karena model memodelkan σ_εj per sumber + Cluster SE + Wild Bootstrap.',
+      'Outlier Sensitivity: bila urutan peringkat berbalik di 95% Trimmed, kesimpulan tidak boleh dipaksakan menang.'
     ],
     keyCaveat:
-      'Pada klaster G < 30, standar error klaster klasik berisiko terlalu sempit sehingga wajib mengacu ke Wild Bootstrap.'
+      'Jangan menilai validitas model dari uji normalitas AE karena nilai error absolut (|e| >= 0) secara alami menceng kanan.'
   },
   {
     id: 8,
     pillLabel: '8. Ranking',
-    fullTitle: 'Step 8 — Evaluasi Komparatif & Keputusan Peringkat Sumber',
+    fullTitle: 'Step 8 — Evaluasi Komparatif & Pemeringkatan Akhir Seluruh Sumber (1..J)',
     purposePoints: [
-      'Menentukan peringkat sumber pembanding menggunakan MAE sebagai metrik utama.',
-      'Memverifikasi konsistensi hasil terhadap RMSE, |MBE|, Lin CCC, dan signifikansi Pair Fixed Effects.'
+      'Menyusun peringkat lengkap #1 sampai #J berdasarkan Total Latent RMSE terendah & Reliabilitas R² tertinggi.',
+      'Menguji ketahanan peringkat melalui simulasi Leave-One-City-Out (LOCO) jackknife dan aturan 4-status konklusif.'
     ],
     interpretPoints: [
-      'TERBUKTI_BERBEDA_SIGNIFIKAN: peringkat #1 unggul secara statistik (p < 0.05) tanpa konflik metrik.',
-      'PERBEDAAN_TIDAK_SIGNIFIKAN: MAE teratas tidak berbeda nyata dari peringkat #2 (p ≥ 0.05); tidak ditetapkan pemenang mutlak.',
-      'KONFLIK_ANTAR_METRIK: peringkat MAE bertentangan tajam dengan RMSE, CCC, atau sensitivitas outlier.',
-      'REFERENSI_TIDAK_VALID: sumber referensi gagal uji kualitas dasar.'
+      'TERBUKTI_BERBEDA_SIGNIFIKAN: #1 unggul konsisten di Total Latent RMSE, R², Posterior Prob, & Pair FE tanpa konflik metrik.',
+      'PERBEDAAN_TIDAK_SIGNIFIKAN: selisih #1 vs #2 tidak signifikan (belum cukup bukti menetapkan pemenang tunggal).',
+      'KONFLIK_ANTAR_METRIK: terdapat pertentangan antara Total RMSE, Error SD/R², LOSO MAE, atau 95% Trimmed.',
+      'MODEL_TIDAK_TERIDENTIFIKASI: J < 3 sumber atau MCMC gagal konvergen.'
     ],
     keyCaveat:
-      'Tidak menggunakan composite score semu; ketidakkonsistenan antar metrik dilaporkan secara jujur.'
+      'Keputusan peringkat berlaku pada kesepakatan instrumen di dataset ini; verifikasi kalibrasi fisik lapangan tetap disarankan bila semua sumber bias seragam.'
   },
   {
     id: 9,
     pillLabel: '9. Final & Export',
-    fullTitle: 'Step 9 — Ringkasan Hasil, Tabel Stata, Visualisasi, Kode & Ekspor',
+    fullTitle: 'Step 9 — Hasil Akhir, Tabel Stata, Visualisasi, Kode (.do/.R/.stan) & Ekspor',
     purposePoints: [
-      'Menghimpun tabel bergaya Stata, grafik interaktif, interpretasi poin akademis, dan skrip reproduksi.',
-      'Menyediakan ekspor siap publikasi (PDF, Word .docx, Excel .xlsx, CSV, Print).'
+      'Menyajikan ringkasan utuh seluruh J sumber: Tabel Gaya Stata, Visualisasi Publikasi, Interpretasi Akademis, serta kode reproduksi .do, .R, dan .stan.',
+      'Mendukung ekspor siap laporan ke PDF, Word (.docx), Excel (.xlsx), CSV, dan Print.'
     ],
     interpretPoints: [
-      'Sub-tab Tabel Gaya Stata: angka konsol resmi siap kutip.',
-      'Sub-tab Visualisasi: tren tahunan, scatter 45°, Bland-Altman, bar MAE/RMSE/CCC, & forest plot kontras.',
-      'Sub-tab Interpretasi: ringkasan temuan per poin dari Step 1 sampai kesimpulan akhir.',
-      'Sub-tab Stata .do & R Script: kode dinamis untuk verifikasi ulang di Stata 17+ atau R.'
+      'Tabel Stata & Bayar Laten: mencakup Reliabilitas R², Error SD, Alpha, Lambda, Posterior Prob, dan Pair FE.',
+      'Visualisasi: dilengkapi grafik Latent Reliability R² & Posterior Probability of Being Best serta Forest Plot kontras.',
+      'Kode Reproduksi: mencakup Stata sem/areg, R lavaan/fixest, serta model Stan MCMC lengkap.'
     ],
     keyCaveat:
-      'Sertakan berkas .do atau .R dalam lampiran penelitian agar setiap perhitungan dapat direproduksi.'
+      'Laporkan seluruh 4 komponen keterbatasan epistemologis bila menyertakan kesimpulan ranking di publikasi ilmiah.'
   }
 ];
 
@@ -185,94 +179,84 @@ export interface ActualStepInterpretationPoints {
 export function buildActualStepInterpretationPoints(
   result: PanelAccuracyFitResult
 ): ActualStepInterpretationPoints {
-  const { datasetMeta, referenceSource, comparisonSources, qualityReport, metrics, pairFixedEffects, diagnostics, ranking } = result;
-  const refTag = `${referenceSource.name} (${referenceSource.label})`;
+  const { datasetMeta, qualityReport, latentModel, metrics, pairFixedEffects, diagnostics, ranking } = result;
 
   const step1 = [
     `Dataset memuat ${datasetMeta.nObsRaw} baris mentah pada ${datasetMeta.nCities} kota × ${datasetMeta.nYears} tahun (${qualityReport.yearMin ?? '-'}–${qualityReport.yearMax ?? '-'}).`,
-    `Tersedia ${datasetMeta.nCompletePairs} pasangan City-Year lengkap (Complete-Case) dengan ${result.sources.length} sumber pengukuran.`,
-    `Struktur panel: ${datasetMeta.isBalanced ? 'Balanced (seluruh sel City-Year lengkap)' : 'Unbalanced / Parsial (terdapat sel kosong atau tidak seimbang)'}.`
+    `Tersedia ${datasetMeta.nCompletePairs} pasangan City-Year lengkap (Complete-Case) dengan ${result.sources.length} sumber pengukuran yang dievaluasi bersama.`,
+    `Struktur panel: ${datasetMeta.isBalanced ? 'Balanced (seluruh sel City-Year lengkap)' : 'Unbalanced / Parsial'}.`
   ];
 
   const step2 = [
-    `Reference Source (r): ${refTag} [Kolom: ${referenceSource.columnKey}, Satuan: ${datasetMeta.workingUnitNote}].`,
-    `Comparison Sources (${comparisonSources.length} sumber): ${comparisonSources.map(s => `${s.name} (${s.label})`).join(', ')}.`,
-    `Seluruh kesalahan pengukuran (e_ijt = X_ijt − X_irt) diukur relatif terhadap ${refTag}.`
+    `Mode Evaluasi: Reference-Free All-Source Latent & Consensus Ranking (TIDAK ada variabel yang dikecualikan sebagai reference).`,
+    `Seluruh J = ${result.sources.length} sumber dievaluasi setara: ${result.sources.map(s => `${s.name} (${s.label})`).join(', ')}.`,
+    `${latentModel.identificationRule}`
   ];
 
   const step3 = [
-    `Status audit referensi: ${qualityReport.referenceAudit.summary}`,
-    `Duplikat kunci (City, Year): ${qualityReport.duplicateKeys.length} kasus; outlier total (1.5×IQR): ${qualityReport.outlierCountTotal} titik.`,
-    `Rasio skala maksimum antarsumber: ${qualityReport.scaleRatioMaxToMin.toFixed(2)}×; prapemrosesan aktif: ${result.preprocessing.applyLog1p || result.preprocessing.applyWinsorize || result.preprocessing.dropDuplicateCityYear
-      ? [
-        result.preprocessing.dropDuplicateCityYear ? 'Hapus Duplikat' : '',
-        result.preprocessing.applyWinsorize ? 'Winsorization 2.5%' : '',
-        result.preprocessing.applyLog1p ? 'log(1+x)' : ''
-      ]
-        .filter(Boolean)
-        .join(', ')
-      : 'Tidak ada (satuan fisik asli dipertahankan)'
+    `Audit Identifikasi Laten: ${qualityReport.latentAudit.summary}`,
+    `Duplikat kunci (City, Year): ${qualityReport.duplicateKeys.length} kasus; outlier total (1.5×IQR): ${qualityReport.outlierCountTotal} titik; rasio skala maks/min: ${qualityReport.scaleRatioMaxToMin.toFixed(2)}×.`,
+    `Prapemrosesan aktif: ${
+      result.preprocessing.applyLog1p || result.preprocessing.applyWinsorize || result.preprocessing.dropDuplicateCityYear
+        ? [
+            result.preprocessing.dropDuplicateCityYear ? 'Hapus Duplikat' : '',
+            result.preprocessing.applyWinsorize ? 'Winsorization 2.5%' : '',
+            result.preprocessing.applyLog1p ? 'log(1+x)' : ''
+          ]
+            .filter(Boolean)
+            .join(', ')
+        : 'Tidak ada (satuan fisik asli dipertahankan)'
     }.`
   ];
 
   const step4 = [
     ...metrics.map(
       m =>
-        `${m.sourceLabel}: Pearson r = ${m.pearsonR.toFixed(4)} | Spearman ρ = ${m.spearmanRho.toFixed(4)} | Within-City r = ${m.withinCityR.toFixed(4)} | First-Diff r = ${m.firstDiffR.toFixed(4)}.`
+        `${m.sourceLabel}: Pearson r = ${m.pearsonR.toFixed(4)} | Spearman ρ = ${m.spearmanRho.toFixed(4)} | Within-City r = ${m.withinCityR.toFixed(4)} | First-Diff r = ${m.firstDiffR.toFixed(4)} (vs konsensus peer).`
     ),
-    'Korelasi tinggi hanya menandakan keselarasan variasi/arah, bukan bukti akurasi mutlak tanpa bias aditif atau skala.'
+    'Korelasi tinggi belum cukup menentukan sumber paling akurat; periksa bias (α_j) dan Error SD (σ_εj) pada Step 5.'
   ];
 
   const step5 = [
     ...metrics.map(
       m =>
-        `${m.sourceLabel}: MAE = ${m.mae.toFixed(3)} [95% CI ${m.maeCiLower.toFixed(2)}..${m.maeCiUpper.toFixed(2)}] | RMSE = ${m.rmse.toFixed(3)} | MBE = ${m.mbe >= 0 ? `+${m.mbe.toFixed(3)}` : m.mbe.toFixed(3)} (p=${m.mbePValue.toFixed(4)}) | Lin CCC = ${m.ccc.ccc.toFixed(4)} (Cb=${m.ccc.biasCorrectionFactorCb.toFixed(3)}) | 95% LoA [${m.blandAltman.loaLower.toFixed(2)}, ${m.blandAltman.loaUpper.toFixed(2)}].`
+        `${m.sourceLabel}: Total Latent RMSE = ${m.totalLatentRmse.toFixed(2)} | Error SD = ${m.errorSd.toFixed(2)} [95% CrI ${m.errorSdCiLower.toFixed(1)}..${m.errorSdCiUpper.toFixed(1)}] | Reliabilitas R² = ${(m.reliabilityR2 * 100).toFixed(2)}% | Alpha Bias = ${m.latentInterceptBias >= 0 ? '+' : ''}${m.latentInterceptBias.toFixed(2)} | Posterior Prob Best = ${(m.posteriorProbBest * 100).toFixed(1)}% | LOSO MAE = ${m.mae.toFixed(2)}.`
     ),
     metrics.some(m => m.missingGapVsComplete > 0)
-      ? `Perbedaan sampel terdeteksi: N Complete-Case = ${datasetMeta.nCompletePairs}, sedangkan Available-Case berkisar ${Math.min(...metrics.map(m => m.nAvailableCase))}–${Math.max(...metrics.map(m => m.nAvailableCase))}.`
-      : `Seluruh sumber dievaluasi pada jumlah pasangan identik N = ${datasetMeta.nCompletePairs} (tidak ada selisih Complete-Case vs Available-Case).`
+      ? `Catatan sampel: N Complete-Case = ${datasetMeta.nCompletePairs}, sedangkan Available-Case berkisar ${Math.min(...metrics.map(m => m.nAvailableCase))}–${Math.max(...metrics.map(m => m.nAvailableCase))}.`
+      : `Seluruh J = ${metrics.length} sumber dievaluasi pada jumlah pasangan identik N = ${datasetMeta.nCompletePairs}.`
   ];
 
-  const step6 =
-    pairFixedEffects.nComparisonSources <= 1
-      ? [
-        `Hanya terdapat 1 sumber pembanding (${pairFixedEffects.baselineComparisonSourceLabel}) dengan MAE = ${pairFixedEffects.coefficients[0]?.meanAe.toFixed(3) ?? '0'}.`,
-        `Standar error dikelompokkan berdasarkan ${pairFixedEffects.nClustersCity} kota (Cluster SE = ${pairFixedEffects.coefficients[0]?.seCluster.toFixed(3) ?? '0'}).`,
-        'Perbandingan antar sumber pembanding melalui Pair Fixed Effects memerlukan ≥ 2 comparison sources (total ≥ 3 sumber).'
-      ]
-      : [
-        `Model Pair Fixed Effects menyerap ${pairFixedEffects.nCompletePairs} pasangan Kota-Tahun (${pairFixedEffects.nLongObs} observasi long) dengan cluster ${pairFixedEffects.nClustersCity} kota.`,
-        `Uji Omnibus Wald: F(${pairFixedEffects.omnibusDf1}, ${pairFixedEffects.omnibusDf2}) = ${pairFixedEffects.omnibusFStat.toFixed(3)}, p cluster = ${pairFixedEffects.omnibusPValue.toFixed(4)}, Wild Bootstrap p = ${pairFixedEffects.omnibusWildBootstrapPValue.toFixed(4)}.`,
-        ...pairFixedEffects.pairwiseContrasts.map(
-          c =>
-            `Kontras ${c.sourceALabel} vs ${c.sourceBLabel}: ΔMAE = ${c.diffAminusB >= 0 ? `+${c.diffAminusB.toFixed(3)}` : c.diffAminusB.toFixed(3)} | p cluster = ${c.pValueCluster.toFixed(4)} | Wild Boot p = ${c.wildBootstrapPValue.toFixed(4)} (${c.isSignificant05 ? 'Signifikan α=0.05' : 'Tidak Signifikan'}).`
-        ),
-        ...(pairFixedEffects.smallClusterWarning
-          ? [`Peringatan G = ${pairFixedEffects.nClustersCity} (< 30): prioritaskan p-value Wild Cluster Bootstrap (${pairFixedEffects.bootstrapReplications} replikasi).`]
-          : [])
-      ];
+  const step6 = [
+    `Model Pair Fixed Effects membandingkan deviasi absolut seluruh ${pairFixedEffects.nComparisonSources} sumber terhadap estimasi laten θ̂_it (${pairFixedEffects.nCompletePairs} pasangan Kota-Tahun, ${pairFixedEffects.nClustersCity} klaster kota).`,
+    `Uji Omnibus Wald: F(${pairFixedEffects.omnibusDf1}, ${pairFixedEffects.omnibusDf2}) = ${pairFixedEffects.omnibusFStat.toFixed(3)}, p cluster = ${pairFixedEffects.omnibusPValue.toFixed(4)}, Wild Bootstrap p = ${pairFixedEffects.omnibusWildBootstrapPValue.toFixed(4)}.`,
+    ...pairFixedEffects.pairwiseContrasts.map(
+      c =>
+        `${c.sourceALabel} vs ${c.sourceBLabel}: ΔMAE = ${c.diffAminusB >= 0 ? `+${c.diffAminusB.toFixed(2)}` : c.diffAminusB.toFixed(2)} | Wild p = ${c.wildBootstrapPValue.toFixed(4)} | P_Bayes(A<B) = ${(c.posteriorProbABetterThanB * 100).toFixed(1)}%.`
+    )
+  ];
 
   const step7 = [
+    diagnostics.bayesianConvergenceAudit.summary,
     diagnostics.heteroskedasticityTest.conclusion,
     diagnostics.serialCorrelationTest.conclusion,
     diagnostics.crossSectionalDependenceTest.conclusion,
     diagnostics.clusterCountAudit.message,
-    diagnostics.outlierSensitivityAudit.summary,
-    `Normalitas & CLT: skewness residual = ${diagnostics.normalityAndCltNote.residualSkewness.toFixed(3)}; distribusi AE ≥ 0 wajar miring kanan dan inferensi tetap sah melalui CLT & Wild Bootstrap.`
+    diagnostics.outlierSensitivityAudit.summary
   ];
 
   const step8 = [
-    `Status Keputusan: ${ranking.conclusivenessStatus} — ${ranking.bestSourceLabel ? `Terbaik relatif: ${ranking.bestSourceLabel}` : 'Belum terdapat bukti cukup untuk menetapkan satu sumber terbaik mutlak'}.`,
+    `Status Keputusan: ${ranking.conclusivenessStatus} — ${ranking.bestSourceLabel ? `Sumber Paling Akurat & Benar (Rank #1 dari ${ranking.ranks.length}): ${ranking.bestSourceLabel}` : 'Belum terdapat bukti cukup untuk menetapkan satu pemenang tunggal'}.`,
     ...ranking.ranks.map(
       r =>
-        `Peringkat #${r.rank} ${r.sourceLabel}: MAE = ${r.mae.toFixed(3)} | RMSE = ${r.rmse.toFixed(3)} | MBE = ${r.mbe.toFixed(3)} | Lin CCC = ${r.ccc.toFixed(4)}${r.rank > 1 && r.pValueVsTopCluster !== null ? ` | vs #1: Cluster p=${r.pValueVsTopCluster.toFixed(4)}, Wild p=${(r.pValueVsTopWildBootstrap ?? 1).toFixed(4)}` : ''}.`
+        `Peringkat #${r.rank} ${r.sourceLabel}: Total RMSE = ${r.totalLatentRmse.toFixed(2)} | Error SD = ${r.errorSd.toFixed(2)} | Reliabilitas R² = ${(r.reliabilityR2 * 100).toFixed(2)}% | P(Best) = ${(r.posteriorProbBest * 100).toFixed(1)}%${r.rank > 1 && r.pValueVsTopWildBootstrap !== null ? ` | vs #1: P_Bayes=${((r.posteriorProbBetterThanSecond ?? 0.5) * 100).toFixed(1)}%, Wild p=${r.pValueVsTopWildBootstrap.toFixed(4)}` : ''}.`
     ),
     ranking.methodologicalCaveat
   ];
 
   const step9 = [
-    `Tabel gaya Stata lengkap, 5+ grafik interaktif, interpretasi terstruktur, kode Stata (.do), dan skrip R telah disusun otomatis untuk referensi ${refTag}.`,
-    `Hasil tersedia untuk diunduh sebagai PDF, Word (.docx), Excel (.xlsx), CSV, atau dicetak langsung.`
+    `Tabel gaya Stata lengkap, grafik Latent Reliability & Agreement, interpretasi akademis, kode Stata (.do), R (.R), dan Stan (.stan) mencakup seluruh J = ${metrics.length} sumber secara setara.`,
+    `Tersedia ekspor langsung ke PDF, Word (.docx), Excel (.xlsx), CSV, dan Print.`
   ];
 
   return {

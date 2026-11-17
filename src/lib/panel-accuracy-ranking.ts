@@ -1,14 +1,16 @@
 // ============================================================
-// Comparative Measurement Accuracy Assessment — Source Ranking (Step 8)
-// Ranks comparison sources by primary metric MAE, supported by RMSE,
-// |MBE|, Lin's CCC, and Pair Fixed Effects / Wild Cluster Bootstrap.
-// Never uses an arbitrary composite score; declares inconclusiveness
-// when metrics conflict, differences are insignificant, or reference fails.
+// Reference-Free All-Source Comparative Ranking (Step 8)
+// Evaluates & ranks ALL J sources symmetrically (#1..#J) using:
+// - Primary Metric: Total Latent RMSE (incorporating Error SD, α_j bias, λ_j scaling)
+//   paired with Classical Reliability R² and Bayesian Posterior Probability of Being Best
+// - Secondary Confirmation: LOSO MAE, Lin's CCC, Pair FE Wild Bootstrap Contrasts,
+//   R-hat convergence & 95% Trimmed Outlier Sensitivity.
+// Never forces a single winner when evidence is underidentified, tied, or conflicting.
 // ============================================================
 
+import { LatentEngineInternalOutput } from './panel-accuracy-latent';
 import {
   ComparativeRankingResult,
-  MeasurementSource,
   PairFixedEffectsResult,
   PanelAccuracyDiagnosticsResult,
   PanelAccuracyQualityReport,
@@ -17,44 +19,50 @@ import {
 } from './panel-accuracy-types';
 
 export function computeComparativeSourceRanking(params: {
-  referenceSource: MeasurementSource;
   metrics: SourceAccuracyMetricRow[];
+  latentOut: LatentEngineInternalOutput;
   pairFixedEffects: PairFixedEffectsResult;
   diagnostics: PanelAccuracyDiagnosticsResult;
   qualityReport: PanelAccuracyQualityReport;
 }): ComparativeRankingResult {
-  const { referenceSource, metrics, pairFixedEffects, diagnostics, qualityReport } = params;
-
-  const refLabel = `${referenceSource.name} (${referenceSource.label})`;
+  const { metrics, latentOut, pairFixedEffects, diagnostics, qualityReport } = params;
+  const benchLabel = 'Consensus Latent Benchmark (θ̂ — Tanpa Reference Terkunci)';
 
   if (metrics.length === 0) {
     return {
-      primaryMetric: 'MAE',
-      referenceSourceId: referenceSource.id,
-      referenceSourceLabel: refLabel,
+      primaryMetric: 'TOTAL_LATENT_RMSE',
+      referenceSourceId: 'latent_consensus',
+      referenceSourceLabel: benchLabel,
       isConclusive: false,
-      conclusivenessStatus: 'REFERENSI_TIDAK_VALID',
+      conclusivenessStatus: 'MODEL_TIDAK_TERIDENTIFIKASI',
       bestSourceId: null,
       bestSourceLabel: null,
       tiedTopSourceLabels: [],
-      rankingSummary: 'Tidak ada sumber pembanding yang dapat dievaluasi.',
-      methodologicalCaveat: 'Minimal satu sumber pembanding wajib tersedia.',
+      rankingSummary: 'Tidak ada sumber pengukuran yang dapat dievaluasi.',
+      methodologicalCaveat: 'Minimal diperlukan 3 sumber pengukuran independen untuk ranking tanpa referensi.',
       ranks: []
     };
   }
 
-  // Sort primarily by MAE ascending; tie-break by RMSE ascending, then CCC descending
+  // Sort ALL J sources primarily by Total Latent RMSE ascending, tie-break by Error SD ascending & Reliability R² descending
   const sorted = [...metrics].sort((a, b) => {
-    if (Math.abs(a.mae - b.mae) > 1e-12) return a.mae - b.mae;
-    if (Math.abs(a.rmse - b.rmse) > 1e-12) return a.rmse - b.rmse;
-    return b.ccc.ccc - a.ccc.ccc;
+    if (Math.abs(a.totalLatentRmse - b.totalLatentRmse) > 1e-6) {
+      return a.totalLatentRmse - b.totalLatentRmse;
+    }
+    if (Math.abs(a.errorSd - b.errorSd) > 1e-6) {
+      return a.errorSd - b.errorSd;
+    }
+    return b.reliabilityR2 - a.reliabilityR2;
   });
 
   const top = sorted[0];
+  const minMae = Math.min(...sorted.map(s => s.mae));
 
   const ranks: SourceRankEntry[] = sorted.map((m, idx) => {
     let pCluster: number | null = null;
     let pWild: number | null = null;
+    let postProbBetter: number | null = null;
+
     if (idx > 0) {
       const contrast = pairFixedEffects.pairwiseContrasts.find(
         c =>
@@ -65,25 +73,34 @@ export function computeComparativeSourceRanking(params: {
         pCluster = contrast.pValueCluster;
         pWild = contrast.wildBootstrapPValue;
       }
+      postProbBetter =
+        latentOut.pairwisePosteriorProb[`${top.sourceId}::${m.sourceId}`] ?? 0.5;
     }
 
     const effectiveP =
       pairFixedEffects.smallClusterWarning && pWild !== null ? pWild : pCluster;
-    const isIndistinguishable = idx === 0 ? false : effectiveP !== null && effectiveP >= 0.05;
+    // Bayesian OR Pair FE indistinguishability check
+    const bayesClear = postProbBetter !== null && postProbBetter >= 0.95;
+    const freqClear = effectiveP !== null && effectiveP < 0.05;
+    const isIndistinguishable = idx === 0 ? false : !(bayesClear && freqClear);
     const loaWidth = m.blandAltman.loaUpper - m.blandAltman.loaLower;
 
     const rankNote =
       idx === 0
-        ? `MAE terendah (${m.mae.toFixed(3)} ${m.unit}), RMSE = ${m.rmse.toFixed(3)}, MBE = ${m.mbe.toFixed(3)}, Lin's CCC = ${m.ccc.ccc.toFixed(4)}.`
+        ? `Akurasi tertinggi (#1 dari ${sorted.length} sumber): Total Latent RMSE = ${m.totalLatentRmse.toFixed(3)}, Error SD = ${m.errorSd.toFixed(3)}, Reliabilitas R² = ${(m.reliabilityR2 * 100).toFixed(2)}%, Posterior Prob Best = ${(m.posteriorProbBest * 100).toFixed(1)}%.`
         : isIndistinguishable
-        ? `Selisih MAE +${(m.mae - top.mae).toFixed(3)} terhadap #1 tidak signifikan secara statistik (p = ${(effectiveP ?? 1).toFixed(4)} ≥ 0.05).`
-        : `Selisih MAE +${(m.mae - top.mae).toFixed(3)} lebih tinggi secara signifikan dibanding #1 (p = ${(effectiveP ?? 0).toFixed(4)} < 0.05).`;
+          ? `Selisih Total RMSE +${(m.totalLatentRmse - top.totalLatentRmse).toFixed(3)} terhadap #1 (P(Best>${m.sourceName})=${((postProbBetter ?? 0.5) * 100).toFixed(1)}%, Wild p=${(effectiveP ?? 1).toFixed(4)}): perbedaan belum cukup kuat secara simultan.`
+          : `Kalah signifikan dibanding #1: Total Latent RMSE +${(m.totalLatentRmse - top.totalLatentRmse).toFixed(3)} lebih tinggi (P(#1 lebih baik)=${((postProbBetter ?? 1) * 100).toFixed(1)}%, Wild p=${(effectiveP ?? 0).toFixed(4)} < 0.05).`;
 
     return {
       rank: idx + 1,
       sourceId: m.sourceId,
       sourceName: m.sourceName,
       sourceLabel: m.sourceLabel,
+      totalLatentRmse: m.totalLatentRmse,
+      errorSd: m.errorSd,
+      reliabilityR2: m.reliabilityR2,
+      posteriorProbBest: m.posteriorProbBest,
       mae: m.mae,
       rmse: m.rmse,
       absMbe: Math.abs(m.mbe),
@@ -91,7 +108,9 @@ export function computeComparativeSourceRanking(params: {
       ccc: m.ccc.ccc,
       pearsonR: m.pearsonR,
       loaWidth,
-      diffFromTopMae: m.mae - top.mae,
+      diffFromTopLatentRmse: m.totalLatentRmse - top.totalLatentRmse,
+      diffFromTopMae: m.mae - minMae,
+      posteriorProbBetterThanSecond: postProbBetter,
       pValueVsTopCluster: pCluster,
       pValueVsTopWildBootstrap: pWild,
       isStatisticallyIndistinguishableFromTop: isIndistinguishable,
@@ -99,46 +118,33 @@ export function computeComparativeSourceRanking(params: {
     };
   });
 
-  // Check reference validity
-  if (!qualityReport.referenceAudit.isCredibleReference) {
+  // 1. Check Latent Model Identifiability (requires J >= 3, no zero variance, MCMC convergence)
+  if (!qualityReport.latentAudit.isIdentifiedForAllSourceRanking || !latentOut.summary.converged) {
     return {
-      primaryMetric: 'MAE',
-      referenceSourceId: referenceSource.id,
-      referenceSourceLabel: refLabel,
+      primaryMetric: 'TOTAL_LATENT_RMSE',
+      referenceSourceId: 'latent_consensus',
+      referenceSourceLabel: benchLabel,
       isConclusive: false,
-      conclusivenessStatus: 'REFERENSI_TIDAK_VALID',
+      conclusivenessStatus: 'MODEL_TIDAK_TERIDENTIFIKASI',
       bestSourceId: null,
       bestSourceLabel: null,
       tiedTopSourceLabels: ranks.map(r => r.sourceLabel),
-      rankingSummary: `Sumber referensi ${refLabel} tidak memenuhi syarat kelayakan (${qualityReport.referenceAudit.warnings.join(' ')}). Belum terdapat dasar yang sah untuk menetapkan sumber pembanding terbaik.`,
-      methodologicalCaveat:
-        'Evaluasi akurasi berbasis referensi bergantung penuh pada validitas instrumen referensi yang dipilih.',
+      rankingSummary:
+        qualityReport.latentAudit.nSources < 3
+          ? `Model pengukuran laten tanpa variabel referensi membutuhkan minimal J = 3 sumber independen agar varians galat tiap sumber dapat dipisahkan secara unik (saat ini J = ${qualityReport.latentAudit.nSources}).`
+          : `Model pengukuran laten belum mencapai konvergensi memadai (max R-hat = ${latentOut.summary.maxRhat.toFixed(4)}) atau terdapat kendala kualitas data (${qualityReport.latentAudit.warnings.join(' ')}).`,
+      methodologicalCaveat: latentOut.summary.epistemologicalCaveat,
       ranks
     };
   }
 
-  // Single comparison source case (J = 2)
-  if (ranks.length === 1) {
-    return {
-      primaryMetric: 'MAE',
-      referenceSourceId: referenceSource.id,
-      referenceSourceLabel: refLabel,
-      isConclusive: true,
-      conclusivenessStatus: 'TERBUKTI_BERBEDA_SIGNIFIKAN',
-      bestSourceId: top.sourceId,
-      bestSourceLabel: top.sourceLabel,
-      tiedTopSourceLabels: [top.sourceLabel],
-      rankingSummary: `Hanya terdapat 1 sumber pembanding (${top.sourceLabel}) terhadap referensi ${refLabel}, dengan MAE = ${top.mae.toFixed(3)}, RMSE = ${top.rmse.toFixed(3)}, MBE = ${top.mbe.toFixed(3)}, dan Lin's CCC = ${top.ccc.ccc.toFixed(4)}.`,
-      methodologicalCaveat:
-        'Tambahkan minimal 2 sumber pembanding (total ≥ 3 sumber) apabila ingin menguji perbedaan akurasi antarsumber pembanding melalui Pair Fixed Effects.',
-      ranks
-    };
-  }
-
-  // Check metric conflict: e.g. #1 by MAE is NOT #1 by RMSE (exceeds min RMSE by > 10%) or outlier rank flips
-  const minRmse = Math.min(...ranks.map(r => r.rmse));
+  // 2. Check cross-metric consistency across Total Latent RMSE, Precision Error SD / Reliability, LOSO MAE, and Outlier sensitivity
+  const minErrorSd = Math.min(...ranks.map(r => r.errorSd));
+  const maxR2 = Math.max(...ranks.map(r => r.reliabilityR2));
   const maxCcc = Math.max(...ranks.map(r => r.ccc));
-  const rmseConflict = top.rmse > minRmse * 1.10;
+
+  const precisionConflict = top.errorSd > minErrorSd * 1.15 || top.reliabilityR2 < maxR2 - 0.03;
+  const losoMaeConflict = top.mae > minMae * 1.12;
   const cccConflict = top.ccc.ccc < maxCcc - 0.08;
   const outlierFlip = diagnostics.outlierSensitivityAudit.rankOrderChanged;
 
@@ -148,81 +154,82 @@ export function computeComparativeSourceRanking(params: {
     ...ranks.slice(1).filter(r => r.isStatisticallyIndistinguishableFromTop).map(r => r.sourceLabel)
   ];
 
-  if (rmseConflict || cccConflict || outlierFlip) {
+  if (precisionConflict || losoMaeConflict || cccConflict || outlierFlip) {
     const reasons: string[] = [];
-    if (rmseConflict) {
-      reasons.push(`sumber dengan MAE terendah (${top.sourceLabel}) memiliki RMSE lebih besar dibanding sumber lain`);
+    if (precisionConflict) {
+      reasons.push(`${top.sourceLabel} memiliki Total RMSE terendah namun bukan sumber dengan presisi Error SD/R² tertinggi`);
+    }
+    if (losoMaeConflict) {
+      reasons.push(`LOSO MAE pada ${top.sourceLabel} lebih besar >12% dibanding sumber lain`);
     }
     if (cccConflict) {
-      reasons.push(`Lin's CCC pada ${top.sourceLabel} lebih rendah dibanding sumber pembanding lain`);
+      reasons.push(`Lin's CCC terhadap konsensus lebih rendah dibanding sumber lain`);
     }
     if (outlierFlip) {
-      reasons.push('urutan peringkat MAE berubah ketika 5% observasi outlier ekstrem dipangkas');
+      reasons.push('urutan peringkat deviasi berubah saat 5% observasi ekstrem dipangkas');
     }
 
     return {
-      primaryMetric: 'MAE',
-      referenceSourceId: referenceSource.id,
-      referenceSourceLabel: refLabel,
+      primaryMetric: 'TOTAL_LATENT_RMSE',
+      referenceSourceId: 'latent_consensus',
+      referenceSourceLabel: benchLabel,
       isConclusive: false,
       conclusivenessStatus: 'KONFLIK_ANTAR_METRIK',
       bestSourceId: null,
       bestSourceLabel: null,
       tiedTopSourceLabels: tiedTop,
       rankingSummary:
-        `Secara numerik ${top.sourceLabel} mencatat MAE terendah (${top.mae.toFixed(3)}), namun terdapat pertentangan antar indikator evaluasi (${reasons.join('; ')}). ` +
-        `Oleh karena itu, belum terdapat bukti yang cukup untuk menetapkan satu sumber pembanding terbaik secara mutlak.`,
-      methodologicalCaveat:
-        'Tidak dibuat composite score gabungan agar pertentangan antara kesalahan rata-rata (MAE) dan kesalahan ekstrem (RMSE/outlier) tetap transparan.',
+        `Secara titik estimasi ${top.sourceLabel} mencatat Total Latent RMSE terendah (${top.totalLatentRmse.toFixed(3)}), namun ditemukan pertentangan antar indikator evaluasi (${reasons.join('; ')}). Oleh karena itu, belum terdapat bukti konklusif untuk menetapkan satu pemenang tunggal.`,
+      methodologicalCaveat: latentOut.summary.epistemologicalCaveat,
       ranks
     };
   }
 
+  // 3. Check statistical superiority against rank #2
   if (second.isStatisticallyIndistinguishableFromTop) {
     const pUsed =
       pairFixedEffects.smallClusterWarning && second.pValueVsTopWildBootstrap !== null
         ? second.pValueVsTopWildBootstrap
         : second.pValueVsTopCluster ?? 1;
+    const postProb = second.posteriorProbBetterThanSecond ?? 0.5;
 
     return {
-      primaryMetric: 'MAE',
-      referenceSourceId: referenceSource.id,
-      referenceSourceLabel: refLabel,
+      primaryMetric: 'TOTAL_LATENT_RMSE',
+      referenceSourceId: 'latent_consensus',
+      referenceSourceLabel: benchLabel,
       isConclusive: false,
       conclusivenessStatus: 'PERBEDAAN_TIDAK_SIGNIFIKAN',
       bestSourceId: null,
       bestSourceLabel: null,
       tiedTopSourceLabels: tiedTop,
       rankingSummary:
-        `Meskipun ${top.sourceLabel} memiliki titik estimasi MAE terendah (${top.mae.toFixed(3)}) dibanding ${second.sourceLabel} (${second.mae.toFixed(3)}), ` +
-        `pengujian Pair Fixed Effects menunjukkan selisih sebesar ${second.diffFromTopMae.toFixed(3)} belum signifikan secara statistik pada α = 0.05 (p = ${pUsed.toFixed(4)}). ` +
-        `Belum terdapat bukti statistik yang cukup untuk menyimpulkan salah satu lebih akurat secara definitif relatif terhadap ${refLabel}.`,
-      methodologicalCaveat:
-        'Ketiadaan perbedaan signifikan menandakan tingkat kesalahan kedua sumber terhadap referensi berada dalam rentang variasi sampel yang sebanding.',
+        `Meskipun ${top.sourceLabel} unggul secara titik estimasi (Total Latent RMSE = ${top.totalLatentRmse.toFixed(3)}, Error SD = ${top.errorSd.toFixed(3)}, R² = ${(top.reliabilityR2 * 100).toFixed(2)}%) atas ${second.sourceLabel} (Total RMSE = ${second.totalLatentRmse.toFixed(3)}), ` +
+        `bukti inferensial belum cukup memisahkan keduanya secara meyakinkan (P_Bayes = ${(postProb * 100).toFixed(1)}%, Pair FE p = ${pUsed.toFixed(4)}).`,
+      methodologicalCaveat: latentOut.summary.epistemologicalCaveat,
       ranks
     };
   }
 
-  const pWin =
+  // 4. Conclusive Winner across ALL J evaluated sources!
+  const pUsed =
     pairFixedEffects.smallClusterWarning && second.pValueVsTopWildBootstrap !== null
       ? second.pValueVsTopWildBootstrap
       : second.pValueVsTopCluster ?? 0;
 
   return {
-    primaryMetric: 'MAE',
-    referenceSourceId: referenceSource.id,
-    referenceSourceLabel: refLabel,
+    primaryMetric: 'TOTAL_LATENT_RMSE',
+    referenceSourceId: 'latent_consensus',
+    referenceSourceLabel: benchLabel,
     isConclusive: true,
     conclusivenessStatus: 'TERBUKTI_BERBEDA_SIGNIFIKAN',
     bestSourceId: top.sourceId,
     bestSourceLabel: top.sourceLabel,
     tiedTopSourceLabels: [top.sourceLabel],
     rankingSummary:
-      `Sumber pembanding "${top.sourceLabel}" terbukti memiliki akurasi relatif terbaik terhadap sumber referensi "${refLabel}" ` +
-      `dengan MAE terendah = ${top.mae.toFixed(3)} ${top.unit}, RMSE = ${top.rmse.toFixed(3)}, MBE = ${top.mbe.toFixed(3)}, dan Lin's CCC = ${top.ccc.ccc.toFixed(4)}. ` +
-      `Selisih MAE terhadap peringkat kedua (${second.sourceLabel}, MAE = ${second.mae.toFixed(3)}) signifikan secara statistik (ΔMAE = -${second.diffFromTopMae.toFixed(3)}, p = ${pWin.toFixed(4)} < 0.05) dan konsisten pada seluruh metrik pendukung.`,
-    methodologicalCaveat:
-      `Kesimpulan ini menunjukkan kedekatan relatif terhadap sumber referensi "${refLabel}", bukan bukti akurasi fisik absolut tanpa kalibrasi independen.`,
+      `Dari keseluruhan J = ${ranks.length} sumber pengukuran yang dievaluasi setara tanpa referensi terkunci, ${top.sourceLabel} terbukti menempati Peringkat #1 dengan akurasi dan konsistensi tertinggi ` +
+      `(Total Latent RMSE = ${top.totalLatentRmse.toFixed(3)}, Error SD = ${top.errorSd.toFixed(3)}, Reliabilitas R² = ${(top.reliabilityR2 * 100).toFixed(2)}%, Posterior Prob Best = ${(top.posteriorProbBest * 100).toFixed(1)}%), ` +
+      `mengungguli peringkat #2 (${second.sourceLabel}, Total RMSE = ${second.totalLatentRmse.toFixed(3)}) secara signifikan (P_Bayes = ${((second.posteriorProbBetterThanSecond ?? 1) * 100).toFixed(1)}%, Pair FE p = ${pUsed.toFixed(4)} < 0.05) tanpa konflik metrik maupun sensitivitas outlier.`,
+    methodologicalCaveat: latentOut.summary.epistemologicalCaveat,
     ranks
   };
 }

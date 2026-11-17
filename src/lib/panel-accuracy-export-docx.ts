@@ -1,5 +1,6 @@
 // ============================================================
-// Comparative Measurement Accuracy Assessment — Word (.docx) Export
+// Reference-Free All-Source Latent & Consensus Assessment
+// Word (.docx) Export
 // ============================================================
 
 import {
@@ -56,8 +57,6 @@ export async function generatePanelAccuracyDocx(
   result: PanelAccuracyFitResult,
   datasetName = 'Dataset_Panel_Accuracy.xlsx'
 ): Promise<Buffer> {
-  const refTag = `${result.referenceSource.name} (${result.referenceSource.label})`;
-
   const doc = new Document({
     sections: [
       {
@@ -65,7 +64,7 @@ export async function generatePanelAccuracyDocx(
           new Paragraph({
             children: [
               new TextRun({
-                text: 'LAPORAN ANALISIS KOMPARATIF AKURASI PENGUKURAN EMISI CO₂ BERBASIS DATA PANEL',
+                text: 'LAPORAN REFERENCE-FREE ALL-SOURCE LATENT & CONSENSUS ACCURACY ASSESSMENT',
                 bold: true,
                 size: 28
               })
@@ -73,66 +72,64 @@ export async function generatePanelAccuracyDocx(
             spacing: { after: 120 }
           }),
           para(
-            `Dataset: ${datasetName} | Sumber Referensi (r): ${refTag} | Pasangan Complete-Case: ${result.datasetMeta.nCompletePairs} (${result.datasetMeta.nCities} Kota × ${result.datasetMeta.nYears} Tahun)`
+            `Dataset: ${datasetName} | Sumber Dievaluasi: J = ${result.sources.length} (Tanpa Reference Terkunci) | Complete-Case: ${result.datasetMeta.nCompletePairs} (${result.datasetMeta.nCities} Kota × ${result.datasetMeta.nYears} Tahun) | Max R-hat = ${result.latentModel.maxRhat.toFixed(4)}`
           ),
 
-          h1('1. Validitas Sumber Referensi & Kualitas Data'),
+          h1('1. Identifikasi Model Laten & Kualitas Data'),
           para(result.interpretations.referenceValidityInterpretation),
 
-          h1('2. Analisis Korelasi Panel (Overall, Within-City, First-Difference)'),
+          h1('2. Korelasi Panel (Overall, Within-City, First-Difference)'),
           para(result.interpretations.edaAndCorrelationInterpretation),
 
-          h1('3. Metrik Akurasi (MAE, RMSE, MBE), Lin\'s CCC & Bland-Altman Agreement'),
+          h1('3. Bayesian Hierarchical Latent Model & Agreement (Seluruh J Sumber)'),
           makeTable(
-            ['Sumber Pembanding', 'N (CC/Av)', 'MAE [95% CI]', 'RMSE', 'MBE (p)', 'Lin CCC [95% CI]', '95% LoA Bland-Altman'],
+            ['Sumber', 'Tot Latent RMSE', 'Error SD (σ_ε)', 'Reliabilitas R²', 'Alpha (α)', 'P(Best)', 'LOSO MAE', 'Lin CCC'],
             result.metrics.map(m => [
               m.sourceLabel,
-              `${m.nCompleteCase}/${m.nAvailableCase}`,
-              `${m.mae.toFixed(3)} [${m.maeCiLower.toFixed(2)}, ${m.maeCiUpper.toFixed(2)}]`,
-              m.rmse.toFixed(3),
-              `${m.mbe.toFixed(3)} (${m.mbePValue.toFixed(4)})`,
-              `${m.ccc.ccc.toFixed(4)} [${m.ccc.ciLower.toFixed(3)}, ${m.ccc.ciUpper.toFixed(3)}]`,
-              `[${m.blandAltman.loaLower.toFixed(2)}, ${m.blandAltman.loaUpper.toFixed(2)}]`
+              `${m.totalLatentRmse.toFixed(2)} [${m.totalLatentRmseCiLower.toFixed(1)}, ${m.totalLatentRmseCiUpper.toFixed(1)}]`,
+              m.errorSd.toFixed(2),
+              `${(m.reliabilityR2 * 100).toFixed(2)}%`,
+              `${m.latentInterceptBias >= 0 ? '+' : ''}${m.latentInterceptBias.toFixed(2)}`,
+              `${(m.posteriorProbBest * 100).toFixed(1)}%`,
+              m.mae.toFixed(2),
+              m.ccc.ccc.toFixed(4)
             ])
           ),
           para(result.interpretations.accuracyAndAgreementInterpretation),
 
-          h1('4. Model Inferensial Panel — Pair Fixed Effects & Wild Cluster Bootstrap'),
+          h1('4. Model Inferensial Pair Fixed Effects & Kontras Antarsumber'),
           makeTable(
-            ['Kontras Sumber (A vs B)', 'MAE_A - MAE_B', 'Cluster SE', 't-stat', 'Cluster p', 'Wild Bootstrap p', 'Wild 95% CI'],
-            result.pairFixedEffects.pairwiseContrasts.length > 0
-              ? result.pairFixedEffects.pairwiseContrasts.map(c => [
-                  `${c.sourceALabel} vs ${c.sourceBLabel}`,
-                  c.diffAminusB.toFixed(3),
-                  c.seCluster.toFixed(3),
-                  c.tStat.toFixed(2),
-                  c.pValueCluster.toFixed(4),
-                  c.wildBootstrapPValue.toFixed(4),
-                  `[${c.wildBootstrapCiLower.toFixed(2)}, ${c.wildBootstrapCiUpper.toFixed(2)}]`
-                ])
-              : [['(Hanya 1 sumber pembanding)', '-', '-', '-', '-', '-', '-']]
+            ['Kontras (A vs B)', 'ΔMAE (A - B)', 'Cluster SE', 'Cluster p', 'Wild Boot p', 'P_Bayes (A < B)'],
+            result.pairFixedEffects.pairwiseContrasts.map(c => [
+              `${c.sourceALabel} vs ${c.sourceBLabel}`,
+              c.diffAminusB.toFixed(3),
+              c.seCluster.toFixed(3),
+              c.pValueCluster.toFixed(4),
+              c.wildBootstrapPValue.toFixed(4),
+              `${(c.posteriorProbABetterThanB * 100).toFixed(1)}%`
+            ])
           ),
           para(result.interpretations.pairFixedEffectsInterpretation),
 
-          h1('5. Diagnostik Statistik & Keterbatasan Inferensi'),
+          h1('5. Diagnostik MCMC & Struktur Error Panel'),
           para(result.interpretations.diagnosticsInterpretation),
 
-          h1('6. Pemeringkatan Sumber Pembanding & Kesimpulan Akhir'),
+          h1('6. Pemeringkatan Akhir Seluruh Sumber (#1 s/d #' + result.ranking.ranks.length + ')'),
           makeTable(
-            ['Peringkat', 'Sumber Pembanding', 'MAE', 'RMSE', 'MBE', 'Lin CCC', 'Catatan Evaluasi'],
+            ['Peringkat', 'Sumber', 'Total RMSE', 'Error SD', 'R²', 'P(Best)', 'Catatan Evaluasi'],
             result.ranking.ranks.map(r => [
               `#${r.rank}`,
               r.sourceLabel,
-              r.mae.toFixed(3),
-              r.rmse.toFixed(3),
-              r.mbe.toFixed(3),
-              r.ccc.toFixed(4),
+              r.totalLatentRmse.toFixed(2),
+              r.errorSd.toFixed(2),
+              `${(r.reliabilityR2 * 100).toFixed(2)}%`,
+              `${(r.posteriorProbBest * 100).toFixed(1)}%`,
               r.rankNote
             ])
           ),
           para(result.interpretations.rankingDecisionInterpretation),
 
-          h1('7. Keterbatasan Penelitian'),
+          h1('7. Keterbatasan Epistemologis & Penelitian'),
           ...result.interpretations.researchLimitations.map(lim => para(`- ${lim}`))
         ]
       }

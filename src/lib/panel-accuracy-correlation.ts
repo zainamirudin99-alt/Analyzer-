@@ -107,6 +107,60 @@ export function computeFirstDifferencePearsonR(
   return computePearsonR(diffA, diffB);
 }
 
+export function computeWithinCityPearsonRVec(
+  observations: CleanedPanelObservation[],
+  valsA: number[],
+  valsB: number[]
+): number {
+  const byCity = new Map<string, Array<{ a: number; b: number }>>();
+  observations.forEach((obs, i) => {
+    const va = valsA[i];
+    const vb = valsB[i];
+    if (!Number.isFinite(va) || !Number.isFinite(vb)) return;
+    if (!byCity.has(obs.city)) byCity.set(obs.city, []);
+    byCity.get(obs.city)!.push({ a: va, b: vb });
+  });
+
+  const demA: number[] = [];
+  const demB: number[] = [];
+  byCity.forEach(list => {
+    if (list.length < 2) return;
+    const ma = list.reduce((s, p) => s + p.a, 0) / list.length;
+    const mb = list.reduce((s, p) => s + p.b, 0) / list.length;
+    list.forEach(p => {
+      demA.push(p.a - ma);
+      demB.push(p.b - mb);
+    });
+  });
+  return computePearsonR(demA, demB);
+}
+
+export function computeFirstDifferencePearsonRVec(
+  observations: CleanedPanelObservation[],
+  valsA: number[],
+  valsB: number[]
+): number {
+  const byCity = new Map<string, Array<{ year: number; a: number; b: number }>>();
+  observations.forEach((obs, i) => {
+    const va = valsA[i];
+    const vb = valsB[i];
+    if (!Number.isFinite(va) || !Number.isFinite(vb)) return;
+    if (!byCity.has(obs.city)) byCity.set(obs.city, []);
+    byCity.get(obs.city)!.push({ year: obs.year, a: va, b: vb });
+  });
+
+  const diffA: number[] = [];
+  const diffB: number[] = [];
+  byCity.forEach(list => {
+    list.sort((x, y) => x.year - y.year);
+    for (let i = 1; i < list.length; i++) {
+      diffA.push(list[i].a - list[i - 1].a);
+      diffB.push(list[i].b - list[i - 1].b);
+    }
+  });
+  return computePearsonR(diffA, diffB);
+}
+
 export function computeAccuracyEDA(
   observations: CleanedPanelObservation[],
   sources: MeasurementSource[]

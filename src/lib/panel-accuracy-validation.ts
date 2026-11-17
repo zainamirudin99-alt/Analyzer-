@@ -6,6 +6,7 @@
 import {
   AccuracyPreprocessingOptions,
   DataQualityCheckItem,
+  LatentIdentificationAudit,
   MeasurementSource,
   PanelAccuracyQualityReport,
   PanelDataset,
@@ -142,12 +143,8 @@ export function autoDetectAccuracyDatasetConfig(
 
   const chosenCols = (numericCols.length >= 2 ? numericCols : candidateCols).slice(0, 8);
 
-  // Choose default reference source: prefer sensor/ref column, else last source
-  let refIndex = chosenCols.findIndex(c => /sens|ref|ground|cems|acuan/i.test(c));
-  if (refIndex < 0) refIndex = Math.max(0, chosenCols.length - 1);
-
+  // Option B (Reference-Free All-Source): Treat ALL sources symmetrically without locking a reference
   const sources: MeasurementSource[] = chosenCols.map((col, idx) => {
-    const isRef = idx === refIndex;
     const matchSe = seCols.find(
       sc =>
         sc.toLowerCase().includes(col.toLowerCase()) ||
@@ -159,11 +156,9 @@ export function autoDetectAccuracyDatasetConfig(
       label: inferLabelFromCol(col, idx),
       columnKey: col,
       unit: 'kt CO₂',
-      role: isRef ? 'reference' : 'comparison',
+      role: 'evaluated',
       uncertaintyColumn: matchSe,
-      methodDescription: isRef
-        ? 'Instrumen pembanding acuan (dikaji cakupan, kalibrasi, dan konsistensi satuan)'
-        : 'Sumber pengukuran yang dievaluasi terhadap sumber referensi'
+      methodDescription: `Sumber pengukuran #${idx + 1} (dievaluasi setara tanpa variabel referensi terkunci).`
     };
   });
 
@@ -175,7 +170,7 @@ export function autoDetectAccuracyDatasetConfig(
 }
 
 /**
- * Validate dynamic panel accuracy dataset (J >= 2 sources, exactly 1 reference source).
+ * Validate dynamic panel accuracy dataset for Reference-Free All-Source Latent Ranking (recommended J >= 3).
  */
 export function validatePanelAccuracyDataset(
   dataset: PanelDataset,
@@ -185,18 +180,23 @@ export function validatePanelAccuracyDataset(
   const checks: DataQualityCheckItem[] = [];
   const recommendedActions: string[] = [];
 
-  const refSources = sources.filter(s => s.role === 'reference');
-  const compSources = sources.filter(s => s.role === 'comparison');
-  const refSource = refSources[0];
-
   const missingBySource: Record<string, number> = {};
   const availablePairsBySource: Record<string, number> = {};
   sources.forEach(s => {
     missingBySource[s.id] = 0;
-    if (s.role === 'comparison') availablePairsBySource[s.id] = 0;
+    availablePairsBySource[s.id] = 0;
   });
 
   if (!observations || observations.length === 0) {
+    const emptyLatentAudit: LatentIdentificationAudit = {
+      nSources: sources.length,
+      isIdentifiedForAllSourceRanking: false,
+      nValidCompletePairs: 0,
+      hasZeroVarianceSources: [],
+      potentialDependentPairs: [],
+      summary: 'Dataset belum memuat observasi.',
+      warnings: ['Dataset kosong.']
+    };
     return {
       nObsRaw: 0,
       nObsValidAny: 0,
@@ -211,15 +211,16 @@ export function validatePanelAccuracyDataset(
       duplicateKeys: [],
       scaleRatioMaxToMin: 1,
       outlierCountTotal: 0,
+      latentAudit: emptyLatentAudit,
       referenceAudit: {
-        referenceSourceId: refSource?.id || '',
-        referenceSourceName: refSource?.name || '-',
-        referenceSourceLabel: refSource?.label || '-',
+        referenceSourceId: 'latent_consensus',
+        referenceSourceName: 'θ̂',
+        referenceSourceLabel: 'Consensus Latent Benchmark',
         nValid: 0,
         coveragePct: 0,
         hasZeroVariance: true,
         outlierCount: 0,
-        hasMethodNote: false,
+        hasMethodNote: true,
         isCredibleReference: false,
         warnings: ['Dataset kosong.'],
         summary: 'Dataset belum memuat observasi.'
@@ -238,23 +239,21 @@ export function validatePanelAccuracyDataset(
     };
   }
 
-  // Check source count & reference uniqueness
+  // Check source count (J >= 2 required, J >= 3 for full latent identifiability) & unique column mapping
   const mappedCols = [cityIdColumn, yearColumn, ...sources.map(s => s.columnKey)].filter(Boolean);
   const distinctCols = new Set(mappedCols);
   const hasDuplicateColMapping = distinctCols.size !== mappedCols.length;
-  const invalidSourceCount = sources.length < 2 || refSources.length !== 1 || compSources.length < 1;
+  const invalidSourceCount = sources.length < 2;
 
   if (invalidSourceCount || hasDuplicateColMapping || !cityIdColumn || !yearColumn) {
     checks.push({
       id: 'source_configuration',
-      title: 'Konfigurasi Sumber & Referensi',
+      title: 'Konfigurasi Sumber Pengukuran',
       severity: 'error',
       count: 1,
       message:
         sources.length < 2
-          ? 'Minimal diperlukan 2 sumber pengukuran (1 Reference Source dan minimal 1 Comparison Source).'
-          : refSources.length !== 1
-          ? `Harus dipilih tepat 1 Reference Source (saat ini terpilih ${refSources.length}).`
+          ? 'Minimal diperlukan 2 sumber pengukuran (disarankan ≥ 3 sumber agar model pengukuran laten teridentifikasi penuh).'
           : 'Kolom City ID, Year, dan setiap sumber pengukuran harus terpetakan pada kolom yang berbeda.'
     });
   }
@@ -329,17 +328,17 @@ export function validatePanelAccuracyDataset(
       const skipDup = preprocessing.dropDuplicateCityYear && seenKeysForComplete.has(pKey);
       seenKeysForComplete.add(pKey);
 
-      if (!skipDup && refSource) {
-        const refVal = rowNumericBySource[refSource.id];
-        if (refVal !== null) {
-          compSources.forEach(cs => {
-            if (rowNumericBySource[cs.id] !== null) {
-              availablePairsBySource[cs.id] = (availablePairsBySource[cs.id] || 0) + 1;
-            }
-          });
-          const allPresent = sources.every(s => rowNumericBySource[s.id] !== null);
-          if (allPresent) nCompleteCasePairs++;
-        }
+      if (!skipDup) {
+        const validCountInRow = sources.filter(s => rowNumericBySource[s.id] !== null).length;
+        sources.forEach(src => {
+          // Available case for source j requires source j AND at least (J>=3 ? 2 : 1) peer sources present
+          const minPeers = sources.length >= 3 ? 2 : 1;
+          if (rowNumericBySource[src.id] !== null && validCountInRow - 1 >= minPeers) {
+            availablePairsBySource[src.id] = (availablePairsBySource[src.id] || 0) + 1;
+          }
+        });
+        const allPresent = sources.every(s => rowNumericBySource[s.id] !== null);
+        if (allPresent) nCompleteCasePairs++;
       }
     }
   });
@@ -525,65 +524,86 @@ export function validatePanelAccuracyDataset(
         : undefined
   });
 
-  // 10. Reference Source Quality & Credibility Audit
-  const refVals = refSource ? sourceValues[refSource.id] || [] : [];
-  const refMean = refVals.length ? refVals.reduce((a, b) => a + b, 0) / refVals.length : 0;
-  const refVar =
-    refVals.length > 1
-      ? refVals.reduce((s, v) => s + (v - refMean) ** 2, 0) / (refVals.length - 1)
-      : 0;
-  const refCoveragePct = observations.length > 0 ? (refVals.length / observations.length) * 100 : 0;
-  const refZeroVar = refVals.length < 2 || refVar <= 1e-12;
-  const refOutliers = refSource ? outlierBySource[refSource.id] || 0 : 0;
-  const refWarnings: string[] = [];
+  // 10. All-Source Latent Model Identifiability Audit (replaces single-reference bias check)
+  const zeroVarianceSources: string[] = [];
+  sources.forEach(s => {
+    const vals = sourceValues[s.id] || [];
+    const m = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    const v =
+      vals.length > 1
+        ? vals.reduce((acc, x) => acc + (x - m) ** 2, 0) / (vals.length - 1)
+        : 0;
+    if (vals.length < 3 || v <= 1e-12) {
+      zeroVarianceSources.push(`${s.name} (${s.label})`);
+    }
+  });
 
-  if (refCoveragePct < 80) {
-    refWarnings.push(`Cakupan observasi sumber referensi rendah (${refCoveragePct.toFixed(1)}% < 80%).`);
+  const latentWarnings: string[] = [];
+  if (sources.length < 3) {
+    latentWarnings.push(
+      `Hanya tersedia J = ${sources.length} sumber: model pengukuran laten tanpa variabel referensi secara statistik UNDERIDENTIFIED (membutuhkan J >= 3 sumber independen).`
+    );
   }
-  if (refZeroVar) {
-    refWarnings.push('Sumber referensi memiliki varians nol (konstan), sehingga korelasi & CCC tidak terdefinisi.');
-  }
-  if (refOutliers > Math.max(2, Math.floor(refVals.length * 0.1))) {
-    refWarnings.push(`Sumber referensi memiliki ${refOutliers} nilai ekstrem yang dapat mendistorsi selisih error.`);
+  if (zeroVarianceSources.length > 0) {
+    latentWarnings.push(`Sumber berikut memiliki varians nol/terlalu sedikit observasi: ${zeroVarianceSources.join(', ')}.`);
   }
 
-  const isCredibleReference = Boolean(refSource) && !refZeroVar && refVals.length >= 4 && refCoveragePct >= 50;
+  const isIdentifiedForAllSourceRanking =
+    sources.length >= 3 && zeroVarianceSources.length === 0 && nCompleteCasePairs >= 4;
+
+  const latentAudit: LatentIdentificationAudit = {
+    nSources: sources.length,
+    isIdentifiedForAllSourceRanking,
+    nValidCompletePairs: nCompleteCasePairs,
+    hasZeroVarianceSources: zeroVarianceSources,
+    potentialDependentPairs: [],
+    summary: isIdentifiedForAllSourceRanking
+      ? `Seluruh J = ${sources.length} sumber memenuhi syarat identifikasi Bayesian Hierarchical Latent Measurement Model & Grubbs Triangulation (N_CC = ${nCompleteCasePairs}, semua varians > 0). Tidak ada sumber yang dikecualikan sebagai reference.`
+      : `Identifikasi model pengukuran laten tanpa referensi memiliki catatan (${latentWarnings.join(' ') || 'data kurang'}).`,
+    warnings: latentWarnings
+  };
+
   const referenceAudit: ReferenceSourceAudit = {
-    referenceSourceId: refSource?.id || '',
-    referenceSourceName: refSource?.name || '-',
-    referenceSourceLabel: refSource?.label || '-',
-    nValid: refVals.length,
-    coveragePct: refCoveragePct,
-    hasZeroVariance: refZeroVar,
-    outlierCount: refOutliers,
-    hasMethodNote: Boolean(refSource?.methodDescription && refSource.methodDescription.trim().length > 0),
-    isCredibleReference,
-    warnings: refWarnings,
-    summary: isCredibleReference
-      ? `Sumber referensi "${refSource.label} (${refSource.name})" memiliki ${refVals.length} observasi valid (${refCoveragePct.toFixed(1)}%) dengan variasi memadai. Ingat: sumber referensi adalah pembanding acuan, bukan kebenaran absolut tanpa galat.`
-      : `Sumber referensi "${refSource?.label || '-'}" belum memenuhi kelayakan minimum (${refWarnings.join(' ') || 'data kurang'}).`
+    referenceSourceId: 'latent_consensus',
+    referenceSourceName: 'θ̂',
+    referenceSourceLabel: 'Consensus Latent Benchmark (θ̂)',
+    nValid: nCompleteCasePairs,
+    coveragePct: observations.length > 0 ? (nCompleteCasePairs / observations.length) * 100 : 0,
+    hasZeroVariance: zeroVarianceSources.length > 0,
+    outlierCount: outlierCountTotal,
+    hasMethodNote: true,
+    isCredibleReference: isIdentifiedForAllSourceRanking,
+    warnings: latentWarnings,
+    summary: latentAudit.summary
   };
 
   checks.push({
     id: 'reference_quality',
-    title: `10. Audit Kelayakan Sumber Referensi (${refSource?.name || '-'})`,
-    severity: !isCredibleReference ? 'error' : refWarnings.length > 0 ? 'warning' : 'ok',
-    count: refWarnings.length,
-    message: referenceAudit.summary,
+    title: `10. Audit Identifiabilitas Model Laten All-Source (J = ${sources.length} Sumber)`,
+    severity:
+      zeroVarianceSources.length > 0
+        ? 'error'
+        : sources.length < 3
+          ? 'warning'
+          : 'ok',
+    count: latentWarnings.length,
+    message: latentAudit.summary,
     recommendation:
-      !isCredibleReference
-        ? 'Pilih sumber referensi lain yang memiliki cakupan data valid dan varians non-nol di Step 2.'
-        : undefined
+      sources.length < 3
+        ? 'Tambahkan sumber pengukuran ke-3 (total J >= 3) agar varians error dan reliabilitas setiap sumber dapat dipisahkan secara unik tanpa variabel referensi.'
+        : zeroVarianceSources.length > 0
+          ? 'Hapus atau perbaiki kolom yang memiliki varians nol (nilai konstan).'
+          : undefined
   });
 
-  const emptyComparisonSources = compSources.filter(cs => (availablePairsBySource[cs.id] || 0) < 3);
-  if (emptyComparisonSources.length > 0) {
+  const emptyEvalSources = sources.filter(s => (availablePairsBySource[s.id] || 0) < 3);
+  if (emptyEvalSources.length > 0) {
     checks.push({
       id: 'insufficient_pairs',
-      title: 'Kecukupan Pasangan Observasi Sumber Pembanding',
+      title: 'Kecukupan Observasi Berpasangan per Sumber',
       severity: 'error',
-      count: emptyComparisonSources.length,
-      message: `Sumber pembanding berikut memiliki < 3 pasangan observasi valid dengan referensi: ${emptyComparisonSources.map(s => s.label).join(', ')}.`
+      count: emptyEvalSources.length,
+      message: `Sumber berikut memiliki < 3 observasi berpasangan valid dengan sumber lain: ${emptyEvalSources.map(s => s.label).join(', ')}.`
     });
   }
 
@@ -595,8 +615,8 @@ export function validatePanelAccuracyDataset(
     nCities < 2 ||
     nYears < 1 ||
     nCompleteCasePairs < 3 ||
-    !isCredibleReference ||
-    emptyComparisonSources.length > 0 ||
+    zeroVarianceSources.length > 0 ||
+    emptyEvalSources.length > 0 ||
     (duplicateKeys.length > 0 && !preprocessing.dropDuplicateCityYear);
 
   return {
@@ -613,6 +633,7 @@ export function validatePanelAccuracyDataset(
     duplicateKeys,
     scaleRatioMaxToMin,
     outlierCountTotal,
+    latentAudit,
     referenceAudit,
     checks,
     recommendedActions,
@@ -622,8 +643,7 @@ export function validatePanelAccuracyDataset(
 
 /**
  * Built-in realistic multi-city CO2 measurement accuracy preset dataset
- * (10 cities × 6 years = 60 observations, 4 measurement sources by default).
- * Reference: X3 (Field Sensor). Comparison: X1 (Self-Reporting), X2 (Satellite Standard), X4 (Alternative High-Res Satellite).
+ * (10 cities × 6 years = 60 observations, 4 measurement sources evaluated equally — no privileged reference).
  */
 export function generateMultiSourceCO2PresetDataset(): {
   cityIdColumn: string;
@@ -660,22 +680,23 @@ export function generateMultiSourceCO2PresetDataset(): {
     let shock = randn() * 14;
     years.forEach((yr, tIdx) => {
       shock = 0.4 * shock + randn() * 18;
-      const refTrue = Number((c.base + yearTrend[tIdx] + cIdx * 7 + tIdx * 9 + shock).toFixed(2));
-      // X1 Self-Reporting: systematic underreporting bias (-48 kt) + larger noise (SD=42)
-      const x1 = Number((refTrue - 48 + randn() * 42).toFixed(2));
-      // X2 Satellite Standard: mild positive bias (+24 kt) + moderate noise (SD=28)
-      const x2 = Number((refTrue + 24 + randn() * 28).toFixed(2));
-      // X3 Field Sensor (Reference): calibrated ground network
-      const x3 = refTrue;
-      // X4 High-Res Satellite: very small bias (+6 kt) + low noise (SD=15) -> most accurate comparison source
-      const x4 = Number((refTrue + 6 + randn() * 15).toFixed(2));
+      const trueEmission = Number((c.base + yearTrend[tIdx] + cIdx * 7 + tIdx * 9 + shock).toFixed(2));
+      // All 4 sources contain realistic independent measurement errors (none locked as ground truth):
+      // X1 Self-Reporting: systematic underreporting (-46 kt) + large noise (SD=42)
+      const x1 = Number((trueEmission - 46 + randn() * 42).toFixed(2));
+      // X2 Satellite Standard: positive bias (+26 kt) + moderate noise (SD=28)
+      const x2 = Number((trueEmission + 26 + randn() * 28).toFixed(2));
+      // X3 Field Sensor Network: near-zero bias (+0 kt) + small noise (SD=8)
+      const x3 = Number((trueEmission + randn() * 8).toFixed(2));
+      // X4 Alternative High-Res Satellite: small bias (+8 kt) + low-moderate noise (SD=16)
+      const x4 = Number((trueEmission + 8 + randn() * 16).toFixed(2));
 
       observations.push({
         City: c.name,
         Year: yr,
         X1_Self_Reporting: x1,
         X2_Satellite_Standard: x2,
-        X3_Field_Sensor_Ref: x3,
+        X3_Field_Sensor: x3,
         X4_Alt_Satellite_HiRes: x4
       });
     });
@@ -688,7 +709,7 @@ export function generateMultiSourceCO2PresetDataset(): {
       label: 'Self-Reporting',
       columnKey: 'X1_Self_Reporting',
       unit: 'kt CO₂',
-      role: 'comparison',
+      role: 'evaluated',
       methodDescription: 'Pelaporan mandiri inventarisasi emisi tahunan kota (bottom-up).'
     },
     {
@@ -697,17 +718,17 @@ export function generateMultiSourceCO2PresetDataset(): {
       label: 'Satellite Standard',
       columnKey: 'X2_Satellite_Standard',
       unit: 'kt CO₂',
-      role: 'comparison',
+      role: 'evaluated',
       methodDescription: 'Estimasi penginderaan jauh satelit resolusi menengah.'
     },
     {
       id: 'src_3',
       name: 'X3',
       label: 'Field Sensor',
-      columnKey: 'X3_Field_Sensor_Ref',
+      columnKey: 'X3_Field_Sensor',
       unit: 'kt CO₂',
-      role: 'reference',
-      methodDescription: 'Jaringan sensor pemantauan darat terkalibrasi (Reference Source).'
+      role: 'evaluated',
+      methodDescription: 'Jaringan sensor pemantauan darat perkotaan.'
     },
     {
       id: 'src_4',
@@ -715,8 +736,8 @@ export function generateMultiSourceCO2PresetDataset(): {
       label: 'Alternative Satellite',
       columnKey: 'X4_Alt_Satellite_HiRes',
       unit: 'kt CO₂',
-      role: 'comparison',
-      methodDescription: 'Inversi satelit resolusi tinggi terkalibrasi plume perkotaan.'
+      role: 'evaluated',
+      methodDescription: 'Inversi satelit resolusi tinggi plume perkotaan.'
     }
   ];
 

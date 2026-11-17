@@ -1,8 +1,8 @@
 // ============================================================
-// Comparative Measurement Accuracy Assessment — Diagnostics (Step 7)
-// Heteroskedasticity, Within-City Serial Correlation, Pesaran CD
-// Cross-Sectional Dependence, Cluster Count Audit, Outlier Sensitivity,
-// and Proportional Normality / CLT Explanation
+// Reference-Free All-Source Statistical Diagnostics (Step 7)
+// Heteroskedasticity, Within-City AR(1), Pesaran CD Cross-Sectional
+// Dependence, Cluster Count Audit, Outlier Trimmed Sensitivity,
+// Bayesian MCMC Convergence (R-hat, ESS, PPC), & Normality / CLT Note
 // ============================================================
 
 import {
@@ -11,30 +11,25 @@ import {
 } from './panel-accuracy-bland-altman';
 import { computePearsonR } from './panel-accuracy-correlation';
 import { fDistPValue } from './panel-accuracy-inference';
+import { LatentEngineInternalOutput } from './panel-accuracy-latent';
 import { PreparedPanelAccuracyData } from './panel-accuracy-preprocessing';
 import {
   OutlierSensitivityEntry,
   PanelAccuracyDiagnosticsResult
 } from './panel-accuracy-types';
-import { quantileSorted } from './panel-accuracy-validation';
 
 export function computePanelAccuracyDiagnostics(
-  prepared: PreparedPanelAccuracyData
+  prepared: PreparedPanelAccuracyData,
+  latentOut: LatentEngineInternalOutput
 ): PanelAccuracyDiagnosticsResult {
-  const {
-    completeCaseObservations,
-    referenceSource,
-    comparisonSources,
-    cities
-  } = prepared;
-
+  const { completeCaseObservations, comparisonSources, cities } = prepared;
   const P = completeCaseObservations.length;
   const M = comparisonSources.length;
   const G = new Set(completeCaseObservations.map(o => o.city)).size || cities.length;
 
-  // Build AE matrix [P][M] and within-pair residuals eps_{p,m} = (AE_{p,m} - MAE_m) - (AE_bar_{p,.} - MAE_bar)
-  const aeBySource: number[][] = comparisonSources.map(cs =>
-    completeCaseObservations.map(o => Math.abs(o.values[cs.id]! - o.values[referenceSource.id]!))
+  // Absolute deviation against shared latent true-value estimate theta_hat_it across ALL J sources
+  const aeBySource: number[][] = comparisonSources.map(src =>
+    completeCaseObservations.map((o, p) => Math.abs(o.values[src.id]! - latentOut.sharedLatentTheta[p]))
   );
   const maeBySource = aeBySource.map(arr =>
     arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0
@@ -51,7 +46,7 @@ export function computePanelAccuracyDiagnostics(
     })
   );
 
-  // 1. Groupwise Heteroskedasticity across Comparison Sources (one-way ANOVA F on squared residuals eps^2)
+  // 1. Groupwise Heteroskedasticity across all J sources (one-way ANOVA F on squared residuals eps^2)
   const sqResidGroups = residBySource.map(arr => arr.map(r => r * r));
   const flatSq = sqResidGroups.flat();
   const nTotal = flatSq.length;
@@ -74,7 +69,7 @@ export function computePanelAccuracyDiagnostics(
   const hetP = M > 1 ? fDistPValue(hetF, dfHet1, dfHet2) : 1;
 
   const heteroskedasticityTest = {
-    testName: 'Heteroskedastisitas Varians Error Antarsumber (Breusch-Pagan / Levene-F)',
+    testName: 'Heteroskedastisitas Varians Error Antarsumber (Levene / Breusch-Pagan F)',
     statisticLabel: 'F-stat',
     statisticValue: hetF,
     dfLabel: `(${dfHet1}, ${dfHet2})`,
@@ -82,19 +77,19 @@ export function computePanelAccuracyDiagnostics(
     status: (hetP < 0.05 ? 'warning' : 'ok') as 'ok' | 'warning',
     conclusion:
       hetP < 0.05
-        ? `Terdeteksi perbedaan varians residual yang signifikan antarsumber pembanding (F = ${hetF.toFixed(3)}, p = ${hetP.toFixed(4)}).`
-        : `Varians residual relatif homogen antarsumber pembanding (F = ${hetF.toFixed(3)}, p = ${hetP.toFixed(4)}).`,
+        ? `Terdeteksi perbedaan varians kesalahan yang signifikan antarsumber pengukuran (F = ${hetF.toFixed(3)}, p = ${hetP.toFixed(4)}).`
+        : `Varians residual relatif homogen antarsumber pengukuran (F = ${hetF.toFixed(3)}, p = ${hetP.toFixed(4)}).`,
     implication:
-      'Penggunaan Cluster-Robust Standard Errors pada level City ID secara otomatis tetap konsisten terhadap heteroskedastisitas antarsumber maupun antarkota.'
+      'Model Bayesian Laten memodelkan σ_εj secara heterogen per sumber, sedangkan regresi Pair FE menggunakan Cluster-Robust SE pada level Kota.'
   };
 
-  // 2. Within-City Serial Correlation Test (Lag-1 Autocorrelation of Signed/Abs Error within Cities)
+  // 2. Within-City Serial Correlation Test (Lag-1 AR(1) on deviations from latent truth theta_hat)
   const lagPairsPrev: number[] = [];
   const lagPairsCurr: number[] = [];
-  comparisonSources.forEach((_, m) => {
+  comparisonSources.forEach(src => {
     const byCity = new Map<string, Array<{ year: number; err: number }>>();
     completeCaseObservations.forEach((o, p) => {
-      const signedErr = o.values[comparisonSources[m].id]! - o.values[referenceSource.id]!;
+      const signedErr = o.values[src.id]! - latentOut.sharedLatentTheta[p];
       if (!byCity.has(o.city)) byCity.set(o.city, []);
       byCity.get(o.city)!.push({ year: o.year, err: signedErr });
     });
@@ -127,17 +122,16 @@ export function computePanelAccuracyDiagnostics(
         ? `Terdeteksi korelasi serial antar-tahun di dalam kota yang sama (ρ₁ = ${rhoSerial.toFixed(3)}, t = ${serialT.toFixed(2)}, p = ${serialP.toFixed(4)}).`
         : `Tidak ditemukan autokorelasi serial signifikan di dalam kota (ρ₁ = ${rhoSerial.toFixed(3)}, p = ${serialP.toFixed(4)}).`,
     implication:
-      'Clustering standard error pada tingkat City ID mengakomodasi ketergantungan serial sebarang antar-tahun di dalam kota yang sama.'
+      'Clustering standard error pada level City ID mengakomodasi korelasi serial sebarang antar-tahun di dalam setiap kota.'
   };
 
-  // 3. Cross-Sectional Dependence (Pesaran 2004 CD Test across Cities on Signed Error of primary comparison source)
+  // 3. Cross-Sectional Dependence (Pesaran 2004 CD Test)
   const cityYearMap = new Map<string, Map<number, number>>();
-  completeCaseObservations.forEach(o => {
+  completeCaseObservations.forEach((o, p) => {
+    const thetaHat = latentOut.sharedLatentTheta[p];
     const avgSignedErr =
-      comparisonSources.reduce(
-        (s, cs) => s + (o.values[cs.id]! - o.values[referenceSource.id]!),
-        0
-      ) / Math.max(1, M);
+      comparisonSources.reduce((s, src) => s + (o.values[src.id]! - thetaHat), 0) /
+      Math.max(1, M);
     if (!cityYearMap.has(o.city)) cityYearMap.set(o.city, new Map<number, number>());
     cityYearMap.get(o.city)!.set(o.year, avgSignedErr);
   });
@@ -180,7 +174,7 @@ export function computePanelAccuracyDiagnostics(
         ? `Terdeteksi korelasi lintas-kota pada tahun yang sama (CD = ${cdStat.toFixed(3)}, p = ${cdP.toFixed(4)}).`
         : `Tidak ditemukan ketergantungan lintas-kota yang kuat (CD = ${cdStat.toFixed(3)}, p = ${cdP.toFixed(4)}).`,
     implication:
-      'Penyerapan Pair Fixed Effects (α_it) menghilangkan guncangan umum tingkat kota-tahun yang dialami bersama oleh seluruh sumber pembanding.'
+      'Penyerapan Pair Fixed Effects (α_it) dan faktor laten emisi tahunan θ_it menyerap guncangan makro bersama lintas kota.'
   };
 
   // 4. Cluster Count Audit
@@ -189,15 +183,15 @@ export function computePanelAccuracyDiagnostics(
     nClusters: G,
     isSmallCluster,
     message: isSmallCluster
-      ? `Jumlah klaster kota G = ${G} (< 30). Standar error asimtotik berisiko mengalami downward bias pada jumlah klaster kecil.`
+      ? `Jumlah klaster kota G = ${G} (< 30). Gunakan Wild Cluster Bootstrap dan Bayesian Credible Interval agar inferensi tahan sampel kecil.`
       : `Jumlah klaster kota G = ${G} (≥ 30) memadai untuk inferensi Cluster-Robust asimtotik.`,
     recommendation: isSmallCluster
-      ? 'Gunakan p-value dan 95% CI dari Rademacher Wild Cluster Bootstrap yang telah dihitung otomatis di Step 6.'
-      : 'Inferensi Cluster-Robust dan Wild Cluster Bootstrap keduanya konsisten dan dapat digunakan.'
+      ? 'Keputusan inferensial memadukan p-value Rademacher Wild Cluster Bootstrap dan Bayesian Posterior Superiority Probability.'
+      : 'Inferensi Cluster-Robust, Wild Bootstrap, dan Bayesian Posterior saling mengonfirmasi.'
   };
 
-  // 5. Outlier Sensitivity Audit (Full MAE vs 95% Trimmed MAE)
-  const rawEntries = comparisonSources.map((cs, m) => {
+  // 5. Outlier Sensitivity Audit (Full MAE vs 95% Trimmed MAE against shared latent truth)
+  const rawEntries = comparisonSources.map((src, m) => {
     const arr = [...aeBySource[m]].sort((a, b) => a - b);
     const maeFull = maeBySource[m];
     const cutoffIdx = Math.max(1, Math.floor(arr.length * 0.95));
@@ -208,8 +202,8 @@ export function computePanelAccuracyDiagnostics(
     const shiftPct =
       maeFull > 1e-12 ? ((maeTrimmed95 - maeFull) / maeFull) * 100 : 0;
     return {
-      sourceId: cs.id,
-      sourceLabel: `${cs.name} (${cs.label})`,
+      sourceId: src.id,
+      sourceLabel: `${src.name} (${src.label})`,
       maeFull,
       maeTrimmed95,
       rankFull: 0,
@@ -232,11 +226,23 @@ export function computePanelAccuracyDiagnostics(
     rankOrderChanged,
     entries: rawEntries as OutlierSensitivityEntry[],
     summary: rankOrderChanged
-      ? 'PERINGATAN: Urutan peringkat MAE berubah ketika 5% error ekstrem dipangkas. Kesimpulan akurasi sensitif terhadap outlier.'
-      : 'Urutan peringkat MAE antar sumber pembanding tetap konsisten baik dengan maupun tanpa 5% error ekstrem.'
+      ? 'PERINGATAN: Urutan peringkat deviasi berubah ketika 5% error ekstrem dipangkas; kesimpulan akurasi sensitif terhadap pencilan.'
+      : 'Urutan peringkat deviasi antar seluruh sumber tetap konsisten baik dengan maupun tanpa 5% error ekstrem.'
   };
 
-  // 6. Normality & Central Limit Theorem Proportional Explanation
+  // 6. Bayesian Convergence Audit (R-hat, ESS, PPC)
+  const latentSummary = latentOut.summary;
+  const bayesianConvergenceAudit = {
+    maxRhat: latentSummary.maxRhat,
+    minEss: latentSummary.minEss,
+    posteriorPredictivePValue: latentSummary.posteriorPredictivePValue,
+    converged: latentSummary.converged,
+    summary: latentSummary.converged
+      ? `Rantai MCMC (${latentSummary.nChains} rantai × ${latentSummary.iterationsPerChain} iterasi) konvergen baik: max R-hat = ${latentSummary.maxRhat.toFixed(4)} (<= 1.10), min ESS = ${latentSummary.minEss}, Posterior Predictive p-value = ${latentSummary.posteriorPredictivePValue.toFixed(3)}.`
+      : `Peringatan konvergensi atau identifikasi (max R-hat = ${latentSummary.maxRhat.toFixed(4)}, J = ${latentSummary.nSources}).`
+  };
+
+  // 7. Normality & CLT note
   const allResids = residBySource.flat();
   const nR = allResids.length;
   const meanR = nR > 0 ? allResids.reduce((a, b) => a + b, 0) / nR : 0;
@@ -257,20 +263,22 @@ export function computePanelAccuracyDiagnostics(
     shapiroProxyPValue,
     explanation:
       `Skewness residual within-pair = ${skew.toFixed(3)}, excess kurtosis = ${kurtEx.toFixed(3)}. ` +
-      `Karena Absolute Error (AE ≥ 0) secara alami menceng kanan (folded distribution), ketidaknormalan residual adalah sifat wajar dan BUKAN syarat mutlak validitas estimasi Pair Fixed Effects. ` +
-      `Berdasarkan Central Limit Theorem (CLT) lintas klaster dan penggunaan Wild Cluster Bootstrap, estimasi titik perbedaan MAE tetap tak-bias dan inferensi tetap valid.`
+      `Distribusi kesalahan absolut (AE ≥ 0) secara alami menceng kanan; ketidaknormalan AE bukan cacat validitas karena inferensi Bayesian mengandalkan posterior Gibbs penuh sedangkan Pair Fixed Effects mengandalkan Central Limit Theorem (CLT) & Wild Cluster Bootstrap.`
   };
 
   const inferenceLimitations: string[] = [
-    `Seluruh metrik kesalahan (MAE, RMSE, MBE) bersifat relatif terhadap sumber referensi terpilih "${referenceSource.name} (${referenceSource.label})", bukan ukuran kebenaran absolut.`,
+    latentSummary.epistemologicalCaveat,
+    ...(latentSummary.nSources < 3
+      ? ['Jumlah sumber J < 3: model pengukuran laten tanpa variabel referensi bersifat underidentified secara teoretis.']
+      : []),
     ...(isSmallCluster
-      ? [`Jumlah klaster kota relatif terbatas (G = ${G}); prioritaskan p-value Wild Cluster Bootstrap dibanding p-value asimtotik.`]
+      ? [`Jumlah klaster kota terbatas (G = ${G} < 30); prioritaskan Rademacher Wild Cluster Bootstrap & Bayesian Credible Interval.`]
       : []),
     ...(rankOrderChanged
-      ? ['Peringkat akurasi berubah saat 5% observasi ekstrem dipangkas; periksa potensi anomali pencatatan pada tahun/kota tertentu.']
+      ? ['Peringkat sensitif terhadap 5% observasi ekstrem; periksa tabel 95% Trimmed MAE sebelum menarik kesimpulan mutlak.']
       : []),
     ...(P < prepared.allCleanedObservations.length
-      ? [`Perbandingan utama menggunakan ${P} pasangan Complete-Case dari total ${prepared.allCleanedObservations.length} baris panel.`]
+      ? [`Evaluasi utama menggunakan ${P} pasangan Complete-Case dari ${prepared.allCleanedObservations.length} baris panel.`]
       : [])
   ];
 
@@ -280,6 +288,7 @@ export function computePanelAccuracyDiagnostics(
     crossSectionalDependenceTest,
     clusterCountAudit,
     outlierSensitivityAudit,
+    bayesianConvergenceAudit,
     normalityAndCltNote,
     inferenceLimitations
   };

@@ -1,7 +1,8 @@
 // ============================================================
-// Comparative Measurement Accuracy Assessment — Accuracy Metrics
-// MAE, RMSE, MBE, Cluster-Robust Confidence Intervals,
-// Complete-Case vs Source-Specific Available-Case Comparison
+// Reference-Free All-Source Measurement Accuracy Metrics
+// Combines Bayesian Hierarchical Latent Estimates (Error SD, Reliability R²,
+// Total Latent RMSE, Posterior Prob Best) with Empirical Consensus Error
+// (MAE, RMSE, MBE, Lin's CCC, Bland-Altman vs Leave-One-Out & Shared Latent θ̂)
 // ============================================================
 
 import {
@@ -11,11 +12,12 @@ import {
 } from './panel-accuracy-bland-altman';
 import { computeLinsCCC } from './panel-accuracy-ccc';
 import {
-  computeFirstDifferencePearsonR,
+  computeFirstDifferencePearsonRVec,
   computePearsonR,
   computeSpearmanRho,
-  computeWithinCityPearsonR
+  computeWithinCityPearsonRVec
 } from './panel-accuracy-correlation';
+import { LatentEngineInternalOutput } from './panel-accuracy-latent';
 import { PreparedPanelAccuracyData } from './panel-accuracy-preprocessing';
 import {
   AvailableCaseMetricSummary,
@@ -42,7 +44,6 @@ export function computeCityClusterMeanSe(
 
   const G = clusterSums.size;
   if (G <= 1) {
-    // Fallback to classic i.i.d. SE if only 1 city present
     const v = items.reduce((s, x) => s + (x.val - mean) ** 2, 0) / (n - 1);
     return { mean, seCluster: Math.sqrt(v / n), nClusters: 1, dfCluster: Math.max(1, n - 1) };
   }
@@ -52,7 +53,6 @@ export function computeCityClusterMeanSe(
     meat += sumScore * sumScore;
   });
 
-  // Small-sample adjustment: (G / (G - 1)) * ((n - 1) / n)
   const factor = (G / (G - 1)) * ((n - 1) / n);
   const varMean = (factor * meat) / (n * n);
   return {
@@ -63,81 +63,113 @@ export function computeCityClusterMeanSe(
   };
 }
 
-function summarizeAvailableCase(
+function summarizeAvailableCaseConsensus(
   obsList: CleanedPanelObservation[],
-  compSource: MeasurementSource,
-  refSource: MeasurementSource
+  targetSource: MeasurementSource,
+  allSources: MeasurementSource[],
+  latentOut: LatentEngineInternalOutput
 ): AvailableCaseMetricSummary {
   const n = obsList.length;
   if (n === 0) {
     return { n: 0, mae: 0, rmse: 0, mbe: 0, pearsonR: 0, spearmanRho: 0, ccc: 0 };
   }
+
+  const estMap = new Map(latentOut.summary.sourceEstimates.map(e => [e.sourceId, e]));
   const compVals: number[] = [];
-  const refVals: number[] = [];
+  const benchVals: number[] = [];
   let sumAe = 0;
   let sumSe = 0;
   let sumErr = 0;
 
   obsList.forEach(o => {
-    const xc = o.values[compSource.id]!;
-    const xr = o.values[refSource.id]!;
-    const err = xc - xr;
+    const xc = o.values[targetSource.id]!;
+    // Inverse-variance weighted peer consensus on this row excluding targetSource
+    let wSum = 0;
+    let valSum = 0;
+    allSources.forEach(peer => {
+      if (peer.id === targetSource.id) return;
+      const xp = o.values[peer.id];
+      if (xp === null || !Number.isFinite(xp)) return;
+      const est = estMap.get(peer.id);
+      const w = est
+        ? (est.loadingLambda * est.loadingLambda) / Math.max(1e-6, est.errorVariance)
+        : 1;
+      const deBiased = est
+        ? (xp - est.interceptBiasAlpha) / Math.max(0.1, est.loadingLambda)
+        : xp;
+      valSum += w * deBiased;
+      wSum += w;
+    });
+    const bench = wSum > 1e-12 ? valSum / wSum : xc;
+    const err = xc - bench;
     compVals.push(xc);
-    refVals.push(xr);
+    benchVals.push(bench);
     sumErr += err;
     sumAe += Math.abs(err);
     sumSe += err * err;
   });
 
-  const cccRes = computeLinsCCC(compVals, refVals, compSource);
+  const cccRes = computeLinsCCC(compVals, benchVals, targetSource);
 
   return {
     n,
     mae: sumAe / n,
     rmse: Math.sqrt(sumSe / n),
     mbe: sumErr / n,
-    pearsonR: computePearsonR(compVals, refVals),
-    spearmanRho: computeSpearmanRho(compVals, refVals),
+    pearsonR: computePearsonR(compVals, benchVals),
+    spearmanRho: computeSpearmanRho(compVals, benchVals),
     ccc: cccRes.ccc
   };
 }
 
 /**
- * Compute complete accuracy and agreement metrics for all comparison sources against the selected reference source.
+ * Compute comprehensive All-Source Accuracy & Latent Reliability Metrics for ALL J evaluated sources.
  */
 export function computeAllSourceAccuracyMetrics(
-  prepared: PreparedPanelAccuracyData
+  prepared: PreparedPanelAccuracyData,
+  latentOut: LatentEngineInternalOutput
 ): SourceAccuracyMetricRow[] {
   const {
     completeCaseObservations,
     availableCaseBySourceId,
-    referenceSource,
-    comparisonSources
+    comparisonSources, // Contains ALL J sources symmetrically
+    workingUnitNote
   } = prepared;
 
   const nCC = completeCaseObservations.length;
-  const refValsCC = completeCaseObservations.map(o => o.values[referenceSource.id]!);
-  const refMeanAbs =
+  const estMap = new Map(latentOut.summary.sourceEstimates.map(e => [e.sourceId, e]));
+  const benchMeanAbs =
     nCC > 0
-      ? Math.abs(refValsCC.reduce((a, b) => a + b, 0) / nCC)
+      ? Math.abs(
+          latentOut.sharedLatentTheta.reduce((a, b) => a + b, 0) / nCC
+        )
       : 1;
 
-  return comparisonSources.map(comp => {
-    const availObs = availableCaseBySourceId[comp.id] || [];
-    const availableCase = summarizeAvailableCase(availObs, comp, referenceSource);
+  return comparisonSources.map(src => {
+    const est = estMap.get(src.id)!;
+    const availObs = availableCaseBySourceId[src.id] || [];
+    const availableCase = summarizeAvailableCaseConsensus(
+      availObs,
+      src,
+      comparisonSources,
+      latentOut
+    );
 
-    const compValsCC = completeCaseObservations.map(o => o.values[comp.id]!);
+    const srcValsCC = completeCaseObservations.map(o => o.values[src.id]!);
+    // Out-of-sample Leave-One-Source-Out Consensus benchmark theta_hat^(-j)
+    const losoBenchCC = latentOut.losoConsensusBySource[src.id] || latentOut.sharedLatentTheta;
+
     const aeItems = completeCaseObservations.map((o, i) => ({
       city: o.city,
-      val: Math.abs(compValsCC[i] - refValsCC[i])
+      val: Math.abs(srcValsCC[i] - losoBenchCC[i])
     }));
     const seItems = completeCaseObservations.map((o, i) => {
-      const e = compValsCC[i] - refValsCC[i];
+      const e = srcValsCC[i] - losoBenchCC[i];
       return { city: o.city, val: e * e };
     });
     const errItems = completeCaseObservations.map((o, i) => ({
       city: o.city,
-      val: compValsCC[i] - refValsCC[i]
+      val: srcValsCC[i] - losoBenchCC[i]
     }));
 
     const maeCluster = computeCityClusterMeanSe(aeItems);
@@ -151,7 +183,6 @@ export function computeAllSourceAccuracyMetrics(
 
     const mse = Math.max(0, seClusterStats.mean);
     const rmse = Math.sqrt(mse);
-    // Delta method SE(sqrt(MSE)) = SE(MSE) / (2 * RMSE)
     const rmseSe = rmse > 1e-12 ? seClusterStats.seCluster / (2 * rmse) : 0;
     const rmseCiLower = Math.max(0, rmse - tCrit * rmseSe);
     const rmseCiUpper = rmse + tCrit * rmseSe;
@@ -163,29 +194,53 @@ export function computeAllSourceAccuracyMetrics(
     const mbeTStat = mbeSe > 1e-12 ? mbe / mbeSe : 0;
     const mbePValue = studentTPValueTwoSided(mbeTStat, mbeCluster.dfCluster);
 
-    const nmaePct = refMeanAbs > 1e-12 ? (mae / refMeanAbs) * 100 : 0;
-    const pearsonR = computePearsonR(compValsCC, refValsCC);
-    const spearmanRho = computeSpearmanRho(compValsCC, refValsCC);
-    const withinCityR = computeWithinCityPearsonR(completeCaseObservations, comp.id, referenceSource.id);
-    const firstDiffR = computeFirstDifferencePearsonR(completeCaseObservations, comp.id, referenceSource.id);
+    const nmaePct = benchMeanAbs > 1e-12 ? (mae / benchMeanAbs) * 100 : 0;
+    const pearsonR = computePearsonR(srcValsCC, losoBenchCC);
+    const spearmanRho = computeSpearmanRho(srcValsCC, losoBenchCC);
+    const withinCityR = computeWithinCityPearsonRVec(
+      completeCaseObservations,
+      srcValsCC,
+      losoBenchCC
+    );
+    const firstDiffR = computeFirstDifferencePearsonRVec(
+      completeCaseObservations,
+      srcValsCC,
+      losoBenchCC
+    );
 
-    const ccc = computeLinsCCC(compValsCC, refValsCC, comp);
+    const ccc = computeLinsCCC(srcValsCC, losoBenchCC, src);
     const baPairs = completeCaseObservations.map((o, i) => ({
       city: o.city,
       year: o.year,
-      compVal: compValsCC[i],
-      refVal: refValsCC[i]
+      compVal: srcValsCC[i],
+      refVal: losoBenchCC[i]
     }));
-    const blandAltman = computeBlandAltmanAgreement(baPairs, comp);
+    const blandAltman = computeBlandAltmanAgreement(baPairs, src);
 
     return {
-      sourceId: comp.id,
-      sourceName: comp.name,
-      sourceLabel: `${comp.name} (${comp.label})`,
-      unit: comp.unit || referenceSource.unit || 'kt CO₂',
+      sourceId: src.id,
+      sourceName: src.name,
+      sourceLabel: `${src.name} (${src.label})`,
+      unit: src.unit || workingUnitNote || 'kt CO₂',
       nCompleteCase: nCC,
       nAvailableCase: availObs.length,
       missingGapVsComplete: availObs.length - nCC,
+      latentInterceptBias: est.interceptBiasAlpha,
+      latentLoading: est.loadingLambda,
+      errorVariance: est.errorVariance,
+      errorSd: est.errorSd,
+      errorSdCiLower: est.errorSdCiLower,
+      errorSdCiUpper: est.errorSdCiUpper,
+      totalLatentRmse: est.totalLatentRmse,
+      totalLatentRmseCiLower: est.totalLatentRmseCiLower,
+      totalLatentRmseCiUpper: est.totalLatentRmseCiUpper,
+      reliabilityR2: est.reliabilityR2,
+      reliabilityCiLower: est.reliabilityCiLower,
+      reliabilityCiUpper: est.reliabilityCiUpper,
+      posteriorProbBest: est.posteriorProbBestTotalError,
+      mcmcRhat: est.mcmcRhat,
+      mcmcEss: est.mcmcEss,
+      grubbsErrorVariance: est.grubbsErrorVariance,
       mae,
       maeSeCluster: maeCluster.seCluster,
       maeCiLower,

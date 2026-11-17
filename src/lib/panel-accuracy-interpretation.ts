@@ -1,12 +1,13 @@
 // ============================================================
-// Comparative Measurement Accuracy Assessment — Stata Output &
-// Dynamic Indonesian Academic Statistical Interpretations
+// Reference-Free All-Source Latent & Consensus Assessment
+// Stata-Style Output Tables & Indonesian Academic Interpretations
 // ============================================================
 
 import {
   AccuracyAcademicInterpretations,
   ComparativeRankingResult,
   CorrelationMatricesBundle,
+  LatentModelSummary,
   MeasurementSource,
   PairFixedEffectsResult,
   PanelAccuracyDiagnosticsResult,
@@ -37,6 +38,7 @@ export interface AccuracyCoreBundle {
   comparisonSources: MeasurementSource[];
   qualityReport: PanelAccuracyQualityReport;
   eda: CorrelationMatricesBundle;
+  latentModel: LatentModelSummary;
   metrics: SourceAccuracyMetricRow[];
   pairFixedEffects: PairFixedEffectsResult;
   diagnostics: PanelAccuracyDiagnosticsResult;
@@ -44,44 +46,43 @@ export interface AccuracyCoreBundle {
 }
 
 export function generateStataAccuracyOutputBundle(core: AccuracyCoreBundle): StataAccuracyOutputBundle {
-  const { datasetMeta, referenceSource, metrics, pairFixedEffects, diagnostics, ranking } = core;
-  const sep = '-'.repeat(98);
-  const refTag = `${referenceSource.name} (${referenceSource.label})`;
+  const { datasetMeta, latentModel, metrics, pairFixedEffects, diagnostics, ranking } = core;
+  const sep = '-'.repeat(106);
 
   const headerConsoleText = [
-    `. * Comparative Measurement Accuracy Assessment Using Reference Measurements: A Panel Data Approach`,
-    `. * Reference Source (r): ${refTag} [Unit: ${datasetMeta.workingUnitNote}]`,
-    `. * Panel Structure     : ${datasetMeta.cityIdColumn} (G = ${datasetMeta.nCities} cities) x ${datasetMeta.yearColumn} (T = ${datasetMeta.nYears} years)`,
-    `. * Complete-Case Pairs : ${datasetMeta.nCompletePairs} of ${datasetMeta.nObsRaw} raw rows (${datasetMeta.isBalanced ? 'Balanced' : 'Unbalanced/Partial'})`,
-    `. * Comparison Sources  : ${core.comparisonSources.map(s => `${s.name}(${s.label})`).join(', ')}`
+    `. * Reference-Free All-Source Latent & Consensus Measurement Accuracy Assessment`,
+    `. * Benchmark Model    : Bayesian Hierarchical Congeneric Latent Model (${latentModel.nChains} chains × ${latentModel.iterationsPerChain} iters)`,
+    `. * Evaluated Sources  : J = ${core.sources.length} (${core.sources.map(s => `${s.name}(${s.label})`).join(', ')}) [Unit: ${datasetMeta.workingUnitNote}]`,
+    `. * Panel Structure    : ${datasetMeta.cityIdColumn} (G = ${datasetMeta.nCities} cities) x ${datasetMeta.yearColumn} (T = ${datasetMeta.nYears} years)`,
+    `. * Complete-Case Pairs: ${datasetMeta.nCompletePairs} of ${datasetMeta.nObsRaw} raw rows | Max R-hat = ${latentModel.maxRhat.toFixed(4)} | Min ESS = ${latentModel.minEss}`
   ].join('\n');
 
   const mHead =
-    `${pad('Comparison Source', 24)} | ${pad('N(CC/Av)', 9, true)} ${pad('MAE', 10, true)} ${pad('RMSE', 10, true)} ${pad('MBE', 10, true)} ${pad('Pearson r', 10, true)} ${pad('Within r', 9, true)} ${pad('Lin CCC', 9, true)}`;
+    `${pad('Evaluated Source', 24)} | ${pad('TotRMSE', 9, true)} ${pad('ErrSD(σ)', 9, true)} ${pad('Reliab R²', 10, true)} ${pad('Alpha(α)', 9, true)} ${pad('Lambda(λ)', 9, true)} ${pad('LOSO MAE', 9, true)} ${pad('P(Best)', 8, true)} ${pad('R-hat', 6, true)}`;
   const mRows = metrics.map(m =>
-    `${pad(m.sourceLabel, 24)} | ${pad(`${m.nCompleteCase}/${m.nAvailableCase}`, 9, true)} ${pad(fmt(m.mae, 3), 10, true)} ${pad(fmt(m.rmse, 3), 10, true)} ${pad(fmt(m.mbe, 3), 10, true)} ${pad(fmt(m.pearsonR, 4), 10, true)} ${pad(fmt(m.withinCityR, 4), 9, true)} ${pad(fmt(m.ccc.ccc, 4), 9, true)}`
+    `${pad(m.sourceLabel, 24)} | ${pad(fmt(m.totalLatentRmse, 2), 9, true)} ${pad(fmt(m.errorSd, 2), 9, true)} ${pad(fmt(m.reliabilityR2, 4), 10, true)} ${pad(fmt(m.latentInterceptBias, 2), 9, true)} ${pad(fmt(m.latentLoading, 3), 9, true)} ${pad(fmt(m.mae, 2), 9, true)} ${pad(`${(m.posteriorProbBest * 100).toFixed(1)}%`, 8, true)} ${pad(fmt(m.mcmcRhat, 3), 6, true)}`
   );
 
   const accuracyMetricsTableText = [
-    `. * Tabel 1: Metrik Akurasi & Korelasi Terhadap Sumber Referensi ${refTag}`,
+    `. * Tabel 1: Evaluasi Akurasi & Reliabilitas Laten Seluruh J = ${metrics.length} Sumber (Tanpa Reference Terkunci)`,
     sep,
     mHead,
     sep,
     ...mRows,
     sep,
-    `Catatan: Evaluasi utama menggunakan N(CC) Complete-Case pasangan City-Year yang sama.`
+    `Identification: ${latentModel.identificationRule}`
   ].join('\n');
 
   const baHead =
-    `${pad('Comparison Source', 24)} | ${pad('Lin CCC [95% CI]', 23, true)} ${pad('Cb', 7, true)} ${pad('Mean Bias', 10, true)} ${pad('SD Diff', 9, true)} ${pad('95% Limits of Agreement', 23, true)}`;
+    `${pad('Evaluated Source', 24)} | ${pad('N(CC/Av)', 9, true)} ${pad('LOSO Lin CCC [95% CI]', 22, true)} ${pad('Cb', 6, true)} ${pad('LOSO MBE', 9, true)} ${pad('SD Diff', 8, true)} ${pad('95% LoA (vs θ̂_-j)', 21, true)}`;
   const baRows = metrics.map(m => {
     const cccCi = `${fmt(m.ccc.ccc, 3)} [${fmt(m.ccc.ciLower, 3)},${fmt(m.ccc.ciUpper, 3)}]`;
-    const loaStr = `[${fmt(m.blandAltman.loaLower, 2)}, ${fmt(m.blandAltman.loaUpper, 2)}]`;
-    return `${pad(m.sourceLabel, 24)} | ${pad(cccCi, 23, true)} ${pad(fmt(m.ccc.biasCorrectionFactorCb, 3), 7, true)} ${pad(fmt(m.blandAltman.meanBias, 3), 10, true)} ${pad(fmt(m.blandAltman.sdDiff, 3), 9, true)} ${pad(loaStr, 23, true)}`;
+    const loaStr = `[${fmt(m.blandAltman.loaLower, 1)}, ${fmt(m.blandAltman.loaUpper, 1)}]`;
+    return `${pad(m.sourceLabel, 24)} | ${pad(`${m.nCompleteCase}/${m.nAvailableCase}`, 9, true)} ${pad(cccCi, 22, true)} ${pad(fmt(m.ccc.biasCorrectionFactorCb, 3), 6, true)} ${pad(fmt(m.blandAltman.meanBias, 2), 9, true)} ${pad(fmt(m.blandAltman.sdDiff, 2), 8, true)} ${pad(loaStr, 21, true)}`;
   });
 
   const cccAndBlandAltmanTableText = [
-    `. * Tabel 2: Lin's Concordance Correlation (CCC) & Bland-Altman Agreement Analysis`,
+    `. * Tabel 2: Lin's CCC & Bland-Altman Agreement Setiap Sumber vs Konsensus Laten Leave-One-Source-Out`,
     sep,
     baHead,
     sep,
@@ -90,18 +91,18 @@ export function generateStataAccuracyOutputBundle(core: AccuracyCoreBundle): Sta
   ].join('\n');
 
   const feHead =
-    `${pad('Source (Dep: AE_ijt)', 24)} | ${pad('Mean AE', 10, true)} ${pad('Beta Diff', 10, true)} ${pad('Cluster SE', 10, true)} ${pad('t', 8, true)} ${pad('P>|t|', 8, true)} ${pad('[95% Conf. Interval]', 21, true)}`;
+    `${pad('Source (Dep: |X - θ̂|)', 24)} | ${pad('Mean AE', 9, true)} ${pad('Beta Diff', 10, true)} ${pad('Cluster SE', 10, true)} ${pad('t', 8, true)} ${pad('P>|t|', 8, true)} ${pad('[95% Conf. Interval]', 21, true)}`;
   const feRows = pairFixedEffects.coefficients.map(c => {
     if (c.isBaselineComparison) {
-      return `${pad(`${c.sourceLabel} (Base)`, 24)} | ${pad(fmt(c.meanAe, 3), 10, true)} ${pad('0.000 (omitted)', 21, true)} ${pad('-', 8, true)} ${pad('-', 8, true)} ${pad(`[${fmt(c.ciLower, 2)}, ${fmt(c.ciUpper, 2)}]`, 21, true)}`;
+      return `${pad(`${c.sourceLabel} (Base)`, 24)} | ${pad(fmt(c.meanAe, 3), 9, true)} ${pad('0.000 (omitted)', 21, true)} ${pad('-', 8, true)} ${pad('-', 8, true)} ${pad(`[${fmt(c.ciLower, 2)}, ${fmt(c.ciUpper, 2)}]`, 21, true)}`;
     }
-    const ci = `[${fmt(c.ciLower, 3)}, ${fmt(c.ciUpper, 3)}]`;
-    return `${pad(c.sourceLabel, 24)} | ${pad(fmt(c.meanAe, 3), 10, true)} ${pad(fmt(c.betaDiffVsBaseline, 3), 10, true)} ${pad(fmt(c.seCluster, 3), 10, true)} ${pad(fmt(c.tStat, 2), 8, true)} ${pad(fmt(c.pValue, 4), 8, true)} ${pad(ci, 21, true)}`;
+    const ci = `[${fmt(c.ciLower, 2)}, ${fmt(c.ciUpper, 2)}]`;
+    return `${pad(c.sourceLabel, 24)} | ${pad(fmt(c.meanAe, 3), 9, true)} ${pad(fmt(c.betaDiffVsBaseline, 3), 10, true)} ${pad(fmt(c.seCluster, 3), 10, true)} ${pad(fmt(c.tStat, 2), 8, true)} ${pad(fmt(c.pValue, 4), 8, true)} ${pad(ci, 21, true)}`;
   });
 
   const pairFixedEffectsTableText = [
     `. areg ae i.source_id, absorb(city_year_pair) vce(cluster ${datasetMeta.cityIdColumn})`,
-    `Absorbed Pair Fixed Effects : ${pairFixedEffects.nCompletePairs} City-Year pairs | Long N = ${pairFixedEffects.nLongObs}`,
+    `Absorbed Pair Fixed Effects : ${pairFixedEffects.nCompletePairs} City-Year pairs | Long N = ${pairFixedEffects.nLongObs} (ALL ${pairFixedEffects.nComparisonSources} sources)`,
     `Std. Err. adjusted for      : ${pairFixedEffects.nClustersCity} clusters in ${datasetMeta.cityIdColumn} (df = ${pairFixedEffects.dfCluster})`,
     `Omnibus Wald F(${pairFixedEffects.omnibusDf1}, ${pairFixedEffects.omnibusDf2}) = ${fmt(pairFixedEffects.omnibusFStat, 3)} (Prob > F = ${fmt(pairFixedEffects.omnibusPValue, 4)} | Wild Bootstrap p = ${fmt(pairFixedEffects.omnibusWildBootstrapPValue, 4)})`,
     sep,
@@ -112,17 +113,17 @@ export function generateStataAccuracyOutputBundle(core: AccuracyCoreBundle): Sta
   ].join('\n');
 
   const cHead =
-    `${pad('Contrast (A vs B)', 28)} | ${pad('MAE_A - MAE_B', 13, true)} ${pad('Cluster SE', 10, true)} ${pad('t', 8, true)} ${pad('Cluster p', 9, true)} ${pad('WildBoot p', 10, true)} ${pad('Wild 95% CI', 19, true)}`;
+    `${pad('Contrast (A vs B)', 28)} | ${pad('ΔMAE(A-B)', 10, true)} ${pad('Cluster p', 9, true)} ${pad('WildBoot p', 10, true)} ${pad('P_Bayes(A<B)', 12, true)} ${pad('Wild 95% CI', 19, true)}`;
   const cRows =
     pairFixedEffects.pairwiseContrasts.length > 0
       ? pairFixedEffects.pairwiseContrasts.map(c => {
           const wCi = `[${fmt(c.wildBootstrapCiLower, 2)}, ${fmt(c.wildBootstrapCiUpper, 2)}]`;
-          return `${pad(`${c.sourceALabel} - ${c.sourceBLabel}`, 28)} | ${pad(fmt(c.diffAminusB, 3), 13, true)} ${pad(fmt(c.seCluster, 3), 10, true)} ${pad(fmt(c.tStat, 2), 8, true)} ${pad(fmt(c.pValueCluster, 4), 9, true)} ${pad(fmt(c.wildBootstrapPValue, 4), 10, true)} ${pad(wCi, 19, true)}`;
+          return `${pad(`${c.sourceALabel} - ${c.sourceBLabel}`, 28)} | ${pad(fmt(c.diffAminusB, 3), 10, true)} ${pad(fmt(c.pValueCluster, 4), 9, true)} ${pad(fmt(c.wildBootstrapPValue, 4), 10, true)} ${pad(`${(c.posteriorProbABetterThanB * 100).toFixed(1)}%`, 12, true)} ${pad(wCi, 19, true)}`;
         })
-      : [`(Hanya 1 sumber pembanding; kontras antar-sumber memerlukan >= 2 sumber pembanding)`];
+      : [`(Kontras memerlukan >= 2 sumber)`];
 
   const pairwiseContrastsTableText = [
-    `. * Tabel 4: Kontras Berpasangan Antarsumber Pembanding & Wild Cluster Bootstrap (${pairFixedEffects.bootstrapReplications} reps)`,
+    `. * Tabel 4: Kontras Berpasangan Seluruh C(${metrics.length},2) Pasangan Sumber (${pairFixedEffects.bootstrapReplications} Wild Boot Reps)`,
     sep,
     cHead,
     sep,
@@ -132,17 +133,18 @@ export function generateStataAccuracyOutputBundle(core: AccuracyCoreBundle): Sta
 
   const rkLines = ranking.ranks.map(
     r =>
-      `Rank #${r.rank}: ${pad(r.sourceLabel, 24)} | MAE=${fmt(r.mae, 3)} | RMSE=${fmt(r.rmse, 3)} | MBE=${fmt(r.mbe, 3)} | CCC=${fmt(r.ccc, 4)} | ${r.rankNote}`
+      `Rank #${r.rank}: ${pad(r.sourceLabel, 24)} | TotRMSE=${fmt(r.totalLatentRmse, 2)} | ErrSD=${fmt(r.errorSd, 2)} | R²=${fmt(r.reliabilityR2, 4)} | P(Best)=${(r.posteriorProbBest * 100).toFixed(1)}% | ${r.rankNote}`
   );
 
   const diagnosticsAndRankingText = [
-    `. * Tabel 5: Ringkasan Diagnostik Panel & Pemeringkatan Sumber Pembanding`,
+    `. * Tabel 5: Ringkasan Diagnostik Panel, Konvergensi Bayesian & Pemeringkatan Seluruh Sumber`,
     sep,
+    `Bayesian MCMC        : max R-hat = ${fmt(latentModel.maxRhat, 4)} | min ESS = ${latentModel.minEss} | PPC p = ${fmt(latentModel.posteriorPredictivePValue, 3)}`,
     `Heteroskedasticity F : ${fmt(diagnostics.heteroskedasticityTest.statisticValue, 3)} (p = ${fmt(diagnostics.heteroskedasticityTest.pValue ?? 1, 4)})`,
     `Within-City AR(1) t  : ${fmt(diagnostics.serialCorrelationTest.statisticValue, 3)} (p = ${fmt(diagnostics.serialCorrelationTest.pValue ?? 1, 4)})`,
     `Pesaran CD Stat      : ${fmt(diagnostics.crossSectionalDependenceTest.statisticValue, 3)} (p = ${fmt(diagnostics.crossSectionalDependenceTest.pValue ?? 1, 4)})`,
-    `Cluster Count (G)    : ${diagnostics.clusterCountAudit.nClusters} (${diagnostics.clusterCountAudit.isSmallCluster ? 'Small Cluster < 30: Wild Bootstrap Aktif' : 'Memadai >= 30'})`,
-    `Outlier Sensitivity  : ${diagnostics.outlierSensitivityAudit.rankOrderChanged ? 'PERINGATAN: Urutan berubah pada 95% trimmed MAE' : 'Stabil (urutan MAE tidak berubah)'}`,
+    `Cluster Count (G)    : ${diagnostics.clusterCountAudit.nClusters} (${diagnostics.clusterCountAudit.isSmallCluster ? 'Small Cluster < 30: Wild Bootstrap + Bayes Aktif' : 'Memadai >= 30'})`,
+    `Outlier Sensitivity  : ${diagnostics.outlierSensitivityAudit.rankOrderChanged ? 'PERINGATAN: Urutan berubah pada 95% trimmed' : 'Stabil (urutan deviasi tidak berubah)'}`,
     sep,
     ...rkLines,
     sep,
@@ -162,54 +164,43 @@ export function generateStataAccuracyOutputBundle(core: AccuracyCoreBundle): Sta
 export function generateAccuracyAcademicInterpretations(
   core: AccuracyCoreBundle
 ): AccuracyAcademicInterpretations {
-  const { referenceSource, metrics, pairFixedEffects, diagnostics, ranking, qualityReport } = core;
-  const refLabel = `${referenceSource.name} (${referenceSource.label})`;
+  const { latentModel, metrics, pairFixedEffects, diagnostics, ranking, qualityReport } = core;
 
   const referenceValidityInterpretation =
-    `${qualityReport.referenceAudit.summary} ` +
-    `Dalam metodologi Reference-Based Measurement Accuracy Assessment, sumber referensi "${refLabel}" berfungsi sebagai patokan pembanding empiris (benchmark), bukan nilai kebenaran absolut bebas galat. ` +
-    `Kesesuaian satuan (${core.datasetMeta.workingUnitNote}), cakupan periode (${qualityReport.yearMin ?? '-'}–${qualityReport.yearMax ?? '-'}), dan konsistensi metode agregasi wajib dipertimbangkan ketika menginterpretasikan selisih pengukuran.`;
+    `${qualityReport.latentAudit.summary} Dalam metodologi Reference-Free All-Source Latent & Consensus Evaluation, ` +
+    `tidak ada satu variabel pun yang dikunci secara sepihak sebagai reference absolut; sebaliknya, keseluruhan J = ${metrics.length} sumber ` +
+    `dievaluasi serentak terhadap sinyal laten emisi bersama θ_it (${latentModel.identificationRule}).`;
 
   const corrSummary = metrics
     .map(
       m =>
-        `${m.sourceLabel} mencatat korelasi Pearson overall r = ${m.pearsonR.toFixed(4)} (Spearman ρ = ${m.spearmanRho.toFixed(4)}, within-city r = ${m.withinCityR.toFixed(4)}, first-difference r = ${m.firstDiffR.toFixed(4)})`
+        `${m.sourceLabel} mencatat Pearson r = ${m.pearsonR.toFixed(4)} (Spearman ρ = ${m.spearmanRho.toFixed(4)}, within-city r = ${m.withinCityR.toFixed(4)}, first-diff r = ${m.firstDiffR.toFixed(4)}) terhadap konsensus keluar-satu-sumber`
     )
     .join('; ');
 
   const edaAndCorrelationInterpretation =
-    `Berdasarkan analisis korelasi panel pada ${core.datasetMeta.nCompletePairs} pasangan observasi Kota-Tahun terhadap referensi ${refLabel}: ${corrSummary}. ` +
-    `Penting ditekankan secara metodologis bahwa korelasi Pearson maupun Spearman yang tinggi hanya membuktikan keeratan hubungan linear/monotonik (presisi arah), namun BUKAN bukti akurasi pengukuran apabila terdapat bias sistematis aditif (location shift) atau kemiringan skala (scale shift).`;
+    `Analisis korelasi panel pada ${core.datasetMeta.nCompletePairs} pasangan Kota-Tahun menunjukkan: ${corrSummary}. ` +
+    `Korelasi tinggi hanya mengukur kesamaan arah linear, sedangkan ketepatan akurasi penuh harus dinilai lewat dekomposisi bias (α_j), loading skala (λ_j), Error SD (σ_εj), Total Latent RMSE, dan Reliabilitas (R²).`;
 
   const accSummary = metrics
     .map(
       m =>
-        `${m.sourceLabel} menghasilkan MAE = ${m.mae.toFixed(3)} (95% CI [${m.maeCiLower.toFixed(3)}, ${m.maeCiUpper.toFixed(3)}]), RMSE = ${m.rmse.toFixed(3)}, MBE = ${m.mbe.toFixed(3)} (p = ${m.mbePValue.toFixed(4)}), Lin's CCC = ${m.ccc.ccc.toFixed(4)} (Cb = ${m.ccc.biasCorrectionFactorCb.toFixed(3)}), dan 95% Limits of Agreement Bland-Altman [${m.blandAltman.loaLower.toFixed(2)}, ${m.blandAltman.loaUpper.toFixed(2)}]`
+        `${m.sourceLabel} memperoleh Total Latent RMSE = ${m.totalLatentRmse.toFixed(2)}, Error SD σ_ε = ${m.errorSd.toFixed(2)} (95% CrI [${m.errorSdCiLower.toFixed(2)}, ${m.errorSdCiUpper.toFixed(2)}]), Reliabilitas R² = ${(m.reliabilityR2 * 100).toFixed(2)}%, Bias relatif α_j = ${m.latentInterceptBias >= 0 ? '+' : ''}${m.latentInterceptBias.toFixed(2)}, LOSO MAE = ${m.mae.toFixed(2)}, Lin's CCC = ${m.ccc.ccc.toFixed(4)}, dan Posterior Prob Best = ${(m.posteriorProbBest * 100).toFixed(1)}%`
     )
     .join('. ');
 
   const accuracyAndAgreementInterpretation =
-    `Evaluasi akurasi dan kesepakatan terhadap sumber referensi ${refLabel} menunjukkan: ${accSummary}. ` +
-    `Semakin kecil nilai MAE dan RMSE menunjukkan tingkat kesalahan rata-rata yang semakin rendah, sedangkan nilai MBE yang mendekati nol menandakan minimnya bias sistematis (overestimation/underestimation). ` +
-    `Lin's Concordance Correlation Coefficient (CCC) menggabungkan korelasi Pearson (r) dengan faktor koreksi bias (Cb) untuk mengukur kedekatan titik pengamatan terhadap garis kesetaraan 45 derajat.`;
+    `Estimasi Bayesian Hierarchical Latent Measurement Model dan Leave-One-Source-Out Consensus menghasilkan: ${accSummary}. ` +
+    `Sumber dengan Total Latent RMSE terkecil, Error SD terendah, dan Reliabilitas R² tertinggi merupakan sumber yang paling akurat sekaligus paling konsisten memprediksi emisi laten sebenarnya.`;
 
   const pairFixedEffectsInterpretation =
-    pairFixedEffects.nComparisonSources <= 1
-      ? `Karena analisis hanya melibatkan satu sumber pembanding terhadap sumber referensi ${refLabel}, estimasi terfokus pada pengujian rata-rata kesalahan absolut (MAE = ${pairFixedEffects.coefficients[0]?.meanAe.toFixed(3) ?? '0'}) dengan standar error yang dikelompokkan berdasarkan kota (G = ${pairFixedEffects.nClustersCity}).`
-      : `Model inferensial Pair Fixed Effects mengestimasi persamaan AE_ijt = α_it + Σ β_j Source_j + ε_ijt dengan menyerap ${pairFixedEffects.nCompletePairs} efek tetap pasangan Kota-Tahun (α_it) dan mengelompokkan standar error pada ${pairFixedEffects.nClustersCity} klaster kota. ` +
-        `Uji omnibus Wald menghasilkan F(${pairFixedEffects.omnibusDf1}, ${pairFixedEffects.omnibusDf2}) = ${pairFixedEffects.omnibusFStat.toFixed(3)} dengan p = ${pairFixedEffects.omnibusPValue.toFixed(4)} (Wild Cluster Bootstrap p = ${pairFixedEffects.omnibusWildBootstrapPValue.toFixed(4)}). ` +
-        `Kontras berpasangan menunjukkan: ` +
-        pairFixedEffects.pairwiseContrasts
-          .map(
-            c =>
-              `selisih MAE antara ${c.sourceALabel} dan ${c.sourceBLabel} adalah ΔMAE = ${c.diffAminusB.toFixed(3)} (SE cluster = ${c.seCluster.toFixed(3)}, p cluster = ${c.pValueCluster.toFixed(4)}, Wild Bootstrap p = ${c.wildBootstrapPValue.toFixed(4)})`
-          )
-          .join('; ') +
-        `.`;
+    `Model Pair Fixed Effects membandingkan deviasi absolut seluruh J = ${pairFixedEffects.nComparisonSources} sumber terhadap estimasi emisi laten θ̂_it secara serentak (` +
+    `menyerap ${pairFixedEffects.nCompletePairs} efek tetap pasangan Kota-Tahun pada ${pairFixedEffects.nClustersCity} klaster kota). ` +
+    `Uji omnibus Wald menghasilkan F(${pairFixedEffects.omnibusDf1}, ${pairFixedEffects.omnibusDf2}) = ${pairFixedEffects.omnibusFStat.toFixed(3)} (p = ${pairFixedEffects.omnibusPValue.toFixed(4)}, Wild Bootstrap p = ${pairFixedEffects.omnibusWildBootstrapPValue.toFixed(4)}).`;
 
   const diagnosticsInterpretation =
-    `${diagnostics.heteroskedasticityTest.conclusion} ${diagnostics.serialCorrelationTest.conclusion} ${diagnostics.crossSectionalDependenceTest.conclusion} ` +
-    `${diagnostics.clusterCountAudit.message} ${diagnostics.outlierSensitivityAudit.summary} ${diagnostics.normalityAndCltNote.explanation}`;
+    `${diagnostics.bayesianConvergenceAudit.summary} ${diagnostics.heteroskedasticityTest.conclusion} ${diagnostics.serialCorrelationTest.conclusion} ` +
+    `${diagnostics.crossSectionalDependenceTest.conclusion} ${diagnostics.outlierSensitivityAudit.summary} ${diagnostics.normalityAndCltNote.explanation}`;
 
   const rankingDecisionInterpretation = `${ranking.rankingSummary} ${ranking.methodologicalCaveat}`;
 

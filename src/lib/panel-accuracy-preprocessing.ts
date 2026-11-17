@@ -32,11 +32,20 @@ export function preparePanelAccuracyObservations(
 ): PreparedPanelAccuracyData {
   const { cityIdColumn, yearColumn, sources, observations } = dataset;
 
-  const refSource = sources.find(s => s.role === 'reference');
-  const compSources = sources.filter(s => s.role === 'comparison');
-  if (!refSource || compSources.length === 0) {
-    throw new Error('Wajib memiliki tepat 1 Reference Source dan minimal 1 Comparison Source.');
+  if (sources.length < 2) {
+    throw new Error('Minimal diperlukan 2 sumber pengukuran (disarankan >= 3 untuk model laten tanpa referensi).');
   }
+
+  const unitLabel = sources[0]?.unit || 'kt CO₂';
+  const consensusBenchmarkSource: MeasurementSource = {
+    id: 'latent_consensus',
+    name: 'θ̂',
+    label: 'Consensus Latent Benchmark (θ̂)',
+    columnKey: 'latent_consensus',
+    unit: unitLabel,
+    role: 'evaluated',
+    methodDescription: 'Estimasi nilai kebenaran laten berbasis model hierarkis Bayesian & triangulasi seluruh sumber.'
+  };
 
   const seenKeys = new Set<string>();
   const prelim: Array<{
@@ -148,26 +157,28 @@ export function preparePanelAccuracyObservations(
     uncertainties: { ...p.uncertainties }
   }));
 
-  // Complete-case: reference source AND all comparison sources present
+  // Complete-case: ALL J evaluated sources present on the same City-Year cell
   const completeCaseObservations = allCleanedObservations.filter(obs =>
     sources.every(s => obs.values[s.id] !== null && Number.isFinite(obs.values[s.id]))
   );
 
-  // Source-specific available-case: reference source AND specific comparison source j present
+  // Source-specific available-case: source j AND at least minPeers other sources present
+  const minPeers = sources.length >= 3 ? 2 : 1;
   const availableCaseBySourceId: Record<string, CleanedPanelObservation[]> = {};
-  compSources.forEach(cs => {
-    availableCaseBySourceId[cs.id] = allCleanedObservations.filter(
-      obs =>
-        obs.values[refSource.id] !== null &&
-        Number.isFinite(obs.values[refSource.id]) &&
-        obs.values[cs.id] !== null &&
-        Number.isFinite(obs.values[cs.id])
-    );
+  sources.forEach(src => {
+    availableCaseBySourceId[src.id] = allCleanedObservations.filter(obs => {
+      const targetVal = obs.values[src.id];
+      if (targetVal === null || !Number.isFinite(targetVal)) return false;
+      const peerCount = sources.filter(
+        peer => peer.id !== src.id && obs.values[peer.id] !== null && Number.isFinite(obs.values[peer.id])
+      ).length;
+      return peerCount >= minPeers;
+    });
   });
 
   const workingUnitNote = options.applyLog1p
-    ? `log(1 + ${refSource.unit || 'unit'})`
-    : refSource.unit || 'kt CO₂';
+    ? `log(1 + ${unitLabel})`
+    : unitLabel;
 
   return {
     allCleanedObservations,
@@ -175,8 +186,8 @@ export function preparePanelAccuracyObservations(
     availableCaseBySourceId,
     cities,
     years,
-    referenceSource: refSource,
-    comparisonSources: compSources,
+    referenceSource: consensusBenchmarkSource,
+    comparisonSources: sources, // All J evaluated sources equally!
     workingUnitNote
   };
 }

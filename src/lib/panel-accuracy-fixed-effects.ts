@@ -1,7 +1,8 @@
 // ============================================================
-// Comparative Measurement Accuracy Assessment — Pair Fixed Effects
+// Reference-Free All-Source Pair Fixed Effects Comparison
 // Model: AE_ijt = alpha_it + sum_{m != j0} beta_m Source_m + eps_ijt
-// Absorbs City-Year Pair Fixed Effect alpha_it; clusters SE by City ID
+// where AE_ijt = |X_ijt - theta_hat_it| evaluates ALL J sources symmetrically
+// against the shared Bayesian Latent True Emission theta_hat_it inside every City-Year pair.
 // ============================================================
 
 import { studentTCritical95 } from './panel-accuracy-bland-altman';
@@ -10,6 +11,7 @@ import {
   fDistPValue,
   solveSymmetricSystem
 } from './panel-accuracy-inference';
+import { LatentEngineInternalOutput } from './panel-accuracy-latent';
 import { computeCityClusterMeanSe } from './panel-accuracy-metrics';
 import { PreparedPanelAccuracyData } from './panel-accuracy-preprocessing';
 import {
@@ -20,12 +22,13 @@ import {
 
 export function fitPairFixedEffectsModel(
   prepared: PreparedPanelAccuracyData,
+  latentOut: LatentEngineInternalOutput,
   options?: { bootstrapReplications?: number; seed?: number }
 ): PairFixedEffectsResult {
   const {
     completeCaseObservations,
     referenceSource,
-    comparisonSources,
+    comparisonSources, // ALL J evaluated sources symmetrically
     cities
   } = prepared;
 
@@ -35,11 +38,10 @@ export function fitPairFixedEffectsModel(
   const G = new Set(completeCaseObservations.map(o => o.city)).size || cities.length;
   const dfCluster = Math.max(1, G - 1);
   const bootstrapReplications = options?.bootstrapReplications ?? 999;
-  const seed = options?.seed ?? 20261116;
+  const seed = options?.seed ?? 20261117;
 
   const baselineSource = comparisonSources[0];
 
-  // Build long-format records on Complete-Case City-Year pairs
   const longRows: Array<{
     pairId: string;
     city: string;
@@ -51,14 +53,14 @@ export function fitPairFixedEffectsModel(
     sqError: number;
   }> = [];
 
-  // Matrix of AE[p][m] for p = 0..P-1, m = 0..M-1
+  // Compare ALL J sources against shared Latent Posterior Mean theta_hat_it inside each City-Year pair
   const aeMatrix: number[][] = [];
-  completeCaseObservations.forEach(obs => {
-    const xr = obs.values[referenceSource.id]!;
+  completeCaseObservations.forEach((obs, p) => {
+    const thetaHat = latentOut.sharedLatentTheta[p];
     const rowAe: number[] = [];
-    comparisonSources.forEach(cs => {
-      const xc = obs.values[cs.id]!;
-      const signedError = xc - xr;
+    comparisonSources.forEach(src => {
+      const xVal = obs.values[src.id]!;
+      const signedError = xVal - thetaHat;
       const absError = Math.abs(signedError);
       const sqError = signedError * signedError;
       rowAe.push(absError);
@@ -66,8 +68,8 @@ export function fitPairFixedEffectsModel(
         pairId: obs.pairKey,
         city: obs.city,
         year: obs.year,
-        sourceId: cs.id,
-        sourceName: cs.name,
+        sourceId: src.id,
+        sourceName: src.name,
         signedError,
         absError,
         sqError
@@ -76,12 +78,10 @@ export function fitPairFixedEffectsModel(
     aeMatrix.push(rowAe);
   });
 
-  // Mean AE (MAE) per comparison source on complete-case sample
   const maeByIdx = comparisonSources.map((_, m) =>
     P > 0 ? aeMatrix.reduce((s, r) => s + r[m], 0) / P : 0
   );
 
-  // Special case: M === 1 (only 1 comparison source vs 1 reference source; J = 2 total sources)
   if (M <= 1) {
     const aeItems = completeCaseObservations.map((o, p) => ({
       city: o.city,
@@ -112,7 +112,7 @@ export function fitPairFixedEffectsModel(
       baselineComparisonSourceId: baselineSource.id,
       baselineComparisonSourceLabel: `${baselineSource.name} (${baselineSource.label})`,
       referenceSourceId: referenceSource.id,
-      referenceSourceLabel: `${referenceSource.name} (${referenceSource.label})`,
+      referenceSourceLabel: referenceSource.label,
       withinR2: 0,
       omnibusFStat: 0,
       omnibusDf1: 0,
@@ -127,7 +127,7 @@ export function fitPairFixedEffectsModel(
     };
   }
 
-  // Within-pair variation R^2 (share of within-City-Year AE variance explained by Source indicators)
+  // Within-pair R²
   const grandMae = maeByIdx.reduce((a, b) => a + b, 0) / M;
   let tssWithin = 0;
   let essWithin = 0;
@@ -144,7 +144,7 @@ export function fitPairFixedEffectsModel(
   }
   const withinR2 = tssWithin > 1e-12 ? Math.min(1, Math.max(0, essWithin / tssWithin)) : 0;
 
-  // Compute all pairwise contrasts among comparison sources
+  // All C(J, 2) pairwise contrasts across ALL J evaluated sources
   const pairwiseContrasts: PairwiseSourceContrast[] = [];
   for (let a = 0; a < M; a++) {
     for (let b = a + 1; b < M; b++) {
@@ -165,11 +165,15 @@ export function fitPairFixedEffectsModel(
         bootstrapReplications,
         seed: seed + a * 31 + b * 97
       });
-      pairwiseContrasts.push(contrast);
+
+      const postProbAB = latentOut.pairwisePosteriorProb[`${srcA.id}::${srcB.id}`] ?? 0.5;
+      pairwiseContrasts.push({
+        ...contrast,
+        posteriorProbABetterThanB: postProbAB
+      });
     }
   }
 
-  // Build coefficients table (m = 0 is baseline comparison source, m = 1..M-1 contrasted vs baseline m=0)
   const baseAeItems = completeCaseObservations.map((o, p) => ({
     city: o.city,
     val: aeMatrix[p][0]
@@ -194,7 +198,6 @@ export function fitPairFixedEffectsModel(
       };
     }
 
-    // Find contrast (0, m): note contrast has diffAminusB = MAE_0 - MAE_m, so beta_m = MAE_m - MAE_0 = -diffAminusB
     const c0m = pairwiseContrasts.find(
       c => c.sourceAId === baselineSource.id && c.sourceBId === cs.id
     )!;
@@ -216,11 +219,9 @@ export function fitPairFixedEffectsModel(
     };
   });
 
-  // Omnibus Cluster-Robust Wald F-test for H0: beta_1 = ... = beta_{M-1} = 0
+  // Omnibus Cluster-Robust Wald F-test
   const K = M - 1;
   const betaVec = coefficients.slice(1).map(c => c.betaDiffVsBaseline);
-
-  // Cluster score vector for city g on (d_{p,1}, ..., d_{p,K}) where d_{p,m} = (AE_{p,m} - AE_{p,0}) - beta_m
   const cityScoreVecs = new Map<string, number[]>();
   for (let p = 0; p < P; p++) {
     const city = completeCaseObservations[p].city;
@@ -256,7 +257,6 @@ export function fitPairFixedEffectsModel(
   }
   const omnibusPValue = fDistPValue(omnibusFStat, K, dfCluster);
   const minWildP = Math.min(...pairwiseContrasts.map(c => c.wildBootstrapPValue), 1);
-  // Holm-Bonferroni conservative bound across pairwise wild bootstrap p-values for omnibus check
   const omnibusWildBootstrapPValue = Math.min(1, minWildP * pairwiseContrasts.length);
 
   return {
@@ -268,7 +268,7 @@ export function fitPairFixedEffectsModel(
     baselineComparisonSourceId: baselineSource.id,
     baselineComparisonSourceLabel: `${baselineSource.name} (${baselineSource.label})`,
     referenceSourceId: referenceSource.id,
-    referenceSourceLabel: `${referenceSource.name} (${referenceSource.label})`,
+    referenceSourceLabel: referenceSource.label,
     withinR2,
     omnibusFStat,
     omnibusDf1: K,

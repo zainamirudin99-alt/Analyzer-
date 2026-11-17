@@ -616,15 +616,12 @@ export function runIntelligentMeasurementSourceEngine(params: {
         : 'Recommended';
 
     const suitabilityClass = needsReview ? 'perlu_diperiksa' : 'layak';
-    const isRef = col === bestRefCol;
 
     const reasonParts: string[] = [
       `N valid = ${st.numericCount}/${totalRows} (${(100 - missingPct).toFixed(1)}% cakupan)`,
       `SD = ${(st.sd ?? 0).toFixed(2)} (CV = ${((st.cv ?? 0) * 100).toFixed(1)}%)`
     ];
-    if (isRef) {
-      reasonParts.push('Dipilih sebagai kandidat Reference Source (r) karena cakupan tinggi, varians stabil, dan karakteristik instrumen acuan.');
-    }
+    reasonParts.push('Memenuhi syarat untuk dievaluasi dan diperingkatkan secara setara dalam model pengukuran laten & konsensus.');
     if (st.outlierCount > 0) {
       reasonParts.push(`Terdapat ${st.outlierCount} outlier 1.5×IQR.`);
     }
@@ -660,7 +657,7 @@ export function runIntelligentMeasurementSourceEngine(params: {
       suitabilityClass,
       statusBadge,
       statisticalReason: reasonParts.join('; '),
-      recommendedRole: isRef ? 'reference' : 'comparison'
+      recommendedRole: 'comparison'
     };
   });
 
@@ -706,7 +703,7 @@ export function runIntelligentMeasurementSourceEngine(params: {
   const minMed = medians.length > 0 ? Math.max(1e-9, Math.min(...medians)) : 1;
   const scaleRatioMaxToMin = medians.length >= 2 ? maxMed / minMed : 1;
 
-  // 10. Build Recommended Mapping
+  // 10. Build Recommended Mapping (Option B: All sources evaluated equally without locking a reference)
   const uncertaintyColumns: Record<string, string> = {};
   const recommendedSources: MeasurementSource[] = validMeasurementCols.map((col, idx) => {
     const matchedSe = seCols.find(
@@ -721,19 +718,11 @@ export function runIntelligentMeasurementSourceEngine(params: {
       label: inferSourceLabel(col, idx),
       columnKey: col,
       unit: inferUnitFromHeader(col),
-      role: col === bestRefCol ? 'reference' : 'comparison',
+      role: 'evaluated',
       uncertaintyColumn: matchedSe,
       methodDescription: inferMethodDescription(col)
     };
   });
-
-  // Ensure at least 1 reference source if list non-empty
-  if (
-    recommendedSources.length > 0 &&
-    !recommendedSources.some(s => s.role === 'reference')
-  ) {
-    recommendedSources[recommendedSources.length - 1].role = 'reference';
-  }
 
   // 11. Build 14-Point Automatic Analysis List
   const totalOutliers = validMeasurementCols.reduce(
@@ -830,14 +819,17 @@ export function runIntelligentMeasurementSourceEngine(params: {
     {
       stepNumber: 13,
       title: '13. Measurement Source Classification',
-      summary: `Rekomendasi Reference Source (r): "${bestRefCol}" berdasarkan multi-kriteria (cakupan, varians, profil instrumen kalibrasi, dan ketahanan outlier).`,
-      status: bestRefCol ? 'Recommended' : 'Not Recommended'
+      summary: `Seluruh ${validMeasurementCols.length} sumber pengukuran valid (${validMeasurementCols.join(', ')}) diklasifikasikan setara untuk dievaluasi & diranking bersama tanpa mengunci 1 sumber sebagai reference.`,
+      status: validMeasurementCols.length >= 3 ? 'Recommended' : validMeasurementCols.length >= 2 ? 'Recommended with Warning' : 'Not Recommended'
     },
     {
       stepNumber: 14,
       title: '14. Model Compatibility Assessment',
-      summary: `Kompatibel untuk Reference-Based Pair FE (J = ${validMeasurementCols.length} >= 2) ${validMeasurementCols.length >= 3 ? 'serta memenuhi syarat identifikasi Latent Measurement Model (J >= 3).' : 'namun memerlukan minimal J >= 3 sumber bila ingin mengestimasi Latent Measurement Model tanpa batasan varians.'}`,
-      status: validMeasurementCols.length >= 2 ? 'Recommended' : 'Not Recommended'
+      summary:
+        validMeasurementCols.length >= 3
+          ? `Memenuhi syarat identifikasi penuh Bayesian Hierarchical Latent Measurement Model & Grubbs Triangulation (J = ${validMeasurementCols.length} >= 3) sehingga seluruh sumber dapat diranking secara objektif.`
+          : `Hanya tersedia J = ${validMeasurementCols.length} sumber: model laten tanpa referensi bersifat UNDERIDENTIFIED (membutuhkan J >= 3 sumber independen untuk pemisahan varians error).`,
+      status: validMeasurementCols.length >= 3 ? 'Recommended' : 'Needs Review'
     }
   ];
 
@@ -879,13 +871,9 @@ export function runIntelligentMeasurementSourceEngine(params: {
       });
       return;
     }
-    const labelRole =
-      prof.columnKey === bestRefCol
-        ? `${prof.columnKey} (${prof.inferredLabel} — Kandidat Reference Source r)`
-        : `${prof.columnKey} (${prof.inferredLabel} — Comparison Source)`;
     recommendationTable.push({
       component: `Source ${srcCounter++}`,
-      systemRecommendation: labelRole,
+      systemRecommendation: `${prof.columnKey} (${prof.inferredLabel} — Evaluasi Setara)`,
       reason: prof.statisticalReason,
       status: prof.statusBadge
     });
@@ -909,11 +897,10 @@ export function runIntelligentMeasurementSourceEngine(params: {
     blockingReasons.push('Kolom City ID dan Year tidak boleh menunjuk pada kolom yang sama.');
   }
   if (activeSources.length < 2) {
-    blockingReasons.push('Minimal diperlukan 2 sumber pengukuran valid untuk analisis komparatif.');
+    blockingReasons.push('Minimal diperlukan 2 sumber pengukuran valid (dan sangat disarankan ≥ 3 sumber untuk identifikasi penuh model laten tanpa referensi).');
   }
-  const refCount = activeSources.filter(s => s.role === 'reference').length;
-  if (refCount !== 1) {
-    blockingReasons.push(`Wajib memilih tepat 1 Reference Source (saat ini terpilih ${refCount}).`);
+  if (activeSources.length === 2) {
+    warnings.push('Dengan J = 2 sumber tanpa variabel referensi, model pengukuran laten bersifat underidentified untuk memisahkan sumber mana yang lebih benar; tambahkan sumber ke-3 bila tersedia.');
   }
   const mappedColSet = new Set(activeSources.map(s => s.columnKey));
   if (mappedColSet.size !== activeSources.length) {
@@ -958,8 +945,8 @@ export function runIntelligentMeasurementSourceEngine(params: {
           : null
     },
     blockBSources: {
-      recommendedReferenceCol: bestRefCol,
-      recommendedReferenceReason: `Kolom "${bestRefCol}" dipilih melalui evaluasi multi-kriteria (kelengkapan pasangan, varians positif, ketahanan outlier, dan kecocokan instrumen pengukuran lapangan/acuan — bukan berdasarkan skor korelasi tunggal).`,
+      recommendedReferenceCol: 'Tanpa Reference (All-Source Evaluasi Setara)',
+      recommendedReferenceReason: `Seluruh J = ${validMeasurementCols.length} sumber layak dievaluasi secara setara dalam Bayesian Hierarchical Latent Measurement Model tanpa mengorbankan 1 sumber sebagai benchmark.`,
       layakColumns: columnProfiles
         .filter(p => p.detectedCategory === 'measurement_source' && p.suitabilityClass === 'layak')
         .map(p => p.columnKey),
@@ -1013,17 +1000,17 @@ export function runIntelligentMeasurementSourceEngine(params: {
           ? `Tidak terdapat missing value (Complete-Case = ${completeCasePairs} pasangan Kota-Tahun).`
           : `Terdapat ${totalMissing} sel kosong; evaluasi utama wajib menggunakan ${completeCasePairs} pasangan Complete-Case dan membandingkannya dengan Available-Case.`,
       loadingConstraintNote:
-        'Pada evaluasi Reference-Based, sumber referensi (r) ditetapkan sebagai patokan selisih (loading = 1, intercept acuan = 0); pada model laten pendamping, skala laten dianker pada sumber referensi dengan faktor loading λ_r = 1.',
+        'Identifikasi skala & lokasi model laten memakai jangkar konsensus netral: GeometricMean(λ_j) = 1 dan Median(α_j / λ_j) = 0 — tidak ada satu variabel pun yang dikunci sebagai patokan absolut.',
       bayesianFeasibilityNote:
         completeCasePairs >= 10
-          ? `Ukuran sampel berpasangan (N = ${completeCasePairs}) memadai untuk inferensi Pair Fixed Effects + Wild Cluster Bootstrap maupun estimasi MCMC Bayesian/Stan pendamping.`
-          : `Ukuran sampel berpasangan relatif kecil (N = ${completeCasePairs}); gunakan Wild Cluster Bootstrap dan prior informatif lemah bila menjalankan model Bayesian pendamping.`,
+          ? `Ukuran sampel berpasangan (N = ${completeCasePairs}) memadai untuk Bayesian Hierarchical Gibbs MCMC, R-hat/ESS convergence, dan Pair Fixed Effects.`
+          : `Ukuran sampel berpasangan relatif kecil (N = ${completeCasePairs}); gunakan Wild Cluster Bootstrap dan prioritaskan pemeriksaan 95% Credible Interval.`,
       summaryPoints: [
-        `Jumlah sumber valid: J = ${validMeasurementCols.length} sumber (${ Math.max(0, validMeasurementCols.length - 1)} sumber pembanding terhadap 1 sumber referensi).`,
+        `Jumlah sumber valid yang ikut diranking setara: J = ${validMeasurementCols.length} sumber.`,
         `Pasangan Kota-Tahun lengkap (Complete-Case): N = ${completeCasePairs} observasi panel.`,
         errorDependencyWarnings.length > 0
           ? errorDependencyWarnings[0]
-          : 'Tidak terdeteksi duplikasi metodologi ekstrem antarsumber.'
+          : 'Tidak terdeteksi ketergantungan galat ekstrem antarsumber.'
       ]
     },
     blockEPreprocessing: {

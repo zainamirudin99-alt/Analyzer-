@@ -145,7 +145,8 @@ Mengacu pada `docs/superpowers/specs/2026-11-13-regression-upgrade-design.md`:
 
 ---
 
-## 6. Arsitektur Tahap 7: Regresi Data Panel Stata Option 2 — Intelligent Configuration Engine & Per-Step Stata Documentation Panel
-1. **`src/lib/panel-accuracy-intelligent-config.ts`**: Mesin analisis otomatis 14 dimensi kolom dataset dan 5 blok rekomendasi terstruktur untuk Step 2 (`City ID`, `Year`, klasifikasi sumber pengukuran, deteksi skala/satuan, ketergantungan galat potensial, kompatibilitas model, dan saran prapemrosesan).
-2. **`src/lib/panel-accuracy-step-stata.ts`**: Generator dinamis untuk panel **Stata Command & Statistical Implementation** pada Step 1 s/d Step 9 (mencakup kode `.do`, skrip pendamping `.R`/`.stan`, rincian perintah, tabel output Stata, interpretasi 5-dimensi per poin berdasarkan angka aktual, analisis sensitivitas Leave-One-City-Out / LOCO, serta kesimpulan kelayakan per step).
-3. **`src/components/PanelAccuracyStepStataPanel.tsx`**: Komponen antarmuka terpadu untuk menampilkan 6 bagian wajib dokumentasi Stata & interpretasi per poin di setiap step `PanelAccuracyTab.tsx`.
+## 6. Arsitektur Tahap 7 & 8: Regresi Data Panel Stata Option 2 — Reference-Free All-Source Latent Measurement Model, Intelligent Configuration & Per-Step Stata Documentation
+1. **`src/lib/panel-accuracy-latent.ts`**: Estimasi **Bayesian Hierarchical Panel Latent Measurement Model** (multi-chain MCMC Gibbs sampler dengan R-hat $\hat{R}$, ESS, Grubbs triangulation initialization, Error Variance $\sigma_{\varepsilon_j}^2$, Reliability $R_j^2$, Posterior Probability of Being Best, dan estimasi $\hat{\theta}_{it}$ / Leave-One-Source-Out $\hat{\theta}_{it}^{(-j)}$) sehingga **seluruh $J \ge 3$ sumber dievaluasi dan diranking setara tanpa Reference Source**.
+2. **`src/lib/panel-accuracy-intelligent-config.ts`**: Mesin analisis otomatis 14 dimensi kolom dan 5 blok rekomendasi Step 2 untuk identifikasi panel, kelayakan sumber evaluasi, skala/satuan, identifiabilitas model laten ($J \ge 3$), dan prapemrosesan.
+3. **`src/lib/panel-accuracy-step-stata.ts`**: Generator dinamis panel **Stata Command & Statistical Implementation** Step 1–9 (`.do`, `.R`, `.stan`, kegunaan perintah, output, interpretasi 5-poin aktual, Leave-One-City-Out LOCO, dan kesimpulan).
+4. **`src/components/PanelAccuracyStepStataPanel.tsx` & `src/components/PanelAccuracyTab.tsx`**: Antarmuka Wizard 9-Step Reference-Free All-Source Accuracy & Latent Reliability Ranking.

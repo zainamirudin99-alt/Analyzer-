@@ -1,6 +1,6 @@
 // ============================================================
-// Comparative Measurement Accuracy Assessment — Stata .do Generator
-// Dynamically adapts to N sources, Reference Source & Preprocessing
+// Reference-Free All-Source Latent & Consensus Measurement Assessment
+// Dynamic Stata .do Generator (Stata 17+ + SEM/Factor + Pair FE)
 // ============================================================
 
 import {
@@ -24,21 +24,18 @@ export function generateAccuracyStataDoFile(params: {
   preprocessing: AccuracyPreprocessingOptions;
 }): string {
   const { cityIdColumn, yearColumn, sources, preprocessing } = params;
-  const refSource = sources.find(s => s.role === 'reference') || sources[0];
-  const compSources = sources.filter(s => s.role === 'comparison');
-
   const varMap = new Map<string, string>();
   sources.forEach((s, i) => {
     varMap.set(s.id, safeStataVar(s.name || s.label, i));
   });
-  const refVar = varMap.get(refSource.id)!;
   const allVars = sources.map(s => varMap.get(s.id)!).join(' ');
 
   const lines: string[] = [
     '* ============================================================================',
-    '* STATA DO-FILE: COMPARATIVE MEASUREMENT ACCURACY ASSESSMENT (PANEL DATA)',
-    `* Reference Source : ${refSource.name} (${refSource.label}) [Col: ${refSource.columnKey}]`,
-    `* Comparison Count : ${compSources.length} source(s) (${compSources.map(c => c.name).join(', ')})`,
+    '* STATA DO-FILE: REFERENCE-FREE ALL-SOURCE LATENT & CONSENSUS ACCURACY (PANEL)',
+    `* Evaluated Sources (J = ${sources.length}): ${sources.map(c => `${c.name} (${c.label})`).join(', ')}`,
+    '* Method: Stata SEM Congeneric Factor Model + Latent Consensus Pair FE (areg)',
+    '* Note: Full Bayesian MCMC (R-hat, ESS, Posterior Prob Best) -> see accompanying R/Stan script',
     '* ============================================================================',
     'version 17.0',
     'clear all',
@@ -46,15 +43,16 @@ export function generateAccuracyStataDoFile(params: {
     '',
     '* --- 1. Import Dataset & Map Panel Identifiers ---',
     'import delimited "dataset_co2_panel.csv", clear varnames(1)',
-    `encode ${cityIdColumn}, gen(city_id)`,
-    `destring ${yearColumn}, replace force`,
-    `rename ${yearColumn} year_id`,
+    `capture confirm numeric variable ${cityIdColumn}`,
+    `if _rc != 0 encode ${cityIdColumn}, gen(city_id)`,
+    `else gen long city_id = ${cityIdColumn}`,
+    `destring ${yearColumn}, gen(year_id) force`,
     ''
   ];
 
   sources.forEach(s => {
     const v = varMap.get(s.id)!;
-    lines.push(`* Source ${s.name} (${s.label}) [${s.role.toUpperCase()}]`);
+    lines.push(`* Evaluated Source ${s.name} (${s.label}) [${s.unit}]`);
     lines.push(`destring ${s.columnKey}, gen(${v}) force`);
     if (
       preprocessing.applyUnitMultiplier &&
@@ -89,12 +87,10 @@ export function generateAccuracyStataDoFile(params: {
   lines.push(`egen byte complete_case = rownonmiss(${allVars})`);
   lines.push(`replace complete_case = (complete_case == ${sources.length})`);
   lines.push('');
-  lines.push('* --- 3. Exploratory Data Analysis & Panel Correlations ---');
-  lines.push(`summarize ${allVars} if complete_case`);
+  lines.push('* --- 3. Exploratory Data Analysis & 4 Panel Correlations ---');
+  lines.push(`summarize ${allVars} if complete_case, detail`);
   lines.push(`pwcorr ${allVars} if complete_case, sig`);
   lines.push(`spearman ${allVars} if complete_case`);
-  lines.push('');
-  lines.push('* Within-City Demeaned & First-Difference Correlations');
   lines.push(`foreach v of varlist ${allVars} {`);
   lines.push('    bysort city_id: egen mean_`v\' = mean(`v\') if complete_case');
   lines.push('    gen within_`v\' = `v\' - mean_`v\' if complete_case');
@@ -103,45 +99,44 @@ export function generateAccuracyStataDoFile(params: {
   lines.push(`pwcorr ${sources.map(s => `within_${varMap.get(s.id)!}`).join(' ')} if complete_case`);
   lines.push(`pwcorr ${sources.map(s => `fd_${varMap.get(s.id)!}`).join(' ')} if complete_case`);
   lines.push('');
-  lines.push('* --- 4. Pairwise Error, MAE, RMSE, MBE, Lin CCC & Bland-Altman ---');
+  lines.push('* --- 4. Latent Factor Measurement Model Across ALL J Sources (Sem / Standardized) ---');
+  lines.push('* Evaluates ALL sources equally without locking any source as reference (Var(L_true)=1)');
+  if (sources.length >= 3) {
+    lines.push(`sem (L_true -> ${allVars}) if complete_case, var(L_true@1) vce(cluster city_id) standardized`);
+    lines.push('estat gof, stats(all)');
+    lines.push('* Predict latent factor score theta_hat and calibrate to cross-source consensus median:');
+    lines.push('predict double theta_z if complete_case, latent(L_true)');
+    lines.push(`egen double med_cross = rowmedian(${allVars}) if complete_case`);
+    lines.push('quietly regress med_cross theta_z if complete_case');
+    lines.push('predict double theta_hat if complete_case, xb');
+  } else {
+    lines.push('* Underidentified for J < 3: fall back to cross-source mean as neutral midpoint');
+    lines.push(`egen double theta_hat = rowmean(${allVars}) if complete_case`);
+  }
+  lines.push('');
+  lines.push('* --- 5. Error Deviation, Lin CCC & Bland-Altman for ALL J Sources ---');
 
-  compSources.forEach((cs, idx) => {
-    const cv = varMap.get(cs.id)!;
+  sources.forEach((s, idx) => {
+    const sv = varMap.get(s.id)!;
     const j = idx + 1;
-    lines.push(`* Evaluation for Comparison Source #${j}: ${cs.name} (${cs.label}) vs Reference ${refSource.name}`);
-    lines.push(`gen err_${j} = ${cv} - ${refVar} if complete_case`);
-    lines.push(`gen ae_${j}  = abs(err_${j}) if complete_case`);
-    lines.push(`gen se_${j}  = err_${j}^2 if complete_case`);
+    lines.push(`* Evaluation for Source #${j}: ${s.name} (${s.label})`);
+    lines.push(`gen double err_${j} = ${sv} - theta_hat if complete_case`);
+    lines.push(`gen double ae_${j}  = abs(err_${j}) if complete_case`);
     lines.push(`mean ae_${j} err_${j} if complete_case, vce(cluster city_id)`);
-    lines.push(`quietly summarize se_${j} if complete_case`);
-    lines.push(`display "RMSE (${cs.name}) = " sqrt(r(mean))`);
-    lines.push(`* Lin's CCC & Bland-Altman LoA (requires: ssc install concord)`);
-    lines.push(`capture noisily concord ${cv} ${refVar} if complete_case`);
-    lines.push('');
+    lines.push(`capture noisily concord ${sv} theta_hat if complete_case`);
   });
 
-  if (compSources.length >= 2) {
-    lines.push('* --- 5. Pair Fixed Effects Inferential Model (Long Panel Format) ---');
-    lines.push('preserve');
-    lines.push('keep if complete_case');
-    lines.push('egen long pair_id = group(city_id year_id)');
-    lines.push(`keep pair_id city_id year_id ${compSources.map((_, i) => `ae_${i + 1} err_${i + 1}`).join(' ')}`);
-    lines.push('reshape long ae_ err_, i(pair_id) j(source_idx)');
-    lines.push('rename ae_ ae');
-    lines.push('rename err_ signed_err');
-    lines.push('');
-    lines.push('* Pair Fixed Effects Regression with City Cluster-Robust SE');
-    lines.push('areg ae i.source_idx, absorb(pair_id) vce(cluster city_id)');
-    lines.push('testparm i.source_idx');
-    lines.push('');
-    lines.push('* Pairwise Contrasts Across All Comparison Sources');
-    lines.push('pwcompare i.source_idx, effects cimeans');
-    lines.push('');
-    lines.push('* Optional Wild Cluster Bootstrap for Small Cluster Count G < 30 (ssc install boottest)');
-    for (let m = 2; m <= compSources.length; m++) {
-      lines.push(`capture noisily boottest ${m}.source_idx, cluster(city_id) weight(rademacher) reps(999) seed(20261116)`);
-    }
-    lines.push('restore');
+  lines.push('');
+  lines.push('* --- 6. Pair Fixed Effects Over ALL J Sources Simultaneously ---');
+  lines.push('keep if complete_case');
+  lines.push('egen long pair_id = group(city_id year_id)');
+  lines.push(`reshape long ae_ err_, i(pair_id) j(source_id)`);
+  lines.push('rename ae_ ae');
+  lines.push('rename err_ signed_err');
+  lines.push('areg ae i.source_id, absorb(pair_id) vce(cluster city_id)');
+  lines.push('pwcompare source_id, effects cimeans');
+  if (sources.length >= 2) {
+    lines.push('capture noisily boottest 2.source_id, cluster(city_id) boottype(wild) weighttype(rademacher) reps(999)');
   }
 
   return lines.join('\n');

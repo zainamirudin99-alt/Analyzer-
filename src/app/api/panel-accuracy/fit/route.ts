@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     }
     if (!dataset.cityIdColumn || !dataset.yearColumn || !Array.isArray(dataset.sources) || dataset.sources.length < 2) {
       return NextResponse.json(
-        { success: false, error: 'Minimal 2 sumber pengukuran (1 Reference + minimal 1 Comparison) serta kolom City dan Year wajib terpetakan.' },
+        { success: false, error: 'Minimal 2 sumber pengukuran (disarankan >= 3 sumber untuk identifikasi penuh model laten tanpa referensi) serta kolom City dan Year wajib terpetakan.' },
         { status: 400 }
       );
     }

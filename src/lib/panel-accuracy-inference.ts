@@ -121,6 +121,7 @@ export function computePairwiseSourceContrast(params: {
       wildBootstrapPValue: 1,
       wildBootstrapCiLower: 0,
       wildBootstrapCiUpper: 0,
+      posteriorProbABetterThanB: 0.5,
       isSignificant05: false,
       betterSourceId: null
     };
@@ -164,7 +165,7 @@ export function computePairwiseSourceContrast(params: {
     seed
   );
 
-  const isSignificant05 = pValueCluster < 0.05;
+  const isSignificant05 = G < 30 ? wild.pValue < 0.05 : pValueCluster < 0.05;
   const betterSourceId = !isSignificant05
     ? null
     : diffAminusB < 0
@@ -188,6 +189,7 @@ export function computePairwiseSourceContrast(params: {
     wildBootstrapPValue: wild.pValue,
     wildBootstrapCiLower: wild.ciLower,
     wildBootstrapCiUpper: wild.ciUpper,
+    posteriorProbABetterThanB: 0.5,
     isSignificant05,
     betterSourceId
   };

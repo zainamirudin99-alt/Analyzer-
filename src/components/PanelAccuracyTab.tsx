@@ -68,14 +68,14 @@ import { buildAllStepStataDocumentation } from '@/lib/panel-accuracy-step-stata'
 
 const ACCURACY_STEPS = [
   { id: 1, short: '1. Upload', title: 'Step 1 — Data Upload' },
-  { id: 2, short: '2. Mapping & Ref', title: 'Step 2 — Data Mapping & Reference Selection' },
+  { id: 2, short: '2. Config All', title: 'Step 2 — Intelligent All-Source Mapping' },
   { id: 3, short: '3. Audit & Prep', title: 'Step 3 — Data Quality Audit & Preprocessing' },
   { id: 4, short: '4. EDA', title: 'Step 4 — Exploratory Data Analysis' },
-  { id: 5, short: '5. Accuracy', title: 'Step 5 — Measurement Error & Accuracy Assessment' },
-  { id: 6, short: '6. Pair FE', title: 'Step 6 — Panel Fixed Effects Inferential Comparison' },
-  { id: 7, short: '7. Diagnostics', title: 'Step 7 — Statistical Diagnostics & Inference' },
-  { id: 8, short: '8. Ranking', title: 'Step 8 — Comparative Evaluation & Source Ranking' },
-  { id: 9, short: '9. Final & Export', title: 'Step 9 — Final Results, Visualization, Code & Export' }
+  { id: 5, short: '5. Latent Bayes', title: 'Step 5 — Bayesian Latent Model & Agreement' },
+  { id: 6, short: '6. Pair FE', title: 'Step 6 — Pair Fixed Effects & Posterior Contrasts' },
+  { id: 7, short: '7. Diagnostics', title: 'Step 7 — MCMC & Statistical Diagnostics' },
+  { id: 8, short: '8. Ranking', title: 'Step 8 — Evaluasi & Peringkat Seluruh Sumber' },
+  { id: 9, short: '9. Final & Export', title: 'Step 9 — Final Results, Code & Export' }
 ];
 
 const BulletCard: React.FC<{
@@ -346,17 +346,7 @@ export const PanelAccuracyTab: React.FC = () => {
     applyNewDataset('data_paste_panel_accuracy.csv', parsed.rows);
   };
 
-  // Dynamic Source Management in Step 2
-  const handleSelectReferenceSource = (targetId: string) => {
-    setSources(prev =>
-      prev.map(s => ({
-        ...s,
-        role: s.id === targetId ? 'reference' : 'comparison'
-      }))
-    );
-    setServerFitResult(null);
-  };
-
+  // Dynamic Source Management in Step 2 (All-Source Symmetric Evaluation)
   const handleUpdateSourceField = (
     id: string,
     field: keyof MeasurementSource,
@@ -378,8 +368,8 @@ export const PanelAccuracyTab: React.FC = () => {
       label: `Source ${nextNum}`,
       columnKey: nextCol,
       unit: sources[0]?.unit || 'kt CO₂',
-      role: 'comparison',
-      methodDescription: 'Sumber pengukuran pembanding tambahan.'
+      role: 'evaluated',
+      methodDescription: 'Sumber pengukuran yang dievaluasi setara dalam model laten.'
     };
     setSources(prev => [...prev, newSource]);
     setServerFitResult(null);
@@ -387,16 +377,7 @@ export const PanelAccuracyTab: React.FC = () => {
 
   const handleRemoveSource = (id: string) => {
     if (sources.length <= 2) return;
-    setSources(prev => {
-      const filtered = prev.filter(s => s.id !== id);
-      if (!filtered.some(s => s.role === 'reference') && filtered.length > 0) {
-        filtered[filtered.length - 1] = {
-          ...filtered[filtered.length - 1],
-          role: 'reference'
-        };
-      }
-      return filtered;
-    });
+    setSources(prev => prev.filter(s => s.id !== id));
     setServerFitResult(null);
   };
 
@@ -1062,7 +1043,7 @@ export const PanelAccuracyTab: React.FC = () => {
               )}
             </div>
 
-            {/* City & Year Identifier Selectors */}
+            {/* City & Year Identifier Selectors (No Reference Selection — All J Sources Evaluated Equally) */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface-muted)' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, marginBottom: '4px' }}>Kolom Identitas Kota (City ID)</label>
@@ -1084,152 +1065,128 @@ export const PanelAccuracyTab: React.FC = () => {
                   {columns.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, marginBottom: '4px' }}>Sumber Referensi Aktif (Reference Source r)</label>
-                <select
-                  value={refSource?.id || ''}
-                  onChange={e => handleSelectReferenceSource(e.target.value)}
-                  style={{ width: '100%', minHeight: '44px', fontSize: '16px', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '2px solid var(--primary)', background: 'var(--surface)', color: 'var(--text)', fontWeight: 700 }}
-                >
-                  {sources.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} — {s.label} ({s.columnKey})
-                    </option>
-                  ))}
-                </select>
+              <div style={{ padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--primary)', background: 'var(--info-bg)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <span style={{ fontSize: '11.5px', fontWeight: 800, color: 'var(--primary)' }}>MODE EVALUASI AKTIF (OPSI B)</span>
+                <strong style={{ fontSize: '13.5px', color: 'var(--text)' }}>
+                  Evaluasi Setara Seluruh J = {sources.length} Sumber (Tanpa Reference Terkunci)
+                </strong>
               </div>
             </div>
 
             {/* Dynamic Sources List */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {sources.map((src, idx) => {
-                const isRef = src.role === 'reference';
-                return (
-                  <div
-                    key={src.id}
-                    style={{
-                      padding: '14px',
-                      borderRadius: 'var(--radius-sm)',
-                      border: isRef ? '2px solid var(--primary)' : '1px solid var(--border)',
-                      background: isRef ? 'var(--info-bg)' : 'var(--surface-muted)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '10px'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <span
-                          style={{
-                            padding: '4px 10px',
-                            borderRadius: '999px',
-                            fontSize: '11.5px',
-                            fontWeight: 800,
-                            background: isRef ? 'var(--primary)' : 'var(--surface)',
-                            color: isRef ? '#fff' : 'var(--text-secondary)',
-                            border: '1px solid var(--border)'
-                          }}
-                        >
-                          {isRef ? 'REFERENCE SOURCE (r)' : `COMPARISON SOURCE #${idx + 1}`}
-                        </span>
-                        <strong style={{ fontSize: '14px' }}>{src.name} — {src.label}</strong>
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        {!isRef && (
-                          <button
-                            type="button"
-                            className="btn btn-outline"
-                            onClick={() => handleSelectReferenceSource(src.id)}
-                            style={{ minHeight: '38px', fontSize: '12px', padding: '4px 10px' }}
-                          >
-                            Jadikan Sumber Referensi
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="btn btn-outline"
-                          disabled={sources.length <= 2}
-                          onClick={() => handleRemoveSource(src.id)}
-                          title={sources.length <= 2 ? 'Minimal 2 sumber wajib dipertahankan' : 'Hapus sumber ini'}
-                          style={{ minHeight: '38px', fontSize: '12px', padding: '4px 10px', color: sources.length <= 2 ? 'var(--text-muted)' : '#ef4444' }}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
+              {sources.map((src, idx) => (
+                <div
+                  key={src.id}
+                  style={{
+                    padding: '14px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface-muted)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '999px',
+                          fontSize: '11.5px',
+                          fontWeight: 800,
+                          background: 'var(--primary)',
+                          color: '#fff'
+                        }}
+                      >
+                        EVALUATED SOURCE #{idx + 1}
+                      </span>
+                      <strong style={{ fontSize: '14px' }}>{src.name} — {src.label}</strong>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, marginBottom: '3px' }}>Kode Sumber</label>
-                        <input
-                          type="text"
-                          value={src.name}
-                          onChange={e => handleUpdateSourceField(src.id, 'name', e.target.value)}
-                          placeholder="Mis. X1"
-                          style={{ width: '100%', minHeight: '42px', fontSize: '15px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
-                        />
-                      </div>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, marginBottom: '3px' }}>Label Sumber</label>
-                        <input
-                          type="text"
-                          value={src.label}
-                          onChange={e => handleUpdateSourceField(src.id, 'label', e.target.value)}
-                          placeholder="Mis. Self-Reporting"
-                          style={{ width: '100%', minHeight: '42px', fontSize: '15px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
-                        />
-                      </div>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, marginBottom: '3px' }}>Kolom Dataset</label>
-                        <select
-                          value={src.columnKey}
-                          onChange={e => handleUpdateSourceField(src.id, 'columnKey', e.target.value)}
-                          style={{ width: '100%', minHeight: '42px', fontSize: '15px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
-                        >
-                          {columns.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, marginBottom: '3px' }}>Satuan (Unit)</label>
-                        <input
-                          type="text"
-                          value={src.unit}
-                          onChange={e => handleUpdateSourceField(src.id, 'unit', e.target.value)}
-                          placeholder="kt CO₂"
-                          style={{ width: '100%', minHeight: '42px', fontSize: '15px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
-                        />
-                      </div>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, marginBottom: '3px' }}>Kolom SE / Uncertainty (Opsional)</label>
-                        <select
-                          value={src.uncertaintyColumn || ''}
-                          onChange={e => handleUpdateSourceField(src.id, 'uncertaintyColumn', e.target.value)}
-                          style={{ width: '100%', minHeight: '42px', fontSize: '15px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
-                        >
-                          <option value="">Tanpa kolom SE</option>
-                          {columns.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                      </div>
-                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      disabled={sources.length <= 2}
+                      onClick={() => handleRemoveSource(src.id)}
+                      title={sources.length <= 2 ? 'Minimal 2 sumber wajib dipertahankan' : 'Hapus sumber ini'}
+                      style={{ minHeight: '38px', fontSize: '12px', padding: '4px 10px', color: sources.length <= 2 ? 'var(--text-muted)' : '#ef4444' }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
 
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
                     <div>
-                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, marginBottom: '3px' }}>Keterangan Metode Pengukuran / Kalibrasi / Agregasi</label>
+                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, marginBottom: '3px' }}>Kode Sumber</label>
                       <input
                         type="text"
-                        value={src.methodDescription || ''}
-                        onChange={e => handleUpdateSourceField(src.id, 'methodDescription', e.target.value)}
-                        placeholder="Deskripsi instrumen, kalibrasi, atau cakupan..."
-                        style={{ width: '100%', minHeight: '40px', fontSize: '14px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                        value={src.name}
+                        onChange={e => handleUpdateSourceField(src.id, 'name', e.target.value)}
+                        placeholder="Mis. X1"
+                        style={{ width: '100%', minHeight: '42px', fontSize: '15px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
                       />
                     </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, marginBottom: '3px' }}>Label Sumber</label>
+                      <input
+                        type="text"
+                        value={src.label}
+                        onChange={e => handleUpdateSourceField(src.id, 'label', e.target.value)}
+                        placeholder="Mis. Self-Reporting"
+                        style={{ width: '100%', minHeight: '42px', fontSize: '15px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, marginBottom: '3px' }}>Kolom Dataset</label>
+                      <select
+                        value={src.columnKey}
+                        onChange={e => handleUpdateSourceField(src.id, 'columnKey', e.target.value)}
+                        style={{ width: '100%', minHeight: '42px', fontSize: '15px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                      >
+                        {columns.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, marginBottom: '3px' }}>Satuan (Unit)</label>
+                      <input
+                        type="text"
+                        value={src.unit}
+                        onChange={e => handleUpdateSourceField(src.id, 'unit', e.target.value)}
+                        placeholder="kt CO₂"
+                        style={{ width: '100%', minHeight: '42px', fontSize: '15px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, marginBottom: '3px' }}>Kolom SE / Uncertainty (Opsional)</label>
+                      <select
+                        value={src.uncertaintyColumn || ''}
+                        onChange={e => handleUpdateSourceField(src.id, 'uncertaintyColumn', e.target.value)}
+                        style={{ width: '100%', minHeight: '42px', fontSize: '15px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                      >
+                        <option value="">Tanpa kolom SE</option>
+                        {columns.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
                   </div>
-                );
-              })}
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, marginBottom: '3px' }}>Keterangan Metode Pengukuran / Kalibrasi / Agregasi</label>
+                    <input
+                      type="text"
+                      value={src.methodDescription || ''}
+                      onChange={e => handleUpdateSourceField(src.id, 'methodDescription', e.target.value)}
+                      placeholder="Deskripsi instrumen, kalibrasi, atau cakupan..."
+                      style={{ width: '100%', minHeight: '40px', fontSize: '14px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
 
             {stepPoints && (
-              <BulletCard title="Interpretasi Ringkas Step 2 (Pemetaan & Referensi Aktif):" points={stepPoints.step2} />
+              <BulletCard title="Interpretasi Ringkas Step 2 (Semua Sumber Dievaluasi Setara):" points={stepPoints.step2} />
             )}
           </>
         )}
@@ -1239,10 +1196,10 @@ export const PanelAccuracyTab: React.FC = () => {
           <>
             <div>
               <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
-                Step 3 — Audit Kualitas Data, Validitas Referensi &amp; Prapemrosesan Eksplisit
+                Step 3 — Audit Kualitas Data, Identifiabilitas Laten &amp; Prapemrosesan Eksplisit
               </h3>
               <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                Sistem memeriksa 10 indikator kualitas data panel dan kredibilitas sumber referensi ({refSource?.name} — {refSource?.label}). Tidak ada transformasi otomatis tanpa persetujuan eksplisit Anda.
+                Sistem memeriksa 10 indikator kualitas data panel dan kecukupan identifikasi model laten untuk seluruh J = {sources.length} sumber secara setara. Tidak ada transformasi otomatis tanpa persetujuan Anda.
               </p>
             </div>
 
@@ -1436,10 +1393,10 @@ export const PanelAccuracyTab: React.FC = () => {
                 </thead>
                 <tbody>
                   {edaResult.descriptives.map(d => (
-                    <tr key={d.sourceId} style={{ background: d.role === 'reference' ? 'var(--info-bg)' : 'transparent' }}>
+                    <tr key={d.sourceId}>
                       <td style={{ padding: '8px 10px', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>{d.sourceName} ({d.sourceLabel})</td>
-                      <td style={{ padding: '8px 10px', fontWeight: 700, color: d.role === 'reference' ? 'var(--primary)' : 'var(--text-secondary)', borderBottom: '1px solid var(--border-light)' }}>
-                        {d.role === 'reference' ? 'Reference (r)' : 'Comparison'}
+                      <td style={{ padding: '8px 10px', fontWeight: 700, color: 'var(--primary)', borderBottom: '1px solid var(--border-light)' }}>
+                        Evaluasi Setara
                       </td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{d.n}</td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{d.missing}</td>
@@ -1501,25 +1458,25 @@ export const PanelAccuracyTab: React.FC = () => {
           </>
         )}
 
-        {/* STEP 5: MEASUREMENT ERROR & ACCURACY ASSESSMENT */}
+        {/* STEP 5: BAYESIAN HIERARCHICAL LATENT MODEL & AGREEMENT ASSESSMENT */}
         {currentStep === 5 && activeResult && (
           <>
             <div>
               <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
-                Step 5 — Measurement Error, Lin&apos;s CCC &amp; Bland-Altman Agreement Assessment
+                Step 5 — Bayesian Hierarchical Latent Model &amp; Agreement Assessment (All J = {activeResult.metrics.length} Sources)
               </h3>
               <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                Perbandingan terhadap Sumber Referensi <strong>{activeResult.referenceSource.name} ({activeResult.referenceSource.label})</strong> pada sampel berpasangan Complete-Case (N = {activeResult.datasetMeta.nCompletePairs}).
+                Seluruh <strong>J = {activeResult.metrics.length} sumber dievaluasi setara</strong> ({activeResult.latentModel.nChains} rantai MCMC × {activeResult.latentModel.iterationsPerChain} iterasi | max R-hat = {activeResult.latentModel.maxRhat.toFixed(4)} | min ESS = {activeResult.latentModel.minEss}) untuk mengungkap Total Latent RMSE, Error SD (σ_ε), Reliabilitas R², Bias α, dan Posterior Probabilitas Menjadi Terbaik.
               </p>
             </div>
 
-            {/* Primary Complete-Case Accuracy Table */}
+            {/* Latent Reliability & Total Error Table (ALL J Sources) */}
             <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
                 <thead>
                   <tr style={{ background: 'var(--surface-muted)' }}>
-                    {['Comparison Source', 'N (CC / Avail)', 'MAE [95% Cluster CI]', 'RMSE [95% CI]', 'MBE (Bias)', 'MBE p-val', 'Pearson r', 'Within-City r', 'Lin CCC [95% CI]', 'Cb (Bias Corr)'].map(h => (
-                      <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Comparison Source' ? 'left' : 'right', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                    {['Evaluated Source', 'Total Latent RMSE [95% CrI]', 'Error SD σ_ε [95% CrI]', 'Reliabilitas R² [95% CrI]', 'Bias Relatif (α)', 'Skala (λ)', 'Posterior Prob Best', 'LOSO MAE', 'Lin CCC [95% CI]'].map(h => (
+                      <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Evaluated Source' ? 'left' : 'right', borderBottom: '1px solid var(--border)' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -1527,42 +1484,47 @@ export const PanelAccuracyTab: React.FC = () => {
                   {activeResult.metrics.map(m => (
                     <tr key={m.sourceId}>
                       <td style={{ padding: '8px 10px', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>{m.sourceLabel}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
-                        {m.nCompleteCase} / {m.nAvailableCase}
-                      </td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: 'var(--primary)', borderBottom: '1px solid var(--border-light)' }}>
-                        {m.mae.toFixed(3)} [{m.maeCiLower.toFixed(2)}, {m.maeCiUpper.toFixed(2)}]
+                        {m.totalLatentRmse.toFixed(2)} [{m.totalLatentRmseCiLower.toFixed(1)}, {m.totalLatentRmseCiUpper.toFixed(1)}]
                       </td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
-                        {m.rmse.toFixed(3)} [{m.rmseCiLower.toFixed(2)}, {m.rmseCiUpper.toFixed(2)}]
+                        {m.errorSd.toFixed(2)} [{m.errorSdCiLower.toFixed(1)}, {m.errorSdCiUpper.toFixed(1)}]
                       </td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
-                        {m.mbe >= 0 ? `+${m.mbe.toFixed(3)}` : m.mbe.toFixed(3)}
-                      </td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{m.mbePValue.toFixed(4)}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{m.pearsonR.toFixed(4)}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{m.withinCityR.toFixed(4)}</td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>
+                        {(m.reliabilityR2 * 100).toFixed(2)}% [{(m.reliabilityCiLower * 100).toFixed(1)}–{(m.reliabilityCiUpper * 100).toFixed(1)}%]
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
+                        {m.latentInterceptBias >= 0 ? `+${m.latentInterceptBias.toFixed(2)}` : m.latentInterceptBias.toFixed(2)}
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
+                        {m.latentLoading.toFixed(3)}
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: m.posteriorProbBest >= 0.5 ? 'var(--success)' : 'var(--text)', borderBottom: '1px solid var(--border-light)' }}>
+                        {(m.posteriorProbBest * 100).toFixed(1)}%
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
+                        {m.mae.toFixed(2)}
+                      </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
                         {m.ccc.ccc.toFixed(4)} [{m.ccc.ciLower.toFixed(3)}, {m.ccc.ciUpper.toFixed(3)}]
                       </td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{m.ccc.biasCorrectionFactorCb.toFixed(3)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
-            {/* Separate Available-Case Table when N differs */}
+            {/* Separate Available-Case vs Complete-Case Comparison */}
             <div style={{ padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface-muted)' }}>
               <strong style={{ fontSize: '13.5px', display: 'block', marginBottom: '6px' }}>
-                Perbandingan Terpisah: Source-Specific Available-Case vs Complete-Case
+                Perbandingan Terpisah: Leave-One-Source-Out Consensus Complete-Case vs Available-Case
               </strong>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                   <thead>
                     <tr>
-                      {['Sumber Pembanding', 'N Complete-Case', 'MAE (Complete-Case)', 'N Available-Case', 'MAE (Available-Case)', 'RMSE (Available-Case)', 'MBE (Available-Case)', 'Lin CCC (Available-Case)'].map(h => (
-                        <th key={h} style={{ padding: '6px 8px', textAlign: h === 'Sumber Pembanding' ? 'left' : 'right', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                      {['Sumber Evaluasi', 'N Complete-Case', 'LOSO MAE (CC)', 'N Available-Case', 'LOSO MAE (Avail)', 'LOSO RMSE (Avail)', 'LOSO MBE (Avail)', 'Lin CCC (Avail)'].map(h => (
+                        <th key={h} style={{ padding: '6px 8px', textAlign: h === 'Sumber Evaluasi' ? 'left' : 'right', borderBottom: '1px solid var(--border)' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -1586,12 +1548,12 @@ export const PanelAccuracyTab: React.FC = () => {
 
             <PanelAccuracyBlandAltmanChart
               metrics={activeResult.metrics}
-              referenceLabel={`${activeResult.referenceSource.name} (${activeResult.referenceSource.label})`}
+              referenceLabel="Konsensus Laten Leave-One-Source-Out (θ̂_-j)"
               unitLabel={activeResult.datasetMeta.workingUnitNote}
             />
 
             {stepPoints && (
-              <BulletCard title="Interpretasi Metrik Akurasi, Lin's CCC & Bland-Altman (Per Poin):" points={stepPoints.step5} />
+              <BulletCard title="Interpretasi Bayesian Latent Model & Agreement (Per Poin):" points={stepPoints.step5} />
             )}
           </>
         )}
@@ -1805,15 +1767,15 @@ export const PanelAccuracyTab: React.FC = () => {
           </>
         )}
 
-        {/* STEP 8: COMPARATIVE EVALUATION & SOURCE RANKING */}
+        {/* STEP 8: EVALUASI AKHIR & PEMERINGKATAN SELURUH SUMBER (ALL J SOURCES) */}
         {currentStep === 8 && activeResult && (
           <>
             <div>
               <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
-                Step 8 — Evaluasi Komparatif &amp; Pemeringkatan Sumber Pembanding
+                Step 8 — Evaluasi Akhir &amp; Pemeringkatan Seluruh Sumber (All J = {activeResult.ranking.ranks.length} Variables)
               </h3>
               <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                Diurutkan berdasarkan <strong>MAE sebagai metrik utama</strong>, didukung RMSE, |MBE|, Lin&apos;s CCC, dan uji signifikansi Pair Fixed Effects (tanpa composite score artifisial).
+                Diurutkan setara tanpa variabel referensi terkunci berdasarkan <strong>Total Latent RMSE</strong> &amp; <strong>Reliabilitas (R²)</strong>, diverifikasi dengan <strong>Posterior Probability of Being Best</strong> dan uji <strong>Pair Fixed Effects</strong>.
               </p>
             </div>
 
@@ -1844,23 +1806,23 @@ export const PanelAccuracyTab: React.FC = () => {
                 </span>
                 <strong style={{ fontSize: '15px' }}>
                   {activeResult.ranking.bestSourceLabel
-                    ? `Sumber Pembanding Terbaik Relatif terhadap ${activeResult.ranking.referenceSourceLabel}: ${activeResult.ranking.bestSourceLabel}`
-                    : 'Belum Terdapat Bukti Statistik yang Cukup untuk Menetapkan Satu Sumber Terbaik Secara Mutlak'}
+                    ? `Variabel Paling Akurat & Benar (Peringkat #1 dari ${activeResult.ranking.ranks.length} Sumber): ${activeResult.ranking.bestSourceLabel}`
+                    : 'Belum Terdapat Bukti Statistik yang Cukup untuk Menetapkan Satu Variabel Terbaik Secara Mutlak'}
                 </strong>
               </div>
               <div style={{ fontSize: '13px', lineHeight: 1.55 }}>{activeResult.ranking.rankingSummary}</div>
               <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                <strong>Catatan Metodologis:</strong> {activeResult.ranking.methodologicalCaveat}
+                <strong>Keterbatasan Epistemologis:</strong> {activeResult.ranking.methodologicalCaveat}
               </div>
             </div>
 
-            {/* Ranking Table */}
+            {/* Ranking Table (ALL J Sources #1..#J) */}
             <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
                 <thead>
                   <tr style={{ background: 'var(--surface-muted)' }}>
-                    {['Peringkat', 'Sumber Pembanding', 'MAE (Utama)', 'RMSE', 'MBE', 'Lin CCC', 'Lebar 95% LoA', 'ΔMAE vs #1', 'Cluster p vs #1', 'WildBoot p vs #1', 'Keterangan Evaluasi'].map(h => (
-                      <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Sumber Pembanding' || h === 'Keterangan Evaluasi' ? 'left' : 'right', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                    {['Peringkat', 'Variabel / Sumber', 'Total Latent RMSE', 'Error SD (σ_ε)', 'Reliabilitas R²', 'Posterior P(Best)', 'LOSO MAE', 'P_Bayes vs #1', 'WildBoot p vs #1', 'Keterangan Evaluasi'].map(h => (
+                      <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Variabel / Sumber' || h === 'Keterangan Evaluasi' ? 'left' : 'right', borderBottom: '1px solid var(--border)' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -1869,16 +1831,15 @@ export const PanelAccuracyTab: React.FC = () => {
                     <tr key={r.sourceId} style={{ background: r.rank === 1 ? 'var(--info-bg)' : 'transparent' }}>
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, borderBottom: '1px solid var(--border-light)' }}>#{r.rank}</td>
                       <td style={{ padding: '8px 10px', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>{r.sourceLabel}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: 'var(--primary)', borderBottom: '1px solid var(--border-light)' }}>{r.mae.toFixed(3)}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{r.rmse.toFixed(3)}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{r.mbe.toFixed(3)}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{r.ccc.toFixed(4)}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{r.loaWidth.toFixed(2)}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
-                        {r.rank === 1 ? '0.000' : `+${r.diffFromTopMae.toFixed(3)}`}
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: 'var(--primary)', borderBottom: '1px solid var(--border-light)' }}>{r.totalLatentRmse.toFixed(2)}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{r.errorSd.toFixed(2)}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>{(r.reliabilityR2 * 100).toFixed(2)}%</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: r.rank === 1 ? 'var(--success)' : 'var(--text)', borderBottom: '1px solid var(--border-light)' }}>
+                        {(r.posteriorProbBest * 100).toFixed(1)}%
                       </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{r.mae.toFixed(2)}</td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
-                        {r.pValueVsTopCluster !== null ? r.pValueVsTopCluster.toFixed(4) : '-'}
+                        {r.posteriorProbBetterThanSecond !== null ? `${(r.posteriorProbBetterThanSecond * 100).toFixed(1)}%` : '-'}
                       </td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>
                         {r.pValueVsTopWildBootstrap !== null ? r.pValueVsTopWildBootstrap.toFixed(4) : '-'}
@@ -1891,7 +1852,7 @@ export const PanelAccuracyTab: React.FC = () => {
             </div>
 
             {stepPoints && (
-              <BulletCard title="Ringkasan Keputusan & Peringkat Sumber (Per Poin):" points={stepPoints.step8} />
+              <BulletCard title="Ringkasan Keputusan & Peringkat Seluruh Sumber (Per Poin):" points={stepPoints.step8} />
             )}
           </>
         )}
@@ -1928,16 +1889,16 @@ export const PanelAccuracyTab: React.FC = () => {
             </div>
 
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
-              {[
+              {([
                 { id: 'stata', label: 'Tabel Hasil Bergaya Stata' },
                 { id: 'visuals', label: 'Visualisasi Interaktif' },
                 { id: 'interpret', label: 'Interpretasi Akademis Bahasa Indonesia' },
                 { id: 'code', label: 'Stata .do & R Script Reproduksi' }
-              ].map(t => (
+              ] as const).map(t => (
                 <button
                   key={t.id}
                   type="button"
-                  onClick={() => setResultSubTab(t.id as any)}
+                  onClick={() => setResultSubTab(t.id)}
                   style={{
                     minHeight: '40px',
                     padding: '6px 14px',

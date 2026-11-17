@@ -63,19 +63,17 @@ export function generatePanelAccuracyPDF(
     );
   };
 
-  const refTag = `${result.referenceSource.name} (${result.referenceSource.label})`;
-
   items.push({
-    text: 'LAPORAN COMPARATIVE MEASUREMENT ACCURACY ASSESSMENT (PANEL DATA APPROACH)',
+    text: 'LAPORAN REFERENCE-FREE ALL-SOURCE LATENT & CONSENSUS ACCURACY',
     font: 'F2',
     size: 12,
     leading: 16
   });
   addBody(
-    `Dataset: ${datasetName} | Sumber Referensi (r): ${refTag} | Complete-Case: ${result.datasetMeta.nCompletePairs}/${result.datasetMeta.nObsRaw} (${result.datasetMeta.nCities} Kota x ${result.datasetMeta.nYears} Tahun)`
+    `Dataset: ${datasetName} | Sumber Dievaluasi: J=${result.sources.length} (Setara) | Complete-Case: ${result.datasetMeta.nCompletePairs}/${result.datasetMeta.nObsRaw} (${result.datasetMeta.nCities} Kota x ${result.datasetMeta.nYears} Tahun) | R-hat=${result.latentModel.maxRhat.toFixed(4)}`
   );
 
-  addTitle('1. VALIDITAS SUMBER REFERENSI & KUALITAS DATA');
+  addTitle('1. IDENTIFIKASI MODEL LATEN & KUALITAS DATA');
   addBody(result.interpretations.referenceValidityInterpretation);
 
   addTitle('2. KORELASI PANEL & EXPLORATORY DATA ANALYSIS');

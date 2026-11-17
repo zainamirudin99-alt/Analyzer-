@@ -68,12 +68,10 @@ export const PanelAccuracyEDACharts: React.FC<{
   sources: MeasurementSource[];
   unitLabel: string;
 }> = ({ eda, sources, unitLabel }) => {
-  const refSource = sources.find(s => s.role === 'reference') || sources[0];
-  const compSources = sources.filter(s => s.role === 'comparison');
-  const [selectedCompId, setSelectedCompId] = useState<string>(compSources[0]?.id || sources[0]?.id || '');
+  const [selectedSrcId, setSelectedSrcId] = useState<string>(sources[0]?.id || '');
 
-  const activeComp =
-    sources.find(s => s.id === selectedCompId) || compSources[0] || sources[0];
+  const activeSrc =
+    sources.find(s => s.id === selectedSrcId) || sources[0];
 
   const trendModel = useMemo(() => {
     const pts = eda.yearlyAverages;
@@ -109,26 +107,36 @@ export const PanelAccuracyEDACharts: React.FC<{
     return { w, h, padL, padR, padT, padB, minY, maxY, xOf, yOf, buildPath, pts };
   }, [eda, sources]);
 
+  // Scatter against Cross-Source Peer Median Consensus (excluding activeSrc!)
   const scatterPairs = useMemo(() => {
-    if (!refSource || !activeComp) return [];
-    const pairs: Array<{ city: string; year: number; xRef: number; yComp: number }> = [];
+    if (!activeSrc) return [];
+    const peers = sources.filter(s => s.id !== activeSrc.id);
+    const pairs: Array<{ city: string; year: number; xConsensus: number; ySource: number }> = [];
     eda.cityTrends.forEach(ct => {
       ct.points.forEach(pt => {
-        const xr = pt.values[refSource.id];
-        const yc = pt.values[activeComp.id];
-        if (xr !== null && yc !== null && Number.isFinite(xr) && Number.isFinite(yc)) {
-          pairs.push({ city: ct.city, year: pt.year, xRef: xr, yComp: yc });
-        }
+        const yc = pt.values[activeSrc.id];
+        if (yc === null || !Number.isFinite(yc)) return;
+        const peerVals = peers
+          .map(p => pt.values[p.id])
+          .filter((v): v is number => v !== null && Number.isFinite(v))
+          .sort((a, b) => a - b);
+        if (peerVals.length === 0) return;
+        const mid = Math.floor(peerVals.length / 2);
+        const xConsensus =
+          peerVals.length % 2 === 1
+            ? peerVals[mid]
+            : 0.5 * (peerVals[mid - 1] + peerVals[mid]);
+        pairs.push({ city: ct.city, year: pt.year, xConsensus, ySource: yc });
       });
     });
     return pairs;
-  }, [eda, refSource, activeComp]);
+  }, [eda, sources, activeSrc]);
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
       <ChartCard
-        title="1. Tren Rata-Rata Tahunan Seluruh Sumber Pengukuran"
-        subtitle={`Garis tebal menunjukkan Sumber Referensi (${refSource?.name || '-'}), dibandingkan seluruh sumber pembanding.`}
+        title="1. Tren Rata-Rata Tahunan Seluruh J Sumber Pengukuran (Setara)"
+        subtitle="Seluruh sumber ditampilkan setara dari tahun ke tahun tanpa ada satu variabel yang dikunci sebagai patokan mutlak."
         unit={unitLabel}
       >
         {trendModel && (
@@ -139,15 +147,14 @@ export const PanelAccuracyEDACharts: React.FC<{
             <text x={6} y={trendModel.h - trendModel.padB} fontSize="10" fill="var(--text-muted)">{trendModel.minY.toFixed(0)}</text>
 
             {sources.map((s, idx) => {
-              const color = s.role === 'reference' ? '#10b981' : PALETTE[(idx + 1) % PALETTE.length];
+              const color = PALETTE[idx % PALETTE.length];
               return (
                 <path
                   key={s.id}
                   d={trendModel.buildPath(s.id)}
                   fill="none"
                   stroke={color}
-                  strokeWidth={s.role === 'reference' ? '3.0' : '2.0'}
-                  strokeDasharray={s.role === 'reference' ? undefined : 'none'}
+                  strokeWidth="2.3"
                 />
               );
             })}
@@ -160,13 +167,13 @@ export const PanelAccuracyEDACharts: React.FC<{
                 {sources.map((s, sIdx) => {
                   const v = p.values[s.id];
                   if (v === null || !Number.isFinite(v)) return null;
-                  const color = s.role === 'reference' ? '#10b981' : PALETTE[(sIdx + 1) % PALETTE.length];
+                  const color = PALETTE[sIdx % PALETTE.length];
                   return (
                     <circle
                       key={s.id}
                       cx={trendModel.xOf(idx)}
                       cy={trendModel.yOf(v)}
-                      r={s.role === 'reference' ? '3.8' : '2.8'}
+                      r="3.2"
                       fill={color}
                     />
                   );
@@ -177,10 +184,10 @@ export const PanelAccuracyEDACharts: React.FC<{
         )}
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', fontSize: '11.5px', color: 'var(--text-secondary)' }}>
           {sources.map((s, idx) => {
-            const color = s.role === 'reference' ? '#10b981' : PALETTE[(idx + 1) % PALETTE.length];
+            const color = PALETTE[idx % PALETTE.length];
             return (
               <span key={s.id}>
-                <strong style={{ color }}>●</strong> {s.name} ({s.label}){s.role === 'reference' ? ' [REF]' : ''}
+                <strong style={{ color }}>●</strong> {s.name} ({s.label})
               </span>
             );
           })}
@@ -188,27 +195,27 @@ export const PanelAccuracyEDACharts: React.FC<{
       </ChartCard>
 
       <ChartCard
-        title="2. Scatterplot Sumber Pembanding vs Sumber Referensi (Garis 45°)"
-        subtitle="Titik yang jatuh tepat pada garis diagonal 45° memiliki kesepakatan identik (CCC = 1, Error = 0)."
+        title="2. Scatterplot Sumber Terpilih vs Median Konsensus Rekan (Garis 45°)"
+        subtitle="Titik yang rapat ke garis 45° menunjukkan kesepakatan tinggi terhadap median instrumen lain."
         unit={unitLabel}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '12px', fontWeight: 700 }}>Pilih Sumber Pembanding:</span>
+          <span style={{ fontSize: '12px', fontWeight: 700 }}>Pilih Sumber Evaluasi:</span>
           <select
-            value={activeComp?.id || ''}
-            onChange={e => setSelectedCompId(e.target.value)}
+            value={activeSrc?.id || ''}
+            onChange={e => setSelectedSrcId(e.target.value)}
             style={{ minHeight: '38px', fontSize: '13px', padding: '4px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface-muted)', color: 'var(--text)' }}
           >
-            {compSources.map(cs => (
-              <option key={cs.id} value={cs.id}>
-                {cs.name} ({cs.label}) vs {refSource?.name} [Ref]
+            {sources.map(s => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({s.label}) vs Peer Consensus
               </option>
             ))}
           </select>
         </div>
 
         {scatterPairs.length > 0 && (() => {
-          const allVals = scatterPairs.flatMap(p => [p.xRef, p.yComp]);
+          const allVals = scatterPairs.flatMap(p => [p.xConsensus, p.ySource]);
           const minV = Math.min(...allVals);
           const maxV = Math.max(...allVals);
           const span = Math.max(1e-6, maxV - minV);
@@ -226,12 +233,12 @@ export const PanelAccuracyEDACharts: React.FC<{
               <line x1={padL} y1={h - padB} x2={w - padR} y2={h - padB} stroke="var(--border)" />
               <line x1={xOf(minV)} y1={yOf(minV)} x2={xOf(maxV)} y2={yOf(maxV)} stroke="#10b981" strokeWidth="1.5" strokeDasharray="4 4" />
               {scatterPairs.map((p, idx) => (
-                <circle key={idx} cx={xOf(p.xRef)} cy={yOf(p.yComp)} r="3.6" fill="#06b6d4" fillOpacity="0.82">
-                  <title>{`${p.city} (${p.year}) — Ref: ${p.xRef.toFixed(2)}, ${activeComp?.name}: ${p.yComp.toFixed(2)}`}</title>
+                <circle key={idx} cx={xOf(p.xConsensus)} cy={yOf(p.ySource)} r="3.6" fill="#06b6d4" fillOpacity="0.82">
+                  <title>{`${p.city} (${p.year}) — Peer Med: ${p.xConsensus.toFixed(2)}, ${activeSrc?.name}: ${p.ySource.toFixed(2)}`}</title>
                 </circle>
               ))}
               <text x={w / 2} y={h - 6} fontSize="10" textAnchor="middle" fill="var(--text-muted)">
-                Referensi: {refSource?.name} ({refSource?.label})
+                Median Konsensus Instrumen Rekan (Tanpa {activeSrc?.name})
               </text>
             </svg>
           );
@@ -345,7 +352,7 @@ export const PanelAccuracyFullVisualizations: React.FC<{
   result: PanelAccuracyFitResult;
 }> = ({ result }) => {
   const unit = result.datasetMeta.workingUnitNote;
-  const refTag = `${result.referenceSource.name} (${result.referenceSource.label})`;
+  const refTag = 'Konsensus Laten Leave-One-Out (θ̂_-j)';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -356,33 +363,33 @@ export const PanelAccuracyFullVisualizations: React.FC<{
       />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
-        {/* MAE & RMSE Comparison Bar Chart */}
+        {/* Total Latent RMSE & Error SD Bar Chart */}
         <ChartCard
-          title="Perbandingan MAE (95% Cluster CI) & RMSE Antarsumber Pembanding"
-          subtitle="Metrik kesalahan absolut rata-rata (MAE) dan kesalahan kuadrat rata-rata (RMSE) terhadap sumber referensi."
+          title="Perbandingan Total Latent RMSE & Error SD (Seluruh J Sumber)"
+          subtitle="Mengukur keseluruhan akurasi (bias + skala + noise acak) dan simpangan baku error acak tiap sumber (lebih kecil = lebih akurat)."
           unit={unit}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {(() => {
-              const maxErr = Math.max(...result.metrics.map(m => Math.max(m.rmse, m.maeCiUpper)), 1e-6);
+              const maxErr = Math.max(...result.metrics.map(m => Math.max(m.totalLatentRmseCiUpper, m.errorSdCiUpper)), 1e-6);
               return result.ranking.ranks.map((rk, idx) => {
                 const m = result.metrics.find(x => x.sourceId === rk.sourceId)!;
-                const maePct = Math.min(100, (m.mae / maxErr) * 100);
-                const rmsePct = Math.min(100, (m.rmse / maxErr) * 100);
+                const totPct = Math.min(100, (m.totalLatentRmse / maxErr) * 100);
+                const sdPct = Math.min(100, (m.errorSd / maxErr) * 100);
                 const color = PALETTE[idx % PALETTE.length];
                 return (
                   <div key={m.sourceId} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px' }}>
                       <strong>#{rk.rank} {m.sourceLabel}</strong>
                       <span>
-                        MAE: <strong>{m.mae.toFixed(2)}</strong> [{m.maeCiLower.toFixed(1)}, {m.maeCiUpper.toFixed(1)}] | RMSE: {m.rmse.toFixed(2)}
+                        TotRMSE: <strong>{m.totalLatentRmse.toFixed(2)}</strong> | ErrSD: {m.errorSd.toFixed(2)}
                       </span>
                     </div>
                     <div style={{ height: '10px', borderRadius: '999px', background: 'var(--surface-muted)', overflow: 'hidden' }}>
-                      <div style={{ width: `${maePct}%`, height: '100%', background: color }} />
+                      <div style={{ width: `${totPct}%`, height: '100%', background: color }} />
                     </div>
                     <div style={{ height: '6px', borderRadius: '999px', background: 'var(--surface-muted)', overflow: 'hidden' }}>
-                      <div style={{ width: `${rmsePct}%`, height: '100%', background: color, opacity: 0.45 }} />
+                      <div style={{ width: `${sdPct}%`, height: '100%', background: color, opacity: 0.45 }} />
                     </div>
                   </div>
                 );
@@ -391,29 +398,30 @@ export const PanelAccuracyFullVisualizations: React.FC<{
           </div>
         </ChartCard>
 
-        {/* Lin's CCC vs Pearson r Agreement Bar Chart */}
+        {/* Bayesian Reliability R^2 & Posterior Probability of Being Best */}
         <ChartCard
-          title="Lin's Concordance Correlation (CCC) vs Korelasi Pearson (r)"
-          subtitle="Menunjukkan seberapa jauh korelasi linear (r) tereduksi oleh faktor bias lokasi/skala (Cb = CCC / r)."
+          title="Reliabilitas Laten (R²) & Posterior Probabilitas Menjadi Terbaik (%)"
+          subtitle="R² mengukur kemurnian sinyal emisi (mendekati 100% = paling konsisten); P(Best) adalah peluang posterior Bayesian menjadi sumber paling akurat."
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {result.metrics.map((m, idx) => {
-              const cccPct = Math.max(0, Math.min(100, m.ccc.ccc * 100));
-              const rPct = Math.max(0, Math.min(100, m.pearsonR * 100));
+            {result.ranking.ranks.map((rk, idx) => {
+              const m = result.metrics.find(x => x.sourceId === rk.sourceId)!;
+              const r2Pct = Math.max(0, Math.min(100, m.reliabilityR2 * 100));
+              const pBestPct = Math.max(0, Math.min(100, m.posteriorProbBest * 100));
               const color = PALETTE[idx % PALETTE.length];
               return (
                 <div key={m.sourceId} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px' }}>
-                    <strong>{m.sourceLabel}</strong>
+                    <strong>#{rk.rank} {m.sourceLabel}</strong>
                     <span>
-                      CCC = <strong>{m.ccc.ccc.toFixed(4)}</strong> | Pearson r = {m.pearsonR.toFixed(4)} | Cb = {m.ccc.biasCorrectionFactorCb.toFixed(3)}
+                      R² = <strong>{r2Pct.toFixed(2)}%</strong> | P(Best) = <strong>{pBestPct.toFixed(1)}%</strong> | CCC = {m.ccc.ccc.toFixed(3)}
                     </span>
                   </div>
                   <div style={{ height: '10px', borderRadius: '999px', background: 'var(--surface-muted)', overflow: 'hidden' }}>
-                    <div style={{ width: `${cccPct}%`, height: '100%', background: color }} />
+                    <div style={{ width: `${r2Pct}%`, height: '100%', background: color }} />
                   </div>
-                  <div style={{ height: '5px', borderRadius: '999px', background: 'var(--surface-muted)', overflow: 'hidden' }}>
-                    <div style={{ width: `${rPct}%`, height: '100%', background: color, opacity: 0.4 }} />
+                  <div style={{ height: '6px', borderRadius: '999px', background: 'var(--surface-muted)', overflow: 'hidden' }}>
+                    <div style={{ width: `${pBestPct}%`, height: '100%', background: '#10b981' }} />
                   </div>
                 </div>
               );

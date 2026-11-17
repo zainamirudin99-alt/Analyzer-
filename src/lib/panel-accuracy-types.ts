@@ -1,9 +1,9 @@
 // ============================================================
-// Comparative Measurement Accuracy Assessment — Types & Contracts
-// Reference-Based Panel Data Approach with Dynamic N Sources (J >= 2)
+// Reference-Free All-Source Latent & Consensus Measurement Accuracy Assessment
+// Contracts & Types for Panel Data Approach (Option B — All J >= 3 Sources Ranked)
 // ============================================================
 
-export type SourceRole = 'reference' | 'comparison';
+export type SourceRole = 'evaluated' | 'comparison' | 'reference';
 
 export interface MeasurementSource {
   id: string;
@@ -43,6 +43,17 @@ export interface DataQualityCheckItem {
   recommendation?: string;
 }
 
+export interface LatentIdentificationAudit {
+  nSources: number;
+  isIdentifiedForAllSourceRanking: boolean; // true requires J >= 3 valid sources with positive variance
+  nValidCompletePairs: number;
+  hasZeroVarianceSources: string[];
+  potentialDependentPairs: string[];
+  summary: string;
+  warnings: string[];
+}
+
+/** @deprecated Kept as alias shape for backward-safe exports; reflects All-Source Identification Audit */
 export interface ReferenceSourceAudit {
   referenceSourceId: string;
   referenceSourceName: string;
@@ -66,11 +77,12 @@ export interface PanelAccuracyQualityReport {
   yearMin: number | null;
   yearMax: number | null;
   isBalanced: boolean;
-  missingBySource: Record<string, number>; // keyed by source.id
-  availablePairsBySource: Record<string, number>; // keyed by comparison source.id
+  missingBySource: Record<string, number>;
+  availablePairsBySource: Record<string, number>;
   duplicateKeys: string[];
   scaleRatioMaxToMin: number;
   outlierCountTotal: number;
+  latentAudit: LatentIdentificationAudit;
   referenceAudit: ReferenceSourceAudit;
   checks: DataQualityCheckItem[];
   recommendedActions: string[];
@@ -84,9 +96,9 @@ export interface CleanedPanelObservation {
   year: number;
   yearIdx: number;
   pairKey: string;
-  values: Record<string, number | null>;      // keyed by source.id (after opt-in preprocessing)
-  rawValues: Record<string, number | null>;   // keyed by source.id (before preprocessing)
-  uncertainties: Record<string, number>;      // keyed by source.id
+  values: Record<string, number | null>;
+  rawValues: Record<string, number | null>;
+  uncertainties: Record<string, number>;
 }
 
 export interface SourceDescriptiveSummary {
@@ -151,7 +163,7 @@ export interface BlandAltmanPoint {
   city: string;
   year: number;
   compVal: number;
-  refVal: number;
+  refVal: number; // Consensus benchmark theta_hat (or LOSO theta_hat^(-j))
   meanVal: number;
   diffVal: number;
   absError: number;
@@ -193,6 +205,64 @@ export interface AvailableCaseMetricSummary {
   ccc: number;
 }
 
+export interface LatentSourceEstimate {
+  sourceId: string;
+  sourceName: string;
+  sourceLabel: string;
+  // Congeneric latent model X_ijt = alpha_j + lambda_j * theta_it + eps_ijt
+  interceptBiasAlpha: number;
+  interceptBiasCiLower: number;
+  interceptBiasCiUpper: number;
+  loadingLambda: number;
+  loadingCiLower: number;
+  loadingCiUpper: number;
+  errorVariance: number;
+  errorVarianceCiLower: number;
+  errorVarianceCiUpper: number;
+  errorSd: number;
+  errorSdCiLower: number;
+  errorSdCiUpper: number;
+  totalLatentMse: number;
+  totalLatentRmse: number;
+  totalLatentRmseCiLower: number;
+  totalLatentRmseCiUpper: number;
+  reliabilityR2: number;
+  reliabilityCiLower: number;
+  reliabilityCiUpper: number;
+  signalToNoiseRatio: number;
+  posteriorProbBestTotalError: number; // P(lowest total latent RMSE | data)
+  posteriorProbBestPrecision: number;  // P(lowest error variance / highest reliability | data)
+  grubbsErrorVariance: number;         // Analytical Grubbs triangulation variance check
+  mcmcRhat: number;
+  mcmcEss: number;
+}
+
+export interface LatentModelSummary {
+  nSources: number;
+  nPairs: number;
+  nChains: number;
+  iterationsPerChain: number;
+  burnInPerChain: number;
+  maxRhat: number;
+  minEss: number;
+  converged: boolean;
+  latentThetaMean: number;
+  latentThetaSd: number;
+  posteriorPredictivePValue: number;
+  identificationRule: string;
+  epistemologicalCaveat: string;
+  latentThetaSeries: Array<{
+    pairKey: string;
+    city: string;
+    year: number;
+    thetaMean: number;
+    thetaSd: number;
+    thetaCiLower: number;
+    thetaCiUpper: number;
+  }>;
+  sourceEstimates: LatentSourceEstimate[];
+}
+
 export interface SourceAccuracyMetricRow {
   sourceId: string;
   sourceName: string;
@@ -201,7 +271,24 @@ export interface SourceAccuracyMetricRow {
   nCompleteCase: number;
   nAvailableCase: number;
   missingGapVsComplete: number;
-  // Primary evaluation on Complete-Case paired City-Year sample
+  // Latent True-Value Model Metrics (All J Sources Evaluated Equally)
+  latentInterceptBias: number;
+  latentLoading: number;
+  errorVariance: number;
+  errorSd: number;
+  errorSdCiLower: number;
+  errorSdCiUpper: number;
+  totalLatentRmse: number;
+  totalLatentRmseCiLower: number;
+  totalLatentRmseCiUpper: number;
+  reliabilityR2: number;
+  reliabilityCiLower: number;
+  reliabilityCiUpper: number;
+  posteriorProbBest: number;
+  mcmcRhat: number;
+  mcmcEss: number;
+  grubbsErrorVariance: number;
+  // Empirical Deviation vs Leave-One-Source-Out Consensus Benchmark theta_hat^(-j)
   mae: number;
   maeSeCluster: number;
   maeCiLower: number;
@@ -222,7 +309,6 @@ export interface SourceAccuracyMetricRow {
   firstDiffR: number;
   ccc: LinsCCCResult;
   blandAltman: BlandAltmanResult;
-  // Separate Available-Case summary when N differs
   availableCase: AvailableCaseMetricSummary;
 }
 
@@ -249,7 +335,7 @@ export interface PairwiseSourceContrast {
   sourceBLabel: string;
   maeA: number;
   maeB: number;
-  diffAminusB: number; // MAE_A - MAE_B (negative means A is more accurate than B)
+  diffAminusB: number;
   seCluster: number;
   tStat: number;
   dfCluster: number;
@@ -259,20 +345,21 @@ export interface PairwiseSourceContrast {
   wildBootstrapPValue: number;
   wildBootstrapCiLower: number;
   wildBootstrapCiUpper: number;
+  posteriorProbABetterThanB: number; // From Bayesian posterior draws of Total Latent RMSE
   isSignificant05: boolean;
   betterSourceId: string | null;
 }
 
 export interface PairFixedEffectsResult {
   nCompletePairs: number;
-  nComparisonSources: number;
+  nComparisonSources: number; // Equals J (all evaluated sources)
   nLongObs: number;
   nClustersCity: number;
   dfCluster: number;
   baselineComparisonSourceId: string;
   baselineComparisonSourceLabel: string;
-  referenceSourceId: string;
-  referenceSourceLabel: string;
+  referenceSourceId: string;    // 'latent_consensus'
+  referenceSourceLabel: string; // 'Latent Consensus Benchmark (θ_hat)'
   withinR2: number;
   omnibusFStat: number;
   omnibusDf1: number;
@@ -331,6 +418,13 @@ export interface PanelAccuracyDiagnosticsResult {
     entries: OutlierSensitivityEntry[];
     summary: string;
   };
+  bayesianConvergenceAudit: {
+    maxRhat: number;
+    minEss: number;
+    posteriorPredictivePValue: number;
+    converged: boolean;
+    summary: string;
+  };
   normalityAndCltNote: {
     residualSkewness: number;
     residualKurtosisExcess: number;
@@ -345,6 +439,10 @@ export interface SourceRankEntry {
   sourceId: string;
   sourceName: string;
   sourceLabel: string;
+  totalLatentRmse: number;
+  errorSd: number;
+  reliabilityR2: number;
+  posteriorProbBest: number;
   mae: number;
   rmse: number;
   absMbe: number;
@@ -352,7 +450,9 @@ export interface SourceRankEntry {
   ccc: number;
   pearsonR: number;
   loaWidth: number;
+  diffFromTopLatentRmse: number;
   diffFromTopMae: number;
+  posteriorProbBetterThanSecond: number | null;
   pValueVsTopCluster: number | null;
   pValueVsTopWildBootstrap: number | null;
   isStatisticallyIndistinguishableFromTop: boolean;
@@ -360,11 +460,15 @@ export interface SourceRankEntry {
 }
 
 export interface ComparativeRankingResult {
-  primaryMetric: 'MAE';
+  primaryMetric: 'TOTAL_LATENT_RMSE';
   referenceSourceId: string;
   referenceSourceLabel: string;
   isConclusive: boolean;
-  conclusivenessStatus: 'TERBUKTI_BERBEDA_SIGNIFIKAN' | 'PERBEDAAN_TIDAK_SIGNIFIKAN' | 'KONFLIK_ANTAR_METRIK' | 'REFERENSI_TIDAK_VALID';
+  conclusivenessStatus:
+    | 'TERBUKTI_BERBEDA_SIGNIFIKAN'
+    | 'PERBEDAAN_TIDAK_SIGNIFIKAN'
+    | 'KONFLIK_ANTAR_METRIK'
+    | 'MODEL_TIDAK_TERIDENTIFIKASI';
   bestSourceId: string | null;
   bestSourceLabel: string | null;
   tiedTopSourceLabels: string[];
@@ -436,11 +540,12 @@ export interface PanelAccuracyFitResult {
     workingUnitNote: string;
   };
   sources: MeasurementSource[];
-  referenceSource: MeasurementSource;
-  comparisonSources: MeasurementSource[];
+  referenceSource: MeasurementSource;     // Consensus Latent Benchmark metadata descriptor
+  comparisonSources: MeasurementSource[]; // Contains ALL J evaluated sources equally
   preprocessing: AccuracyPreprocessingOptions;
   qualityReport: PanelAccuracyQualityReport;
   eda: CorrelationMatricesBundle;
+  latentModel: LatentModelSummary;
   metrics: SourceAccuracyMetricRow[];
   pairFixedEffects: PairFixedEffectsResult;
   diagnostics: PanelAccuracyDiagnosticsResult;

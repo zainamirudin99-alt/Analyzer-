@@ -187,3 +187,11 @@ Dokumen ini memuat daftar tugas operasional dari Tahap 1 hingga Tahap 3 beserta 
 - [x] **T7.2**: Implementasi `Intelligent Measurement Source Configuration Engine` (14 analisis kolom otomatis, 5 blok rekomendasi A–E, tabel status rekomendasi, dan 4 tombol konfigurasi di Step 2).
 - [x] **T7.3**: Implementasi panel `Stata Command & Statistical Implementation` pada seluruh Step 1–9 (Tujuan Analisis, Stata/R/Stan Code dinamis dengan Copy/Download, Kegunaan Setiap Kode, Penjelasan & Cara Membaca Output, Interpretasi 5-Poin Aktual, Analisis Sensitivitas Leave-One-City-Out, dan Kesimpulan Step).
 - [x] **T7.4**: Verifikasi penuh (`vitest`, `tsc --noEmit`, `next build`, dan `git diff` 0 perubahan pada Option 1 & menu lain).
+
+---
+
+## Tahap 8: Konversi Option 2 ke Reference-Free All-Source Latent & Consensus Ranking (Opsi B)
+- [x] **T8.1**: Implementasi `panel-accuracy-latent.ts` (Bayesian Hierarchical MCMC + Grubbs Triangulation, R-hat, ESS, Error SD/Variance, Reliability $R^2$, Posterior Prob Best, dan Leave-One-Source-Out Consensus Benchmark untuk seluruh $J \ge 3$ sumber tanpa Reference Source).
+- [x] **T8.2**: Pembaruan `panel-accuracy-types.ts`, `validation`, `preprocessing`, `metrics`, `fixed-effects`, `diagnostics`, `ranking`, dan `orchestrator` agar seluruh $J$ sumber dievaluasi dan diranking bersama (#1 s/d #$J$) tanpa mengecualikan 1 sumber sebagai reference.
+- [x] **T8.3**: Pembaruan Step 2 `Intelligent Configuration`, `PanelAccuracyTab`, `PanelAccuracyCharts`, `step-guides`, `step-stata`, `codegen`, dan ekspor PDF/DOCX/XLSX/CSV.
+- [x] **T8.4**: Pembaruan & verifikasi menyeluruh (`vitest`, `tsc --noEmit`, `next build`, 0 diff di Option 1).
