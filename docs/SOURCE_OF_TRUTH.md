@@ -205,3 +205,12 @@ Spesifikasi terkini untuk **Regresi Data Panel Stata → Option 2** (`PanelAccur
 3. **Output Tabel Stata Terurut Step 1–9 & Ekspor Rapi PDF, Word (`.docx`), Excel (`.xlsx`)**:
    - Memperluas `StataAccuracyOutputBundle` dengan `orderedStepOutputs` (9 blok output tabel Stata terformat `<= 94` karakter per baris, berurutan kronologis Step 1 hingga Step 9, bebas pemotongan kolom dan adaptif presisi desimal).
    - Memperbarui generator PDF murni TS (`escapePdf` penuh Unicode→ASCII, header/footer bernomor halaman, garis pemisah rapi, tabel Step 1–9 lengkap, output Stata Step 1–9 tanpa `.slice(0, 102)`, dan Master `.do`), Word `.docx` (header tabel berarsir navy, padding sel, seluruh tabel Step 1–9, 8-poin *Why Best*, output Stata urut & Master `.do`), dan Excel `.xlsx` (9 worksheet berurutan `01_Ringkasan_Riset` s.d. `09_Kode_Stata_R_Stan` dengan lebar kolom terukur & `sanitizeSpreadsheetText`).
+
+---
+
+## 15. Ekspansi Tahap 14: Progressive Disclosure Tombol `Kode Stata` pada Step 1–8
+
+1. **Pelipatan Progresif Panel Kode, Output & Interpretasi Stata (`PanelAccuracyStepStataPanel.tsx`)**:
+   - Pada **Step 1 s.d. Step 8**, bagian dokumentasi teknis Stata (Tujuan Analisis, Konsep Statistik, Kode Stata/R/Stan, Penjelasan Setiap Kode, Output & Cara Membaca Output Stata, tabel LOCO Step 8, serta Interpretasi Statistik Per Poin) disembunyikan secara default di balik tombol interaktif **`Kode Stata`** (`minHeight >= 44px`, `aria-expanded`, indikator ikon buka/tutup) untuk menjaga keterbacaan alur langkah.
+   - **Bagian Kesimpulan Tetap Terlihat**: Kotak **Ringkasan Keputusan Step (`stepConclusion`)** dan **Interpretasi Ringkas Step** tetap selalu tampil di bagian bawah setiap Step 1–8 tanpa perlu membuka tombol `Kode Stata`.
+   - **Step 9 Tetap Terbuka Default**: Step 9 (Final Results, Code & Export) menampilkan seluruh panel secara terbuka secara default (tetap dapat dilipat bila tombol `Kode Stata` diklik).

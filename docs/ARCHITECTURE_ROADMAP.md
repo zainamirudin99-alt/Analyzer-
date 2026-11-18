@@ -193,3 +193,9 @@ Mengacu pada `docs/superpowers/specs/2026-11-13-regression-upgrade-design.md`:
 2. **`src/lib/panel-accuracy-glossary.ts` & `src/components/PanelAccuracyTab.tsx`**: Modul kamus singkatan `STEP_ACRONYM_GLOSSARY` (Step 1–9) dan komponen tombol **`Keterangan`** sejajar kanan pada setiap header Step 1–9 yang membuka panel penjelasan singkatan interaktif.
 3. **`src/lib/panel-accuracy-types.ts` & `src/lib/panel-accuracy-interpretation.ts`**: Penambahan `orderedStepOutputs` pada `StataAccuracyOutputBundle` berisi tabel output bergaya Stata yang urut Step 1–9 (lebar aman `<= 94` karakter, presisi desimal adaptif) serta render terstruktur pada Sub-Tab Output Stata di Step 9.
 4. **`src/lib/panel-accuracy-export-pdf.ts`, `panel-accuracy-export-docx.ts`, & `panel-accuracy-export-xlsx.ts`**: Perombakan total tata letak ekspor laporan PDF, DOCX, dan XLSX agar komplit dari Step 1 hingga Step 9, rapi berbingkai/terformat, mencakup seluruh tabel Tahap 12 + 8-poin analisis pemenang + tabel output Stata berurutan Step 1–9 + kode Master `.do`/`.R`/`.stan`, tanpa memengaruhi fungsi ekspor Option 1 atau CED.
+
+---
+
+## 12. Arsitektur Tahap 14: Tombol `Kode Stata` (Collapsible Step 1–8)
+
+1. **`src/components/PanelAccuracyStepStataPanel.tsx`**: Menambahkan state per-step `expandedByStep` di dalam komponen. Untuk `bundle.stepId <= 8`, default bernilai tertutup (`false`) dan menyediakan tombol **`Kode Stata`** (`minHeight: 44px`, `Terminal` + `ChevronDown`/`ChevronUp`) di header panel. Ketika diklik, bagian 1–6 (Tujuan, Konsep, Kode Stata/R/Stan, Penjelasan Kode, Output & Cara Membaca, LOCO, Interpretasi Statistik) tampil di atas bagian **Ringkasan Keputusan Step (`stepConclusion`)**, sedangkan bagian kesimpulan tersebut tetap tampil di bagian bawah setiap saat. Pada `stepId === 9`, default tetap terbuka (`true`).

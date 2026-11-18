@@ -5,6 +5,8 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Download,
   FileText,
@@ -21,6 +23,14 @@ export const PanelAccuracyStepStataPanel: React.FC<PanelAccuracyStepStataPanelPr
 }) => {
   const [activeCodeLang, setActiveCodeLang] = useState<'stata' | 'r' | 'stan'>('stata');
   const [copied, setCopied] = useState(false);
+  const [expandedByStep, setExpandedByStep] = useState<Record<number, boolean>>({ 9: true });
+  const isExpanded = expandedByStep[bundle.stepId] ?? (bundle.stepId >= 9);
+  const panelBodyId = `step-stata-details-${bundle.stepId}`;
+  const toggleExpanded = () =>
+    setExpandedByStep(prev => ({
+      ...prev,
+      [bundle.stepId]: !(prev[bundle.stepId] ?? bundle.stepId >= 9)
+    }));
 
   const currentCode =
     activeCodeLang === 'r' && bundle.companionRCode
@@ -95,24 +105,51 @@ export const PanelAccuracyStepStataPanel: React.FC<PanelAccuracyStepStataPanelPr
               Stata Command &amp; Statistical Implementation — {bundle.stepTitle}
             </strong>
             <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-              Dokumentasi kode Stata dinamis, penjelasan perintah, cara membaca output, dan interpretasi statistik per poin.
+              {bundle.stepId <= 8
+                ? 'Klik tombol "Kode Stata" untuk membuka/menutup kode .do/.R/.stan, penjelasan perintah, cara membaca output, dan interpretasi statistik.'
+                : 'Dokumentasi kode Stata dinamis, penjelasan perintah, cara membaca output, dan interpretasi statistik per poin.'}
             </span>
           </div>
         </div>
-        <span
-          style={{
-            padding: '4px 10px',
-            borderRadius: '999px',
-            background: statusColor,
-            color: '#fff',
-            fontSize: '11.5px',
-            fontWeight: 800
-          }}
-        >
-          {bundle.stepConclusion.readinessStatus}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span
+            style={{
+              padding: '4px 10px',
+              borderRadius: '999px',
+              background: statusColor,
+              color: '#fff',
+              fontSize: '11.5px',
+              fontWeight: 800
+            }}
+          >
+            {bundle.stepConclusion.readinessStatus}
+          </span>
+          <button
+            type="button"
+            className={isExpanded ? 'btn btn-primary' : 'btn btn-outline'}
+            aria-expanded={isExpanded}
+            aria-controls={panelBodyId}
+            onClick={toggleExpanded}
+            style={{
+              minHeight: '44px',
+              padding: '8px 14px',
+              fontSize: '13px',
+              fontWeight: 700,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            <Terminal size={15} />
+            <span>Kode Stata</span>
+            {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+          </button>
+        </div>
       </div>
 
+      {isExpanded && (
+        <div id={panelBodyId} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {/* 1. TUJUAN ANALISIS */}
       <div
         style={{
@@ -408,8 +445,10 @@ export const PanelAccuracyStepStataPanel: React.FC<PanelAccuracyStepStataPanelPr
           ))}
         </div>
       </div>
+        </div>
+      )}
 
-      {/* 6. KESIMPULAN STEP */}
+      {/* 7. KESIMPULAN STEP (SELALU TAMPIL DI BAGIAN BAWAH) */}
       <div
         style={{
           padding: '14px',

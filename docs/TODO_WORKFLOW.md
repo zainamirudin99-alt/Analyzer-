@@ -235,3 +235,9 @@ Dokumen ini memuat daftar tugas operasional dari Tahap 1 hingga Tahap 3 beserta 
 - [x] **T13.3**: Penambahan `orderedStepOutputs` (tabel Stata rapi `<= 94` karakter urut Step 1–9) pada `panel-accuracy-types.ts` & `panel-accuracy-interpretation.ts`, serta pembaruan tampilan Sub-Tab Output Stata Step 9 di `PanelAccuracyTab.tsx`.
 - [x] **T13.4**: Perombakan tata letak dan kelengkapan isi ekspor `panel-accuracy-export-pdf.ts`, `panel-accuracy-export-docx.ts`, dan `panel-accuracy-export-xlsx.ts` mencakup seluruh hasil Step 1–9, metrik Tahap 12, output tabel Stata berurutan, dan kode `.do`/`.R`/`.stan`.
 - [x] **T13.5**: Penambahan unit test Tahap 13 di `tests/unit/panel-accuracy-engine.test.ts` serta verifikasi `tsc --noEmit`, `vitest`, `next build`, audit kebersihan kode, dan 0 diff pada Option 1.
+
+---
+
+## Tahap 14: Tombol `Kode Stata` untuk Kode/Output/Interpretasi Step 1–8 (Kesimpulan Tetap di Bawah)
+- [x] **T14.1**: Pembaruan `src/components/PanelAccuracyStepStataPanel.tsx` untuk melipat bagian Kode, Output & Interpretasi Stata di balik tombol **`Kode Stata`** secara default pada Step 1–8 sambil menjaga bagian **Ringkasan Keputusan Step** tetap tampil di bawah.
+- [x] **T14.2**: Verifikasi build & tes (`tsc --noEmit`, `vitest`, `next build`) serta 0 diff Option 1.
