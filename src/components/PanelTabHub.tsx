@@ -80,13 +80,13 @@ export const PanelTabHub: React.FC = () => {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14.5px', fontWeight: 800, color: 'var(--text)' }}>
               <Activity size={18} color="var(--primary)" />
-              OPTION 2: ALL-SOURCE LATENT &amp; CONSENSUS ACCURACY ASSESSMENT
+              OPTION 2: MODEL PENGUKURAN LATEN &amp; AKURASI PANEL
             </div>
             <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--primary)' }}>
-              Evaluasi &amp; Pemeringkatan Akurasi Seluruh Variabel Panel (Tanpa Reference Terkunci)
+              Komparasi Bayesian Multi-Sumber Tanpa Reference Source (ISO 5725)
             </span>
             <span style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-              Menilai dan memeringkatkan seluruh sumber pengukuran emisi CO₂ secara setara memakai Bayesian Hierarchical Latent Model (Error SD, Reliabilitas R², Total RMSE), Leave-One-Out Consensus, Lin&apos;s CCC, Bland-Altman, dan Pair Fixed Effects.
+              Menilai dan memeringkatkan seluruh sumber pengukuran data panel secara setara tanpa variabel referensi terkunci — menguji Trueness (bias α), faktor skala (λ), presisi galat (σ_ε), Total Latent RMSE, Validasi LOSO, Lin&apos;s CCC, Audit Korelasi Galat, Pair Fixed Effects &amp; Driscoll-Kraay SE.
             </span>
           </button>
         </div>

@@ -191,3 +191,17 @@ Spesifikasi terkini untuk **Regresi Data Panel Stata → Option 2** (`PanelAccur
    - Step 7 memiliki 4 tombol interaktif (`Terapkan Rekomendasi`, `Jalankan Analisis Alternatif`, `Bandingkan Hasil` Sebelum vs Sesudah, `Kembali ke Pengaturan Sebelumnya`) beserta log **Audit Trail**.
    - Panel **Stata Command & Statistical Implementation** di seluruh Step 1–9 memiliki 6 bagian eksplisit: (1) Tujuan Analisis, (2) Konsep Statistik, (3) Stata Command (+ R & Stan), (4) Penjelasan Setiap Kode, (5) Output dan Cara Membaca, (6) Interpretasi Statistik.
 5. **16 Skenario Validasi Vitest (`O`)**: Mencakup $J=3,4,5$, balanced/unbalanced, missing, duplicate, outlier, scale mismatch, high-bias/low-var, low-bias/high-var, correlated errors, weak identification, non-convergence, small cluster, dan sensitivity rank flip.
+
+---
+
+## 14. Ekspansi Tahap 13: Penyempurnaan Penamaan Opsi C, Glosarium Singkatan per Step, & Ekspor Rapi Lengkap Step 1–9
+
+1. **Verifikasi & Penerapan Penamaan Opsi C (`PanelTabHub.tsx`)**:
+   - Memverifikasi keabsahan statistika Opsi C: metode inti pada Option 2 adalah *Bayesian Hierarchical Congeneric Latent Measurement Model* ($\theta_{it}$) yang menurunkan metrik akurasi pengukuran panel berbasis konsensus (*Trueness* $\alpha_j$, *Scale* $\lambda_j$, *Precision* $\sigma_{\varepsilon_j}$, *Total Latent RMSE*, Validasi LOSO, Pair Fixed Effects, & Driscoll-Kraay SE) tanpa sumber referensi terkunci (ISO 5725).
+   - Menetapkan penamaan kanonik paralel dengan Option 1 (`REGRESI DATA PANEL`): **`OPTION 2: MODEL PENGUKURAN LATEN & AKURASI PANEL`**, subjudul `Komparasi Bayesian Multi-Sumber Tanpa Reference Source (ISO 5725)`, serta deskripsi netral lintas domain (tanpa mengunci contoh emisi CO₂ semata).
+2. **Tombol Glosarium `Keterangan` di Sebelah Kanan Setiap Step (`panel-accuracy-glossary.ts` & `PanelAccuracyTab.tsx`)**:
+   - Menyediakan kamus singkatan per Step (`STEP_ACRONYM_GLOSSARY[1..9]`) yang mencakup `MCMC`, `R-hat`, `ESS`, `PPP`, `LOSO`, `MAE`, `RMSE`, `MSE`, `MBE`, `NMAE`, `CCC`, `LoA`, `CrI`, `Pair FE`, `AE`, `DK`, `AR(1)`, `CD`, `HC1`, `CLT`, `EDA`, `IQR`, `CV`, `SD`, `CC`, `Avail`, `G`, `T`, `J`, `ISO 5725`, `LOCO`, `.do`, `.R`, `.stan`, `PDF`, `DOCX`, `XLSX`, dan `CSV`.
+   - Menampilkan tombol **`Keterangan`** (`minHeight >= 44px`) di sisi kanan header setiap Step (1–9) yang membuka panel ringkas berisi **Singkatan**, **Kepanjangan**, dan **Arti & Fungsi pada Step Ini**.
+3. **Output Tabel Stata Terurut Step 1–9 & Ekspor Rapi PDF, Word (`.docx`), Excel (`.xlsx`)**:
+   - Memperluas `StataAccuracyOutputBundle` dengan `orderedStepOutputs` (9 blok output tabel Stata terformat `<= 94` karakter per baris, berurutan kronologis Step 1 hingga Step 9, bebas pemotongan kolom dan adaptif presisi desimal).
+   - Memperbarui generator PDF murni TS (`escapePdf` penuh Unicode→ASCII, header/footer bernomor halaman, garis pemisah rapi, tabel Step 1–9 lengkap, output Stata Step 1–9 tanpa `.slice(0, 102)`, dan Master `.do`), Word `.docx` (header tabel berarsir navy, padding sel, seluruh tabel Step 1–9, 8-poin *Why Best*, output Stata urut & Master `.do`), dan Excel `.xlsx` (9 worksheet berurutan `01_Ringkasan_Riset` s.d. `09_Kode_Stata_R_Stan` dengan lebar kolom terukur & `sanitizeSpreadsheetText`).

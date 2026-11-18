@@ -69,7 +69,117 @@ import {
   RecommendationStatusBadge,
   runIntelligentMeasurementSourceEngine
 } from '@/lib/panel-accuracy-intelligent-config';
+import { STEP_ACRONYM_GLOSSARY } from '@/lib/panel-accuracy-glossary';
 import { buildAllStepStataDocumentation } from '@/lib/panel-accuracy-step-stata';
+
+const StepGlossaryButton: React.FC<{
+  stepId: number;
+  isOpen: boolean;
+  onToggle: () => void;
+}> = ({ stepId, isOpen, onToggle }) => {
+  const items = STEP_ACRONYM_GLOSSARY[stepId] || [];
+  if (items.length === 0) return null;
+  return (
+    <button
+      type="button"
+      className={isOpen ? 'btn btn-primary' : 'btn btn-outline'}
+      aria-expanded={isOpen}
+      aria-label={`Keterangan singkatan Step ${stepId}`}
+      onClick={onToggle}
+      style={{
+        minHeight: '44px',
+        padding: '6px 12px',
+        fontSize: '12.5px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+        whiteSpace: 'nowrap'
+      }}
+    >
+      <Info size={15} />
+      <span>Keterangan</span>
+      <span
+        style={{
+          fontSize: '11px',
+          fontWeight: 700,
+          padding: '1px 6px',
+          borderRadius: '999px',
+          background: isOpen ? 'rgba(255,255,255,0.22)' : 'var(--surface-muted)',
+          color: isOpen ? '#ffffff' : 'var(--text-secondary)'
+        }}
+      >
+        {items.length}
+      </span>
+    </button>
+  );
+};
+
+const StepGlossaryDrawer: React.FC<{
+  stepId: number;
+  isOpen: boolean;
+}> = ({ stepId, isOpen }) => {
+  const items = STEP_ACRONYM_GLOSSARY[stepId] || [];
+  if (!isOpen || items.length === 0) return null;
+  return (
+    <div
+      style={{
+        padding: '14px',
+        borderRadius: 'var(--radius-sm)',
+        border: '1px solid var(--primary)',
+        background: 'var(--info-bg)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px'
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 800, color: 'var(--primary)' }}>
+        <BookOpen size={15} />
+        Keterangan Singkatan &amp; Istilah Teknis pada Step {stepId}
+      </div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+          gap: '8px'
+        }}
+      >
+        {items.map(it => (
+          <div
+            key={it.term}
+            style={{
+              padding: '10px 12px',
+              borderRadius: '8px',
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <code
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 800,
+                  padding: '2px 7px',
+                  borderRadius: '6px',
+                  background: 'var(--surface-muted)',
+                  color: 'var(--primary)'
+                }}
+              >
+                {it.term}
+              </code>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text)' }}>{it.fullName}</span>
+            </div>
+            <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+              {it.meaning}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 const ACCURACY_STEPS = [
   { id: 1, short: '1. Upload', title: 'Step 1 — Data Upload' },
@@ -333,6 +443,9 @@ export const PanelAccuracyTab: React.FC = () => {
   const [step2ConfigNotice, setStep2ConfigNotice] = useState<string | null>(null);
   const [show14PointAudit, setShow14PointAudit] = useState<boolean>(false);
   const [manualConfigActive, setManualConfigActive] = useState<boolean>(false);
+  const [openGlossaryStep, setOpenGlossaryStep] = useState<number | null>(null);
+  const toggleGlossary = (stepId: number) =>
+    setOpenGlossaryStep(prev => (prev === stepId ? null : stepId));
 
   const activeStepGuide = useMemo(
     () => PANEL_ACCURACY_STEP_GUIDES.find(g => g.id === currentStep) || PANEL_ACCURACY_STEP_GUIDES[0],
@@ -1083,8 +1196,10 @@ export const PanelAccuracyTab: React.FC = () => {
                     {tab === 'paste' && <><FileText size={14} style={{ marginRight: '6px' }} />Paste Data</>}
                   </button>
                 ))}
+                <StepGlossaryButton stepId={1} isOpen={openGlossaryStep === 1} onToggle={() => toggleGlossary(1)} />
               </div>
             </div>
+            <StepGlossaryDrawer stepId={1} isOpen={openGlossaryStep === 1} />
 
             {sourceTab === 'upload' && (
               <div style={{ padding: '20px', border: '1.5px dashed var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--surface-muted)', textAlign: 'center' }}>
@@ -1407,8 +1522,10 @@ export const PanelAccuracyTab: React.FC = () => {
                 >
                   <Plus size={14} style={{ marginRight: '6px' }} /> Tambah Sumber
                 </button>
+                <StepGlossaryButton stepId={2} isOpen={openGlossaryStep === 2} onToggle={() => toggleGlossary(2)} />
               </div>
             </div>
+            <StepGlossaryDrawer stepId={2} isOpen={openGlossaryStep === 2} />
 
             {step2ConfigNotice && (
               <div style={{ padding: '10px 14px', borderRadius: 'var(--radius-sm)', background: 'var(--info-bg)', border: '1px solid var(--primary)', fontSize: '12.5px', fontWeight: 600 }}>
@@ -1716,14 +1833,18 @@ export const PanelAccuracyTab: React.FC = () => {
         {/* STEP 3: DATA QUALITY AUDIT & EXPLICIT PREPROCESSING */}
         {currentStep === 3 && (
           <>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
-                Step 3 — Audit Kualitas Data, Identifiabilitas Laten &amp; Prapemrosesan Eksplisit
-              </h3>
-              <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                Sistem memeriksa 10 indikator kualitas data panel dan kecukupan identifikasi model laten untuk seluruh J = {sources.length} sumber secara setara. Tidak ada transformasi otomatis tanpa persetujuan Anda.
-              </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ flex: '1 1 320px' }}>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
+                  Step 3 — Audit Kualitas Data, Identifiabilitas Laten &amp; Prapemrosesan Eksplisit
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Sistem memeriksa 10 indikator kualitas data panel dan kecukupan identifikasi model laten untuk seluruh J = {sources.length} sumber secara setara. Tidak ada transformasi otomatis tanpa persetujuan Anda.
+                </p>
+              </div>
+              <StepGlossaryButton stepId={3} isOpen={openGlossaryStep === 3} onToggle={() => toggleGlossary(3)} />
             </div>
+            <StepGlossaryDrawer stepId={3} isOpen={openGlossaryStep === 3} />
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: '10px' }}>
               {qualityReport.checks.map(chk => (
@@ -1924,14 +2045,18 @@ export const PanelAccuracyTab: React.FC = () => {
         {/* STEP 4: EXPLORATORY DATA ANALYSIS */}
         {currentStep === 4 && edaResult && (
           <>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
-                Step 4 — Exploratory Data Analysis &amp; Matriks Korelasi Panel
-              </h3>
-              <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                Statistik deskriptif {sources.length} sumber serta korelasi Overall Pearson, Spearman, Within-City Demeaned, dan First-Difference.
-              </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ flex: '1 1 320px' }}>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
+                  Step 4 — Exploratory Data Analysis &amp; Matriks Korelasi Panel
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Statistik deskriptif {sources.length} sumber serta korelasi Overall Pearson, Spearman, Within-City Demeaned, dan First-Difference.
+                </p>
+              </div>
+              <StepGlossaryButton stepId={4} isOpen={openGlossaryStep === 4} onToggle={() => toggleGlossary(4)} />
             </div>
+            <StepGlossaryDrawer stepId={4} isOpen={openGlossaryStep === 4} />
 
             <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
@@ -2012,14 +2137,18 @@ export const PanelAccuracyTab: React.FC = () => {
         {/* STEP 5: BAYESIAN HIERARCHICAL LATENT MODEL & AGREEMENT ASSESSMENT */}
         {currentStep === 5 && activeResult && (
           <>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
-                Step 5 — Bayesian Hierarchical Latent Model &amp; Agreement Assessment (All J = {activeResult.metrics.length} Sources)
-              </h3>
-              <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                Seluruh <strong>J = {activeResult.metrics.length} sumber dievaluasi setara</strong> ({activeResult.latentModel.nChains} rantai MCMC × {activeResult.latentModel.iterationsPerChain} iterasi | max R-hat = {activeResult.latentModel.maxRhat.toFixed(4)} | min ESS = {activeResult.latentModel.minEss}) untuk mengungkap Total Latent RMSE, Error SD (σ_ε), Reliabilitas R², Bias α, dan Posterior Probabilitas Menjadi Terbaik.
-              </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ flex: '1 1 320px' }}>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
+                  Step 5 — Bayesian Hierarchical Latent Model &amp; Agreement Assessment (All J = {activeResult.metrics.length} Sources)
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Seluruh <strong>J = {activeResult.metrics.length} sumber dievaluasi setara</strong> ({activeResult.latentModel.nChains} rantai MCMC × {activeResult.latentModel.iterationsPerChain} iterasi | max R-hat = {activeResult.latentModel.maxRhat.toFixed(4)} | min ESS = {activeResult.latentModel.minEss}) untuk mengungkap Total Latent RMSE, Error SD (σ_ε), Reliabilitas R², Bias α, dan Posterior Probabilitas Menjadi Terbaik.
+                </p>
+              </div>
+              <StepGlossaryButton stepId={5} isOpen={openGlossaryStep === 5} onToggle={() => toggleGlossary(5)} />
             </div>
+            <StepGlossaryDrawer stepId={5} isOpen={openGlossaryStep === 5} />
 
             {/* Latent Reliability & Total Error Table (ALL J Sources) */}
             <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
@@ -2162,7 +2291,7 @@ export const PanelAccuracyTab: React.FC = () => {
         {currentStep === 6 && activeResult && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
-              <div>
+              <div style={{ flex: '1 1 320px' }}>
                 <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
                   Step 6 — Komparasi Langsung Akurasi Sumber, Validasi LOSO &amp; Model Ekonometrika Pair FE
                 </h3>
@@ -2170,17 +2299,21 @@ export const PanelAccuracyTab: React.FC = () => {
                   Mengadu seluruh sumber secara langsung berdasarkan Total Latent RMSE, Dekomposisi Loss (Bias, Skala, Presisi), Validasi Prediktif LOSO, serta model komplementer Pair Fixed Effects (Cluster-Robust, Driscoll-Kraay, &amp; Wild Bootstrap).
                 </p>
               </div>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={isRunningFit}
-                onClick={() => handleRunServerPipeline({ bootstrapReplications: 999, mcmcIterations: 450 })}
-                style={{ minHeight: '44px', fontSize: '13px' }}
-              >
-                <Play size={15} style={{ marginRight: '6px' }} />
-                {isRunningFit ? 'Menjalankan 999 Wild Bootstrap...' : 'Verifikasi Penuh Server (999 Replikasi Bootstrap)'}
-              </button>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={isRunningFit}
+                  onClick={() => handleRunServerPipeline({ bootstrapReplications: 999, mcmcIterations: 450 })}
+                  style={{ minHeight: '44px', fontSize: '13px' }}
+                >
+                  <Play size={15} style={{ marginRight: '6px' }} />
+                  {isRunningFit ? 'Menjalankan 999 Wild Bootstrap...' : 'Verifikasi Penuh Server (999 Replikasi Bootstrap)'}
+                </button>
+                <StepGlossaryButton stepId={6} isOpen={openGlossaryStep === 6} onToggle={() => toggleGlossary(6)} />
+              </div>
             </div>
+            <StepGlossaryDrawer stepId={6} isOpen={openGlossaryStep === 6} />
 
             <BootstrapVerificationCard activeResult={activeResult} feedback={verificationFeedback} />
 
@@ -2374,7 +2507,7 @@ export const PanelAccuracyTab: React.FC = () => {
         {currentStep === 7 && activeResult && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
-              <div>
+              <div style={{ flex: '1 1 320px' }}>
                 <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
                   Step 7 — Diagnostik Statistik, Sensitivitas Outlier &amp; Keterbatasan Inferensi
                 </h3>
@@ -2382,19 +2515,23 @@ export const PanelAccuracyTab: React.FC = () => {
                   Pemeriksaan heteroskedastisitas antarsumber, korelasi serial dalam-kota, ketergantungan lintas-kota (Pesaran CD), jumlah klaster, sensitivitas outlier, serta rekomendasi optimasi inferensi.
                 </p>
               </div>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={isRunningFit}
-                onClick={() => handleRunServerPipeline({ bootstrapReplications: 1999, mcmcIterations: 800 })}
-                style={{ minHeight: '44px', fontSize: '13px' }}
-              >
-                <Play size={15} style={{ marginRight: '6px' }} />
-                {isRunningFit
-                  ? 'Menjalankan 1.999 Bootstrap + 800 MCMC...'
-                  : 'Verifikasi Presisi Penuh (1.999 Bootstrap + 800 MCMC)'}
-              </button>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={isRunningFit}
+                  onClick={() => handleRunServerPipeline({ bootstrapReplications: 1999, mcmcIterations: 800 })}
+                  style={{ minHeight: '44px', fontSize: '13px' }}
+                >
+                  <Play size={15} style={{ marginRight: '6px' }} />
+                  {isRunningFit
+                    ? 'Menjalankan 1.999 Bootstrap + 800 MCMC...'
+                    : 'Verifikasi Presisi Penuh (1.999 Bootstrap + 800 MCMC)'}
+                </button>
+                <StepGlossaryButton stepId={7} isOpen={openGlossaryStep === 7} onToggle={() => toggleGlossary(7)} />
+              </div>
             </div>
+            <StepGlossaryDrawer stepId={7} isOpen={openGlossaryStep === 7} />
 
             <BootstrapVerificationCard activeResult={activeResult} feedback={verificationFeedback} />
 
@@ -2630,14 +2767,18 @@ export const PanelAccuracyTab: React.FC = () => {
         {/* STEP 8: EVALUASI AKHIR & PEMERINGKATAN SELURUH SUMBER (ALL J SOURCES) */}
         {currentStep === 8 && activeResult && (
           <>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
-                Step 8 — Evaluasi Akhir &amp; Pemeringkatan Seluruh Sumber (All J = {activeResult.ranking.ranks.length} Variables)
-              </h3>
-              <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                Diurutkan setara tanpa variabel referensi terkunci berdasarkan <strong>Total Latent RMSE</strong> &amp; <strong>Reliabilitas (R²)</strong>, diverifikasi dengan <strong>Posterior Probability of Being Best</strong> dan uji <strong>Pair Fixed Effects</strong>.
-              </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ flex: '1 1 320px' }}>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
+                  Step 8 — Evaluasi Akhir &amp; Pemeringkatan Seluruh Sumber (All J = {activeResult.ranking.ranks.length} Variables)
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Diurutkan setara tanpa variabel referensi terkunci berdasarkan <strong>Total Latent RMSE</strong> &amp; <strong>Reliabilitas (R²)</strong>, diverifikasi dengan <strong>Posterior Probability of Being Best</strong> dan uji <strong>Pair Fixed Effects</strong>.
+                </p>
+              </div>
+              <StepGlossaryButton stepId={8} isOpen={openGlossaryStep === 8} onToggle={() => toggleGlossary(8)} />
             </div>
+            <StepGlossaryDrawer stepId={8} isOpen={openGlossaryStep === 8} />
 
             {/* Ranking Decision Banner */}
             <div
@@ -2845,8 +2986,10 @@ export const PanelAccuracyTab: React.FC = () => {
                 <button type="button" className="btn btn-outline" style={{ minHeight: '42px', fontSize: '12.5px' }} onClick={() => window.print()}>
                   <Printer size={14} style={{ marginRight: '5px' }} /> Print
                 </button>
+                <StepGlossaryButton stepId={9} isOpen={openGlossaryStep === 9} onToggle={() => toggleGlossary(9)} />
               </div>
             </div>
+            <StepGlossaryDrawer stepId={9} isOpen={openGlossaryStep === 9} />
 
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', borderBottom: '1px solid var(--border)', paddingBottom: '10px' }}>
               {([
@@ -2878,30 +3021,82 @@ export const PanelAccuracyTab: React.FC = () => {
 
             {resultSubTab === 'stata' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {[
-                  activeResult.stataOutput.headerConsoleText,
-                  activeResult.stataOutput.accuracyMetricsTableText,
-                  activeResult.stataOutput.cccAndBlandAltmanTableText,
-                  activeResult.stataOutput.pairFixedEffectsTableText,
-                  activeResult.stataOutput.pairwiseContrastsTableText,
-                  activeResult.stataOutput.diagnosticsAndRankingText
-                ].map((blk, i) => (
-                  <pre
-                    key={i}
-                    style={{
-                      margin: 0,
-                      padding: '14px',
-                      borderRadius: 'var(--radius-sm)',
-                      background: '#0b1220',
-                      color: '#e2e8f0',
-                      fontSize: '12px',
-                      overflowX: 'auto',
-                      lineHeight: 1.5
-                    }}
-                  >
-                    {blk}
-                  </pre>
-                ))}
+                {activeResult.stataOutput.orderedStepOutputs && activeResult.stataOutput.orderedStepOutputs.length > 0 ? (
+                  activeResult.stataOutput.orderedStepOutputs.map(st => (
+                    <div
+                      key={st.stepId}
+                      style={{
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-sm)',
+                        overflow: 'hidden'
+                      }}
+                    >
+                      <div
+                        style={{
+                          padding: '8px 14px',
+                          background: 'var(--surface-muted)',
+                          borderBottom: '1px solid var(--border)',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                          gap: '8px'
+                        }}
+                      >
+                        <strong style={{ fontSize: '12.5px', color: 'var(--text)' }}>{st.stepTitle}</strong>
+                        <code
+                          style={{
+                            fontSize: '11.5px',
+                            padding: '2px 8px',
+                            borderRadius: '6px',
+                            background: 'var(--info-bg)',
+                            color: 'var(--primary)'
+                          }}
+                        >
+                          . {st.stataCommand}
+                        </code>
+                      </div>
+                      <pre
+                        style={{
+                          margin: 0,
+                          padding: '14px',
+                          background: '#0b1220',
+                          color: '#e2e8f0',
+                          fontSize: '12px',
+                          overflowX: 'auto',
+                          lineHeight: 1.5
+                        }}
+                      >
+                        {st.outputTableText}
+                      </pre>
+                    </div>
+                  ))
+                ) : (
+                  [
+                    activeResult.stataOutput.headerConsoleText,
+                    activeResult.stataOutput.accuracyMetricsTableText,
+                    activeResult.stataOutput.cccAndBlandAltmanTableText,
+                    activeResult.stataOutput.pairFixedEffectsTableText,
+                    activeResult.stataOutput.pairwiseContrastsTableText,
+                    activeResult.stataOutput.diagnosticsAndRankingText
+                  ].map((blk, i) => (
+                    <pre
+                      key={i}
+                      style={{
+                        margin: 0,
+                        padding: '14px',
+                        borderRadius: 'var(--radius-sm)',
+                        background: '#0b1220',
+                        color: '#e2e8f0',
+                        fontSize: '12px',
+                        overflowX: 'auto',
+                        lineHeight: 1.5
+                      }}
+                    >
+                      {blk}
+                    </pre>
+                  ))
+                )}
               </div>
             )}
 

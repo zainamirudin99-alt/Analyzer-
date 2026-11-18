@@ -1,13 +1,15 @@
 import { describe, it, expect } from 'vitest';
+import * as XLSX from 'xlsx';
 import { computeAccuracyEDA } from '../../src/lib/panel-accuracy-correlation';
 import { computePanelAccuracyDiagnostics } from '../../src/lib/panel-accuracy-diagnostics';
 import { generatePanelAccuracyDocx } from '../../src/lib/panel-accuracy-export-docx';
-import { generatePanelAccuracyPDF } from '../../src/lib/panel-accuracy-export-pdf';
+import { escapePdfAscii, generatePanelAccuracyPDF } from '../../src/lib/panel-accuracy-export-pdf';
 import {
   generatePanelAccuracyCSV,
   generatePanelAccuracyXLSX
 } from '../../src/lib/panel-accuracy-export-xlsx';
 import { fitPairFixedEffectsModel } from '../../src/lib/panel-accuracy-fixed-effects';
+import { STEP_ACRONYM_GLOSSARY } from '../../src/lib/panel-accuracy-glossary';
 import { runIntelligentMeasurementSourceEngine } from '../../src/lib/panel-accuracy-intelligent-config';
 import { fitBayesianLatentMeasurementModel } from '../../src/lib/panel-accuracy-latent';
 import { computeAllSourceAccuracyMetrics } from '../../src/lib/panel-accuracy-metrics';
@@ -519,5 +521,62 @@ describe('Gerbang Verifikasi — Opsi B Reference-Free All-Source Latent & Conse
       bootstrapReplications: 299
     });
     expect(weakRes.latentModel.weakIdentificationSources.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('11. Tahap 13: Glossary Keterangan per Step (MCMC, LOSO, dll.), ordered Stata Step 1-9 <= 96 col, & complete PDF/DOCX/XLSX exports', async () => {
+    // 1. Glossary per step (Steps 1-9) complete & explicitly covers MCMC + key acronyms
+    for (let s = 1; s <= 9; s++) {
+      const items = STEP_ACRONYM_GLOSSARY[s];
+      expect(items).toBeDefined();
+      expect(items.length).toBeGreaterThanOrEqual(4);
+      items.forEach(it => {
+        expect(it.term.length).toBeGreaterThan(0);
+        expect(it.fullName.length).toBeGreaterThan(0);
+        expect(it.meaning.length).toBeGreaterThan(10);
+      });
+    }
+    expect(STEP_ACRONYM_GLOSSARY[5].some(i => i.term === 'MCMC')).toBe(true);
+    expect(STEP_ACRONYM_GLOSSARY[5].some(i => i.term === 'R-hat')).toBe(true);
+    expect(STEP_ACRONYM_GLOSSARY[6].some(i => i.term === 'LOSO')).toBe(true);
+
+    // 2. Ordered Step 1-9 Stata outputs strictly chronological & within safe 96-column width
+    const preset = generateMultiSourceCO2PresetDataset();
+    const res = executePanelAccuracyPipeline({ dataset: preset, bootstrapReplications: 499 });
+    const ordered = res.stataOutput.orderedStepOutputs;
+    expect(ordered).toBeDefined();
+    expect(ordered).toHaveLength(9);
+    expect(ordered!.map(o => o.stepId)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    ordered!.forEach(st => {
+      const maxLen = Math.max(...st.outputTableText.split('\n').map(l => l.length));
+      expect(maxLen).toBeLessThanOrEqual(96);
+    });
+
+    // 3. Complete neat PDF, DOCX, XLSX exports
+    expect(escapePdfAscii('σ_ε λ θ α ≥ ≤ ≠ ²')).toBe('sigma_eps lambda theta alpha >= <= != ^2');
+    const pdfBuf = generatePanelAccuracyPDF(res, 'panel_stage13_test.xlsx');
+    const pdfStr = pdfBuf.toString('latin1');
+    expect(pdfBuf.subarray(0, 5).toString('ascii')).toBe('%PDF-');
+    expect(pdfStr).toContain('MODEL PENGUKURAN LATEN & AKURASI PANEL');
+    expect(pdfStr).toContain('Halaman 1 dari');
+    expect(pdfStr).toContain('Step 1');
+    expect(pdfStr).toContain('Step 9');
+
+    const docxBuf = await generatePanelAccuracyDocx(res, 'panel_stage13_test.xlsx');
+    expect(docxBuf.subarray(0, 2).toString('ascii')).toBe('PK');
+    expect(docxBuf.length).toBeGreaterThan(5000);
+
+    const xlsxBuf = generatePanelAccuracyXLSX(res, 'panel_stage13_test.xlsx');
+    const wb = XLSX.read(xlsxBuf, { type: 'buffer' });
+    expect(wb.SheetNames).toEqual([
+      '01_Ringkasan_Riset',
+      '02_Audit_Kualitas_Step1_3',
+      '03_EDA_Korelasi_Step4',
+      '04_Model_Laten_Step5',
+      '05_Akurasi_PairFE_Step6',
+      '06_Diagnostik_Step7',
+      '07_Ranking_Step8',
+      '08_Output_Stata_Step1_9',
+      '09_Kode_Stata_R_Stan'
+    ]);
   });
 });

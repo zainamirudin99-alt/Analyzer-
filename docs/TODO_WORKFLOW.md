@@ -226,3 +226,12 @@ Dokumen ini memuat daftar tugas operasional dari Tahap 1 hingga Tahap 3 beserta 
 - [x] **T12.3**: Upgrade `panel-accuracy-step-stata.ts` & `PanelAccuracyStepStataPanel.tsx` menjadi 6 bagian wajib (termasuk *2. Konsep Statistik*) serta penyelarasan laporan akademik 13-bagian & ekspor `.stan`/`.do`/`.R`/`.pdf`/`.docx`/`.xlsx`.
 - [x] **T12.4**: Upgrade UI `PanelAccuracyCharts.tsx` (MCMC Trace Plot & Loss Decomposition) dan `PanelAccuracyTab.tsx` (Step 3/7 Before-vs-After Ranking Comparison, 4 tombol Advisor + Audit Trail, Step 8 *Mengapa Sumber Ini Terbaik?*, Step 9 ekspor `.stan`).
 - [x] **T12.5**: Implementasi 16 skenario validasi Vitest di `tests/unit/panel-accuracy-engine.test.ts` serta verifikasi penuh (`tsc --noEmit`, `vitest`, `next build`, 0 diff Option 1).
+
+---
+
+## Tahap 13: Penamaan Opsi C, Glosarium Singkatan per Step, Output Stata Urut Step 1–9, & Ekspor Rapi PDF/DOCX/XLSX
+- [x] **T13.1**: Verifikasi & penerapan penamaan Opsi C yang disempurnakan (`OPTION 2: MODEL PENGUKURAN LATEN & AKURASI PANEL`) pada `src/components/PanelTabHub.tsx` tanpa menyentuh Option 1.
+- [x] **T13.2**: Pembuatan modul `src/lib/panel-accuracy-glossary.ts` (`STEP_ACRONYM_GLOSSARY[1..9]`) dan penambahan tombol **`Keterangan`** di sisi kanan header setiap Step 1–9 pada `src/components/PanelAccuracyTab.tsx`.
+- [x] **T13.3**: Penambahan `orderedStepOutputs` (tabel Stata rapi `<= 94` karakter urut Step 1–9) pada `panel-accuracy-types.ts` & `panel-accuracy-interpretation.ts`, serta pembaruan tampilan Sub-Tab Output Stata Step 9 di `PanelAccuracyTab.tsx`.
+- [x] **T13.4**: Perombakan tata letak dan kelengkapan isi ekspor `panel-accuracy-export-pdf.ts`, `panel-accuracy-export-docx.ts`, dan `panel-accuracy-export-xlsx.ts` mencakup seluruh hasil Step 1–9, metrik Tahap 12, output tabel Stata berurutan, dan kode `.do`/`.R`/`.stan`.
+- [x] **T13.5**: Penambahan unit test Tahap 13 di `tests/unit/panel-accuracy-engine.test.ts` serta verifikasi `tsc --noEmit`, `vitest`, `next build`, audit kebersihan kode, dan 0 diff pada Option 1.

@@ -599,6 +599,13 @@ export interface PreprocessingRecommendationBundle {
   summaryNote: string;
 }
 
+export interface StataOrderedStepOutput {
+  stepId: number;
+  stepTitle: string;
+  stataCommand: string;
+  outputTableText: string;
+}
+
 export interface StataAccuracyOutputBundle {
   headerConsoleText: string;
   accuracyMetricsTableText: string;
@@ -606,6 +613,7 @@ export interface StataAccuracyOutputBundle {
   pairFixedEffectsTableText: string;
   pairwiseContrastsTableText: string;
   diagnosticsAndRankingText: string;
+  orderedStepOutputs?: StataOrderedStepOutput[];
 }
 
 export interface AccuracyAcademicInterpretations {

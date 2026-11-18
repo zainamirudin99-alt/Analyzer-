@@ -1,11 +1,20 @@
 // ============================================================
-// Reference-Free All-Source Latent & Consensus Assessment
-// Excel (.xlsx) & CSV Export
+// Model Pengukuran Laten & Akurasi Panel (ISO 5725)
+// Generator Workbook Excel (.xlsx 9-Sheet Terurut) & CSV
 // ============================================================
 
 import * as XLSX from 'xlsx';
 import { PanelAccuracyFitResult } from './panel-accuracy-types';
 import { sanitizeSpreadsheetText } from './panel-accuracy-validation';
+
+const roundSmart = (n: number | null | undefined): number | string => {
+  if (n === null || n === undefined || !Number.isFinite(n)) return '-';
+  const abs = Math.abs(n);
+  if (abs === 0) return 0;
+  if (abs < 1) return Number(n.toFixed(6));
+  if (abs < 100) return Number(n.toFixed(4));
+  return Number(n.toFixed(2));
+};
 
 function fitCols(rows: any[][]): XLSX.ColInfo[] {
   if (!rows || rows.length === 0) return [];
@@ -14,7 +23,7 @@ function fitCols(rows: any[][]): XLSX.ColInfo[] {
   rows.forEach(r => {
     for (let i = 0; i < colCount; i++) {
       const len = String(r[i] ?? '').length;
-      if (len + 3 > widths[i]) widths[i] = Math.min(58, len + 3);
+      if (len + 3 > widths[i]) widths[i] = Math.min(88, len + 3);
     }
   });
   return widths.map(wch => ({ wch }));
@@ -35,147 +44,338 @@ export function generatePanelAccuracyXLSX(
 ): Buffer {
   const wb = XLSX.utils.book_new();
 
-  addSheet(wb, 'Ringkasan_Riset', [
-    ['LAPORAN REFERENCE-FREE ALL-SOURCE LATENT & CONSENSUS ACCURACY ASSESSMENT'],
+  // Sheet 1: Ringkasan Riset
+  addSheet(wb, '01_Ringkasan_Riset', [
+    ['LAPORAN MODEL PENGUKURAN LATEN & AKURASI PANEL (ISO 5725)'],
     ['Dataset', datasetName],
     ['Mesin Komputasi', result.engineAttribution],
     ['Sumber Dievaluasi (J)', result.sources.map(s => `${s.name} (${s.label})`).join(', ')],
     ['Pasangan Complete-Case / Raw', `${result.datasetMeta.nCompletePairs} / ${result.datasetMeta.nObsRaw}`],
-    ['Jumlah Kota (G) / Tahun (T)', `${result.datasetMeta.nCities} / ${result.datasetMeta.nYears}`],
-    ['MCMC Max R-hat / Min ESS', `${result.latentModel.maxRhat.toFixed(4)} / ${result.latentModel.minEss}`],
-    ['Status Keputusan Ranking', result.ranking.conclusivenessStatus],
-    ['Sumber Paling Akurat (#1)', result.ranking.bestSourceLabel || 'Belum Dapat Ditetapkan (Inkonklusif)'],
+    ['Jumlah Entitas (G) / Periode (T)', `${result.datasetMeta.nCities} / ${result.datasetMeta.nYears}`],
+    ['MCMC Max R-hat / Min ESS / PPP', `${result.latentModel.maxRhat.toFixed(4)} / ${result.latentModel.minEss} / ${result.latentModel.posteriorPredictivePValue.toFixed(3)}`],
+    ['Status Keputusan Kanonik', result.ranking.canonicalStatus],
+    ['Sumber Paling Akurat (#1)', result.ranking.bestSourceLabel || result.ranking.bestCandidateLabel || 'Belum Dapat Ditetapkan (Inkonklusif)'],
     [],
     ['INTERPRETASI AKADEMIS & KESIMPULAN'],
-    ['1. Identifikasi Model Laten', result.interpretations.referenceValidityInterpretation],
-    ['2. EDA & Korelasi Panel', result.interpretations.edaAndCorrelationInterpretation],
-    ['3. Model Laten & Agreement', result.interpretations.accuracyAndAgreementInterpretation],
-    ['4. Pair Fixed Effects', result.interpretations.pairFixedEffectsInterpretation],
-    ['5. Diagnostik & Konvergensi', result.interpretations.diagnosticsInterpretation],
-    ['6. Keputusan Pemeringkatan', result.interpretations.rankingDecisionInterpretation],
-    ['7. Kesimpulan Akhir', result.interpretations.finalConclusion]
+    ['1. Identifikasi Model Laten (Step 1-3)', result.interpretations.referenceValidityInterpretation],
+    ['2. EDA & Korelasi Panel (Step 4)', result.interpretations.edaAndCorrelationInterpretation],
+    ['3. Model Laten & LOSO (Step 5-6)', result.interpretations.accuracyAndAgreementInterpretation],
+    ['4. Pair Fixed Effects (Step 6)', result.interpretations.pairFixedEffectsInterpretation],
+    ['5. Diagnostik & Konvergensi (Step 7)', result.interpretations.diagnosticsInterpretation],
+    ['6. Keputusan Pemeringkatan (Step 8)', result.interpretations.rankingDecisionInterpretation],
+    ['7. Kesimpulan Akhir', result.interpretations.finalConclusion],
+    [],
+    ['KETERBATASAN PENELITIAN & EPISTEMOLOGIS'],
+    ...result.interpretations.researchLimitations.map((lim, i) => [`Batasan ${i + 1}`, lim])
   ]);
 
-  addSheet(wb, 'Latent_dan_Akurasi', [
+  // Sheet 2: Audit Data Step 1-3
+  addSheet(wb, '02_Audit_Kualitas_Step1_3', [
+    ['KONFIGURASI PRAPEMROSESAN EKSPLISIT (STEP 3)'],
+    ['Drop Duplikat Entitas-Waktu', result.preprocessing.dropDuplicateCityYear ? 'Ya' : 'Tidak'],
+    ['Log1p Transform', result.preprocessing.applyLog1p ? 'Ya' : 'Tidak'],
+    ['Winsorization Aktif', result.preprocessing.applyWinsorize ? `Ya (${(result.preprocessing.winsorQuantile * 100).toFixed(1)}%)` : 'Tidak'],
+    ['Penyelarasan Multiplier Satuan', result.preprocessing.applyUnitMultiplier ? 'Ya' : 'Tidak'],
+    [],
+    ['KELENGKAPAN PER SUMBER (STEP 2)'],
+    ['Source ID', 'Nama Sumber', 'Unit', 'Available-Case N', 'Missing N', 'Zero Variance?'],
+    ...result.sources.map(s => [
+      s.name,
+      s.label,
+      s.unit || '-',
+      result.qualityReport.availablePairsBySource[s.id] ?? result.datasetMeta.nCompletePairs,
+      result.qualityReport.missingBySource[s.id] ?? 0,
+      result.qualityReport.latentAudit.hasZeroVarianceSources.includes(s.id) ? 'YA' : 'TIDAK'
+    ]),
+    [],
+    ['10 INDIKATOR AUDIT KUALITAS DATA'],
+    ['Indikator', 'Tingkat', 'Jumlah', 'Ringkasan', 'Rekomendasi'],
+    ...result.qualityReport.checks.map(chk => [
+      chk.title,
+      chk.severity.toUpperCase(),
+      chk.count,
+      chk.message,
+      chk.recommendation || '-'
+    ])
+  ]);
+
+  // Sheet 3: EDA & Korelasi Panel Step 4
+  addSheet(wb, '03_EDA_Korelasi_Step4', [
+    ['STATISTIK DESKRIPTIF EKSPLORATIF (STEP 4)'],
+    ['Sumber', 'Peran', 'Unit', 'N', 'Missing', 'Mean', 'SD', 'Median', 'IQR', 'Min', 'Max', 'CV (%)', 'Skewness', 'Kurtosis'],
+    ...result.eda.descriptives.map(d => [
+      d.sourceLabel,
+      d.role,
+      d.unit || '-',
+      d.n,
+      d.missing,
+      roundSmart(d.mean),
+      roundSmart(d.sd),
+      roundSmart(d.median),
+      roundSmart(d.iqr),
+      roundSmart(d.min),
+      roundSmart(d.max),
+      Number(d.cv.toFixed(2)),
+      Number(d.skewness.toFixed(4)),
+      Number(d.kurtosisExcess.toFixed(4))
+    ]),
+    [],
+    ['MATRIKS KORELASI PEARSON OVERALL'],
+    ['Sumber', ...result.eda.sourceLabels],
+    ...result.eda.overallPearson.map((row, i) => [result.eda.sourceLabels[i], ...row.map(v => Number(v.toFixed(4)))]),
+    [],
+    ['MATRIKS KORELASI WITHIN-ENTITY (DEMEANED)'],
+    ['Sumber', ...result.eda.sourceLabels],
+    ...result.eda.withinCityPearson.map((row, i) => [result.eda.sourceLabels[i], ...row.map(v => Number(v.toFixed(4)))]),
+    [],
+    ['MATRIKS KORELASI FIRST-DIFFERENCE (DELTA X)'],
+    ['Sumber', ...result.eda.sourceLabels],
+    ...result.eda.firstDiffPearson.map((row, i) => [result.eda.sourceLabels[i], ...row.map(v => Number(v.toFixed(4)))])
+  ]);
+
+  // Sheet 4: Model Laten Step 5
+  addSheet(wb, '04_Model_Laten_Step5', [
+    ['ESTIMASI PARAMETER MODEL HIERARKIS LATEN BAYESIAN (STEP 5)'],
     [
       'Source ID',
       'Nama Sumber',
-      'Total Latent RMSE',
+      'Bias Alpha (α)',
+      'Alpha CrI 95% Low',
+      'Alpha CrI 95% High',
+      'Loading Lambda (λ)',
+      'Lambda CrI Low',
+      'Lambda CrI High',
       'Error SD (σ_ε)',
+      'Scale Distortion',
       'Reliabilitas R²',
-      'Intercept Bias (α)',
-      'Loading (λ)',
-      'Posterior Prob Best (%)',
-      'MCMC R-hat',
-      'N (Complete-Case)',
-      'N (Available-Case)',
+      'SNR',
+      'Posterior Exp Loss',
+      'Expected Rank',
+      'Ranking Stability (%)',
+      'MCMC ESS',
+      'MCMC R-hat'
+    ],
+    ...result.latentModel.sourceEstimates.map(se => [
+      se.sourceId,
+      se.sourceLabel,
+      roundSmart(se.interceptBiasAlpha),
+      roundSmart(se.interceptBiasCiLower),
+      roundSmart(se.interceptBiasCiUpper),
+      Number(se.loadingLambda.toFixed(4)),
+      Number(se.loadingCiLower.toFixed(4)),
+      Number(se.loadingCiUpper.toFixed(4)),
+      roundSmart(se.errorSd),
+      roundSmart(se.scaleDistortionComponent),
+      Number(se.reliabilityR2.toFixed(4)),
+      Number(se.signalToNoiseRatio.toFixed(4)),
+      roundSmart(se.posteriorExpectedLoss),
+      Number(se.expectedRank.toFixed(2)),
+      Number(se.rankingStabilityPct.toFixed(2)),
+      Math.round(se.mcmcEss),
+      Number(se.mcmcRhat.toFixed(4))
+    ]),
+    [],
+    ['MATRIKS KORELASI RESIDUAL ANTARSUMBER (AUDIT D3)'],
+    ['Sumber', ...result.sources.map(s => s.label)],
+    ...result.latentModel.residualCorrelationMatrix.map((row, i) => [
+      result.sources[i]?.label || `S${i + 1}`,
+      ...row.map(v => Number(v.toFixed(4)))
+    ])
+  ]);
+
+  // Sheet 5: Akurasi Lengkap, LOSO & Pair FE Step 6
+  addSheet(wb, '05_Akurasi_PairFE_Step6', [
+    ['METRIK AKURASI ISO 5725, VALIDASI LOSO & AGREEMENT (STEP 6A)'],
+    [
+      'Sumber',
+      'Total Latent RMSE',
+      'TotRMSE 95% CrI Low',
+      'TotRMSE 95% CrI High',
+      'Bias^2',
+      'ScaleDist^2',
+      'Error Var(ε)',
       'LOSO MAE',
       'LOSO RMSE',
       'LOSO MBE',
-      'Pearson r',
-      'Within-City r',
-      'Lin CCC'
-    ],
-    ...result.metrics.map(m => [
-      m.sourceId,
-      m.sourceLabel,
-      Number(m.totalLatentRmse.toFixed(4)),
-      Number(m.errorSd.toFixed(4)),
-      Number(m.reliabilityR2.toFixed(4)),
-      Number(m.latentInterceptBias.toFixed(4)),
-      Number(m.latentLoading.toFixed(4)),
-      Number((m.posteriorProbBest * 100).toFixed(2)),
-      Number(m.mcmcRhat.toFixed(4)),
-      m.nCompleteCase,
-      m.nAvailableCase,
-      Number(m.mae.toFixed(4)),
-      Number(m.rmse.toFixed(4)),
-      Number(m.mbe.toFixed(4)),
-      Number(m.pearsonR.toFixed(4)),
-      Number(m.withinCityR.toFixed(4)),
-      Number(m.ccc.ccc.toFixed(4))
-    ])
-  ]);
-
-  addSheet(wb, 'CCC_BlandAltman', [
-    [
-      'Sumber Pengukuran',
+      'LOSO NMAE (%)',
+      'LOSO Cov95 (%)',
+      'LOSO Cal Slope',
       'Lin CCC',
-      'CCC 95% CI Lower',
-      'CCC 95% CI Upper',
-      'Precision r',
-      'Bias Correction Cb',
-      'Scale Shift v',
-      'Location Shift u',
+      'CCC 95% CI Low',
+      'CCC 95% CI High',
       'BA Mean Bias',
-      'BA SD Diff',
-      '95% LoA Lower',
-      '95% LoA Upper',
-      'Outside LoA (%)',
-      'Prop Bias Slope',
-      'Prop Bias p-value'
+      'BA 95% LoA Low',
+      'BA 95% LoA High'
     ],
     ...result.metrics.map(m => [
       m.sourceLabel,
+      roundSmart(m.totalLatentRmse),
+      roundSmart(m.totalLatentRmseCiLower),
+      roundSmart(m.totalLatentRmseCiUpper),
+      roundSmart(m.latentInterceptBias * m.latentInterceptBias),
+      roundSmart(m.scaleDistortion * m.scaleDistortion),
+      roundSmart(m.errorVariance),
+      roundSmart(m.mae),
+      roundSmart(m.rmse),
+      roundSmart(m.mbe),
+      Number(m.nmaePct.toFixed(2)),
+      Number(m.losoPredictiveCoverage95.toFixed(2)),
+      Number(m.losoCalibrationSlope.toFixed(4)),
       Number(m.ccc.ccc.toFixed(4)),
       Number(m.ccc.ciLower.toFixed(4)),
       Number(m.ccc.ciUpper.toFixed(4)),
-      Number(m.ccc.pearsonR.toFixed(4)),
-      Number(m.ccc.biasCorrectionFactorCb.toFixed(4)),
-      Number(m.ccc.scaleShiftV.toFixed(4)),
-      Number(m.ccc.locationShiftU.toFixed(4)),
-      Number(m.blandAltman.meanBias.toFixed(4)),
-      Number(m.blandAltman.sdDiff.toFixed(4)),
-      Number(m.blandAltman.loaLower.toFixed(4)),
-      Number(m.blandAltman.loaUpper.toFixed(4)),
-      Number(m.blandAltman.outsideLoaPct.toFixed(2)),
-      Number(m.blandAltman.propBiasSlope.toFixed(4)),
-      Number(m.blandAltman.propBiasPValue.toFixed(4))
-    ])
-  ]);
-
-  addSheet(wb, 'Pair_FE_dan_Kontras', [
-    ['TABEL KOEFISIEN PAIR FIXED EFFECTS (Absorbed City-Year Pair FE)'],
-    ['Sumber Pengukuran', 'Mean AE', 'Beta Diff vs Base', 'Cluster SE', 't-stat', 'p-value Cluster', 'Wild Bootstrap p'],
+      roundSmart(m.blandAltman.meanBias),
+      roundSmart(m.blandAltman.loaLower),
+      roundSmart(m.blandAltman.loaUpper)
+    ]),
+    [],
+    ['KOEFISIEN PAIR FIXED EFFECTS (CLUSTER SE & DRISCOLL-KRAAY SE)'],
+    ['Sumber', 'Mean AE', 'Beta Diff vs Base', 'Cluster SE', 'Driscoll-Kraay SE', 't-stat', 'p-value Cluster', 'Wild Bootstrap p'],
     ...result.pairFixedEffects.coefficients.map(c => [
       c.sourceLabel,
-      Number(c.meanAe.toFixed(4)),
-      Number(c.betaDiffVsBaseline.toFixed(4)),
-      Number(c.seCluster.toFixed(4)),
+      roundSmart(c.meanAe),
+      roundSmart(c.betaDiffVsBaseline),
+      roundSmart(c.seCluster),
+      c.seDriscollKraay !== undefined ? roundSmart(c.seDriscollKraay) : '-',
       Number(c.tStat.toFixed(4)),
       Number(c.pValue.toFixed(4)),
       c.wildBootstrapPValue !== undefined ? Number(c.wildBootstrapPValue.toFixed(4)) : '-'
     ]),
     [],
-    ['TABEL KONTRAS BERPASANGAN SELURUH SUMBER'],
-    ['Sumber A', 'Sumber B', 'ΔMAE (A - B)', 'Cluster SE', 'Cluster p', 'Wild Bootstrap p', 'P_Bayes (A < B)'],
+    ['KONTRAS BERPASANGAN ANTAR-SUMBER'],
+    ['Sumber A', 'Sumber B', 'dMAE (A - B)', 'Cluster SE', 'Driscoll-Kraay SE', 'Cluster p', 'DK p', 'Wild Bootstrap p', 'P_Bayes (A < B)'],
     ...result.pairFixedEffects.pairwiseContrasts.map(c => [
       c.sourceALabel,
       c.sourceBLabel,
-      Number(c.diffAminusB.toFixed(4)),
-      Number(c.seCluster.toFixed(4)),
+      roundSmart(c.diffAminusB),
+      roundSmart(c.seCluster),
+      c.seDriscollKraay !== undefined ? roundSmart(c.seDriscollKraay) : '-',
       Number(c.pValueCluster.toFixed(4)),
+      c.pValueDriscollKraay !== undefined ? Number(c.pValueDriscollKraay.toFixed(4)) : '-',
       Number(c.wildBootstrapPValue.toFixed(4)),
       Number((c.posteriorProbABetterThanB * 100).toFixed(2))
     ])
   ]);
 
-  addSheet(wb, 'Ranking_Semua_Sumber', [
-    ['PEMERINGKATAN AKURASI SELURUH J SUMBER (Tanpa Reference Terkunci)'],
-    ['Peringkat', 'Sumber', 'Total Latent RMSE', 'Error SD', 'Reliabilitas R²', 'Posterior Prob Best (%)', 'LOSO MAE', 'Lin CCC', 'WildBoot p vs #1', 'Catatan'],
+  // Sheet 6: Diagnostik & Sensitivitas Step 7
+  addSheet(wb, '06_Diagnostik_Step7', [
+    ['UJI DIAGNOSTIK PANEL & SENSITIVITAS INFERENSI (STEP 7)'],
+    ['Uji Diagnostik', 'Statistik', 'Nilai', 'df', 'p-value', 'Status', 'Kesimpulan', 'Implikasi'],
+    ...[
+      result.diagnostics.heteroskedasticityTest,
+      result.diagnostics.serialCorrelationTest,
+      result.diagnostics.crossSectionalDependenceTest
+    ].map(d => [
+      d.testName,
+      d.statisticLabel,
+      Number(d.statisticValue.toFixed(4)),
+      d.dfLabel,
+      d.pValue !== null ? Number(d.pValue.toFixed(4)) : '-',
+      d.status.toUpperCase(),
+      d.conclusion,
+      d.implication
+    ]),
+    [],
+    ['AUDIT KLASTER, KORELASI GALAT, OUTLIER & MISSINGNESS'],
+    ['Komponen Audit', 'Ringkasan Hasil'],
+    ['Audit Konvergensi Bayesian', result.diagnostics.bayesianConvergenceAudit.summary],
+    ['Audit Jumlah Klaster Entitas', result.diagnostics.clusterCountAudit.message],
+    ['Sensitivitas Outlier 95% Trimmed', result.diagnostics.outlierSensitivityAudit.summary],
+    ['Audit Korelasi Galat Antarsumber', result.diagnostics.correlatedErrorAudit?.summary || '-'],
+    ['Sensitivitas Missing Data (CC vs Avail)', result.diagnostics.missingDataSensitivityAudit?.summary || '-'],
+    ['Catatan Normalitas & CLT', result.diagnostics.normalityAndCltNote.explanation],
+    [],
+    ['SENSITIVITAS OUTLIER PER SUMBER'],
+    ['Sumber', 'MAE Penuh', 'MAE Trimmed 95%', 'Rank Penuh', 'Rank Trimmed', 'Pergeseran (%)'],
+    ...result.diagnostics.outlierSensitivityAudit.entries.map(e => [
+      e.sourceLabel,
+      roundSmart(e.maeFull),
+      roundSmart(e.maeTrimmed95),
+      e.rankFull,
+      e.rankTrimmed95,
+      Number(e.shiftPct.toFixed(2))
+    ])
+  ]);
+
+  // Sheet 7: Ranking & 8-Poin Mengapa Sumber Terbaik Step 8
+  addSheet(wb, '07_Ranking_Step8', [
+    ['PEMERINGKATAN AKURASI FINAL SELURUH J SUMBER (STEP 8)'],
+    ['Status Kanonik', result.ranking.canonicalStatus],
+    ['Konklusif Mutlak?', result.ranking.isConclusive ? 'YA' : 'BELUM'],
+    [],
+    ['Peringkat', 'Sumber', 'Total Latent RMSE', 'Error SD', 'Scale Distortion', 'Reliabilitas R² (%)', 'Posterior P(Best) %', 'Expected Rank', 'Stability (%)', 'LOSO MAE', 'Lin CCC', 'WildBoot p vs #1', 'Catatan'],
     ...result.ranking.ranks.map(r => [
       r.rank,
       r.sourceLabel,
-      Number(r.totalLatentRmse.toFixed(4)),
-      Number(r.errorSd.toFixed(4)),
-      Number(r.reliabilityR2.toFixed(4)),
+      roundSmart(r.totalLatentRmse),
+      roundSmart(r.errorSd),
+      roundSmart(r.scaleDistortion),
+      Number((r.reliabilityR2 * 100).toFixed(2)),
       Number((r.posteriorProbBest * 100).toFixed(2)),
-      Number(r.mae.toFixed(4)),
+      Number(r.expectedRank.toFixed(2)),
+      Number(r.rankingStabilityPct.toFixed(2)),
+      roundSmart(r.mae),
       Number(r.ccc.toFixed(4)),
       r.pValueVsTopWildBootstrap !== null ? Number(r.pValueVsTopWildBootstrap.toFixed(4)) : '-',
       r.rankNote
-    ])
+    ]),
+    [],
+    ['MENGAPA SUMBER INI MENJADI YANG TERBAIK? (ANALISIS 8-POIN)'],
+    ['Headline', result.ranking.whyBestAnalysis.headline],
+    ['Dimensi Evaluasi', 'Bukti Kuantitatif & Penjelasan'],
+    ...result.ranking.whyBestAnalysis.points.map(pt => [pt.label, pt.detail])
   ]);
+
+  // Sheet 8: Output Tabel Stata Berurutan Step 1 -> Step 9
+  const ordered = result.stataOutput.orderedStepOutputs || [];
+  const stataRows: any[][] = [
+    ['OUTPUT TABEL STATA TERURUT KRONOLOGIS (STEP 1 S.D. STEP 9)'],
+    ['Step', 'Judul Tahap', 'Perintah Stata', 'Baris Output Tabel']
+  ];
+  if (ordered.length > 0) {
+    ordered.forEach(st => {
+      st.outputTableText.split('\n').forEach((line, idx) => {
+        stataRows.push([
+          idx === 0 ? `Step ${st.stepId}` : '',
+          idx === 0 ? st.stepTitle : '',
+          idx === 0 ? st.stataCommand : '',
+          line
+        ]);
+      });
+      stataRows.push(['', '', '', '']);
+    });
+  } else {
+    [
+      { t: 'Header', cmd: 'header', txt: result.stataOutput.headerConsoleText },
+      { t: 'Tabel 1', cmd: 'bayes: sem', txt: result.stataOutput.accuracyMetricsTableText },
+      { t: 'Tabel 2', cmd: 'lin_ccc', txt: result.stataOutput.cccAndBlandAltmanTableText },
+      { t: 'Tabel 3', cmd: 'areg ae', txt: result.stataOutput.pairFixedEffectsTableText },
+      { t: 'Tabel 4', cmd: 'contrast', txt: result.stataOutput.pairwiseContrastsTableText },
+      { t: 'Tabel 5', cmd: 'ranking', txt: result.stataOutput.diagnosticsAndRankingText }
+    ].forEach(blk => {
+      blk.txt.split('\n').forEach((line, idx) => {
+        stataRows.push([blk.t, idx === 0 ? blk.t : '', idx === 0 ? blk.cmd : '', line]);
+      });
+    });
+  }
+  addSheet(wb, '08_Output_Stata_Step1_9', stataRows);
+
+  // Sheet 9: Kode Reprodusibilitas Stata .do, R, & Stan
+  const codeRows: any[][] = [
+    ['KODE REPRODUSIBILITAS LENGKAP (STATA .DO, R .R, STAN .STAN)'],
+    ['Platform', 'Nomor Baris', 'Baris Kode']
+  ];
+  const pushCode = (platform: string, script?: string) => {
+    if (!script) return;
+    script.split('\n').forEach((line, idx) => {
+      codeRows.push([platform, idx + 1, line]);
+    });
+    codeRows.push(['', '', '']);
+  };
+  pushCode('Stata (.do)', result.generatedCode.stataDoFile);
+  pushCode('R (.R)', result.generatedCode.rScript);
+  pushCode('Stan (.stan)', result.generatedCode.stanCode);
+  addSheet(wb, '09_Kode_Stata_R_Stan', codeRows);
 
   const out = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
   return Buffer.from(out);
@@ -207,13 +407,13 @@ export function generatePanelAccuracyCSV(result: PanelAccuracyFitResult): string
       r.sourceId,
       r.sourceName,
       `"${sanitizeSpreadsheetText(r.sourceLabel)}"`,
-      r.totalLatentRmse.toFixed(4),
-      r.errorSd.toFixed(4),
+      r.totalLatentRmse.toFixed(6),
+      r.errorSd.toFixed(6),
       r.reliabilityR2.toFixed(4),
       r.posteriorProbBest.toFixed(4),
-      r.mae.toFixed(4),
-      r.rmse.toFixed(4),
-      r.mbe.toFixed(4),
+      r.mae.toFixed(6),
+      r.rmse.toFixed(6),
+      r.mbe.toFixed(6),
       r.ccc.toFixed(4),
       r.pearsonR.toFixed(4),
       m.withinCityR.toFixed(4),

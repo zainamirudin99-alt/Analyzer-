@@ -111,6 +111,7 @@ export function executePanelAccuracyPipeline(params: {
     referenceSource: prepared.referenceSource,
     comparisonSources: prepared.comparisonSources,
     qualityReport,
+    preprocessing,
     eda,
     latentModel: latentOut.summary,
     metrics,
