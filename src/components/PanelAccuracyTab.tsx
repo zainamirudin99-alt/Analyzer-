@@ -223,7 +223,10 @@ const RecommendationActionList: React.FC<{
   actions: StepRecommendationAction[];
   onAction: (actionType: StepRecommendationAction['actionType']) => void;
   disabled?: boolean;
-}> = ({ actions, onAction, disabled }) => {
+  preprocessing?: AccuracyPreprocessingOptions;
+  driscollKraayActive?: boolean;
+  correlatedErrorReviewed?: boolean;
+}> = ({ actions, onAction, disabled, preprocessing, driscollKraayActive, correlatedErrorReviewed }) => {
   const priorityStyle = (p: StepRecommendationAction['priority']) => {
     if (p === 'KRITIS') return { bg: '#ef4444', border: '#ef4444', cardBg: 'var(--danger-bg)' };
     if (p === 'TINGGI') return { bg: '#d97706', border: 'var(--warn-border)', cardBg: 'var(--warn-bg)' };
@@ -231,18 +234,31 @@ const RecommendationActionList: React.FC<{
     return { bg: 'var(--success)', border: 'var(--border)', cardBg: 'var(--surface)' };
   };
 
+  const isActionAlreadyApplied = (t: StepRecommendationAction['actionType']) => {
+    if (t === 'APPLY_DRISCOLL_KRAAY_SENSITIVITY') return Boolean(driscollKraayActive);
+    if (t === 'AUDIT_CORRELATED_ERRORS') return Boolean(correlatedErrorReviewed);
+    if (!preprocessing) return false;
+    if (t === 'APPLY_LOG1P') return preprocessing.applyLog1p;
+    if (t === 'APPLY_WINSORIZE') return preprocessing.applyWinsorize;
+    if (t === 'DROP_DUPLICATES') return preprocessing.dropDuplicateCityYear;
+    if (t === 'RESET_RAW_BASELINE') return !preprocessing.applyLog1p && !preprocessing.applyWinsorize;
+    return false;
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
       {actions.map(act => {
         const st = priorityStyle(act.priority);
+        const alreadyActive = isActionAlreadyApplied(act.actionType);
+        const canCancelDirect = alreadyActive && act.actionType !== 'RESET_RAW_BASELINE';
         return (
           <div
             key={act.id}
             style={{
               padding: '12px',
               borderRadius: 'var(--radius-sm)',
-              border: `1px solid ${st.border}`,
-              background: st.cardBg,
+              border: `1px solid ${alreadyActive ? 'var(--success)' : st.border}`,
+              background: alreadyActive ? 'var(--info-bg)' : st.cardBg,
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
@@ -256,13 +272,13 @@ const RecommendationActionList: React.FC<{
                   style={{
                     padding: '2px 8px',
                     borderRadius: '999px',
-                    background: st.bg,
+                    background: alreadyActive ? 'var(--success)' : st.bg,
                     color: '#fff',
                     fontSize: '10.5px',
                     fontWeight: 800
                   }}
                 >
-                  {act.priority}
+                  {alreadyActive ? 'AKTIF ✓' : act.priority}
                 </span>
                 <strong style={{ fontSize: '13.5px', color: 'var(--text)' }}>{act.title}</strong>
               </div>
@@ -276,11 +292,23 @@ const RecommendationActionList: React.FC<{
             <button
               type="button"
               disabled={disabled}
-              className={act.priority === 'OPTIMAL' ? 'btn btn-outline' : 'btn btn-primary'}
+              className={act.priority === 'OPTIMAL' || alreadyActive ? 'btn btn-outline' : 'btn btn-primary'}
               onClick={() => onAction(act.actionType)}
-              style={{ minHeight: '40px', fontSize: '12px', whiteSpace: 'nowrap' }}
+              style={{ minHeight: '42px', fontSize: '12px', whiteSpace: 'nowrap' }}
             >
-              <Sparkles size={13} style={{ marginRight: '5px' }} /> {act.actionLabel}
+              {canCancelDirect ? (
+                <>
+                  <RefreshCw size={13} style={{ marginRight: '5px' }} /> Batalkan (Undo)
+                </>
+              ) : alreadyActive ? (
+                <>
+                  <CheckCircle2 size={13} style={{ marginRight: '5px', color: 'var(--success)' }} /> Aktif (Satuan Asli) ✓
+                </>
+              ) : (
+                <>
+                  <Sparkles size={13} style={{ marginRight: '5px' }} /> {act.actionLabel}
+                </>
+              )}
             </button>
           </div>
         );
@@ -364,10 +392,18 @@ const BootstrapVerificationCard: React.FC<{
           <strong>{feedback.bestSourceAfter || 'Underidentified / Tie'}</strong>
         </div>
       </div>
-      {smallDelta && (
+      {feedback.prevBootstrapReps === feedback.newBootstrapReps && feedback.maxBootPDelta === 0 ? (
         <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-          <strong>Mengapa angkanya hampir tidak berubah?</strong> Tombol berjalan normal, namun pratinjau klien sudah menjalankan {feedback.prevBootstrapReps} replikasi Wild Bootstrap deterministik dengan pemisahan sinyal yang jelas antar sumber; peningkatan ke {feedback.newBootstrapReps} replikasi mengonfirmasi bahwa p-value dan peringkat #1 bersifat stabil (tidak bergantung pada jumlah replikasi acak).
+          <strong>Catatan Presisi:</strong> Model sudah berjalan pada presisi maksimum ({feedback.newBootstrapReps} Replikasi Wild Bootstrap ·{' '}
+          {feedback.newMcmcIters} MCMC), sehingga pengulangan menghasilkan angka identik (Δ = 0.0000). Gunakan tombol aksi spesifik (<strong>Driscoll-Kraay SE</strong>,{' '}
+          <strong>Audit Korelasi Galat</strong>, <strong>log(1+x)</strong>, atau <strong>Winsorize</strong>) untuk melihat perbandingan perubahan model.
         </div>
+      ) : (
+        smallDelta && (
+          <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+            <strong>Mengapa angkanya hampir tidak berubah?</strong> Tombol berjalan normal, namun pratinjau klien sudah menjalankan {feedback.prevBootstrapReps} replikasi Wild Bootstrap deterministik dengan pemisahan sinyal yang jelas antar sumber; peningkatan ke {feedback.newBootstrapReps} replikasi mengonfirmasi bahwa p-value dan peringkat #1 bersifat stabil (tidak bergantung pada jumlah replikasi acak).
+          </div>
+        )
       )}
     </div>
   );
@@ -425,10 +461,33 @@ export const PanelAccuracyTab: React.FC = () => {
   const [codeTab, setCodeTab] = useState<'stata' | 'r' | 'stan'>('stata');
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<string | null>(null);
-  const [previousConfigSnapshot, setPreviousConfigSnapshot] = useState<{
-    preprocessing: AccuracyPreprocessingOptions;
-    result: PanelAccuracyFitResult;
-  } | null>(null);
+  const [undoHistoryStack, setUndoHistoryStack] = useState<
+    Array<{
+      actionLabel: string;
+      preprocessing: AccuracyPreprocessingOptions;
+      driscollKraayActive: boolean;
+      correlatedErrorReviewed: boolean;
+      correlatedErrorAuditOpen: boolean;
+      serverFitResult: PanelAccuracyFitResult | null;
+      verificationFeedback: {
+        prevBootstrapReps: number;
+        newBootstrapReps: number;
+        prevMcmcIters: number;
+        newMcmcIters: number;
+        elapsedMs: number;
+        maxBootPDelta: number;
+        maxRhatDelta: number;
+        bestSourceBefore: string | null;
+        bestSourceAfter: string | null;
+        executedAt: string;
+      } | null;
+      result: PanelAccuracyFitResult;
+    }>
+  >([]);
+  const previousConfigSnapshot = undoHistoryStack[0] ?? null;
+  const [driscollKraayActive, setDriscollKraayActive] = useState<boolean>(false);
+  const [correlatedErrorReviewed, setCorrelatedErrorReviewed] = useState<boolean>(false);
+  const [correlatedErrorAuditOpen, setCorrelatedErrorAuditOpen] = useState<boolean>(false);
   const [showBeforeAfterCompare, setShowBeforeAfterCompare] = useState<boolean>(false);
   const [advisorAuditTrail, setAdvisorAuditTrail] = useState<
     Array<{
@@ -504,12 +563,14 @@ export const PanelAccuracyTab: React.FC = () => {
         dataset: panelDataset,
         preprocessing,
         bootstrapReplications: 499,
-        executionSource: 'client_live'
+        executionSource: 'client_live',
+        driscollKraayActivated: driscollKraayActive,
+        correlatedErrorReviewed
       });
     } catch {
       return null;
     }
-  }, [panelDataset, preprocessing, qualityReport.hasBlockingError]);
+  }, [panelDataset, preprocessing, qualityReport.hasBlockingError, driscollKraayActive, correlatedErrorReviewed]);
 
   const activeResult = serverFitResult || liveFitResult;
 
@@ -591,6 +652,12 @@ export const PanelAccuracyTab: React.FC = () => {
     setSourceError(null);
     setRecommendation(null);
     setAppliedNotice(null);
+    setDriscollKraayActive(false);
+    setCorrelatedErrorReviewed(false);
+    setCorrelatedErrorAuditOpen(false);
+    setUndoHistoryStack([]);
+    setAdvisorAuditTrail([]);
+    setShowBeforeAfterCompare(false);
   };
 
   const loadWorkbookSheets = (resolvedName: string, sheets: ImportedSheetData[]) => {
@@ -753,20 +820,54 @@ export const PanelAccuracyTab: React.FC = () => {
     }
   }, [currentStep, recommendation, isRecommending, handleRunScenarioRecommendation]);
 
-  const handleApplyPreprocessingScenario = (sc: PreprocessingScenarioCandidate) => {
+  const pushUndoSnapshot = (actionLabel: string, resultSnap: PanelAccuracyFitResult | null) => {
+    if (!resultSnap) return;
+    setUndoHistoryStack(prev => [
+      {
+        actionLabel,
+        preprocessing: { ...preprocessing },
+        driscollKraayActive,
+        correlatedErrorReviewed,
+        correlatedErrorAuditOpen,
+        serverFitResult,
+        verificationFeedback,
+        result: resultSnap
+      },
+      ...prev.slice(0, 14)
+    ]);
+  };
+
+  const handleApplyPreprocessingScenario = async (sc: PreprocessingScenarioCandidate) => {
+    const prevSnap = activeResult;
+    pushUndoSnapshot(`Skenario Step 3: ${sc.label}`, prevSnap);
     setPreprocessing({ ...sc.options });
     setServerFitResult(null);
     setVerificationFeedback(null);
     setAppliedNotice(`Konfigurasi "${sc.label}" diterapkan pada Step 3.`);
+    if (serverFitResult) {
+      const boot = serverFitResult.pairFixedEffects.bootstrapReplications >= 1999 ? 1999 : 999;
+      const mcmc = serverFitResult.latentModel.iterationsPerChain >= 700 ? 800 : 450;
+      await handleRunServerPipeline({
+        bootstrapReplications: boot,
+        mcmcIterations: mcmc,
+        preprocessingOverride: sc.options
+      });
+    }
   };
 
   // Full API execution (999 or 1.999 Wild Cluster Bootstrap replications + optional 800 MCMC)
   const handleRunServerPipeline = async (opts?: {
-    bootstrapReplications?: 999 | 1999;
+    bootstrapReplications?: 499 | 999 | 1999;
     mcmcIterations?: 450 | 800;
-  }) => {
+    preprocessingOverride?: AccuracyPreprocessingOptions;
+    driscollKraayOverride?: boolean;
+    correlatedReviewedOverride?: boolean;
+  }): Promise<PanelAccuracyFitResult | null> => {
     const reqBoot = opts?.bootstrapReplications ?? 999;
     const reqMcmc = opts?.mcmcIterations ?? 450;
+    const usedPreproc = opts?.preprocessingOverride ?? preprocessing;
+    const usedDk = opts?.driscollKraayOverride ?? driscollKraayActive;
+    const usedCorrRev = opts?.correlatedReviewedOverride ?? correlatedErrorReviewed;
     const prevResult = activeResult;
     setIsRunningFit(true);
     setFitError(null);
@@ -777,9 +878,11 @@ export const PanelAccuracyTab: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           dataset: panelDataset,
-          preprocessing,
+          preprocessing: usedPreproc,
           bootstrapReplications: reqBoot,
-          mcmcIterations: reqMcmc
+          mcmcIterations: reqMcmc,
+          driscollKraayActivated: usedDk,
+          correlatedErrorReviewed: usedCorrRev
         })
       });
       const json = await res.json();
@@ -827,38 +930,23 @@ export const PanelAccuracyTab: React.FC = () => {
         bestSourceAfter: nextResult.ranking.bestSourceLabel ?? null,
         executedAt: new Date().toLocaleTimeString('id-ID')
       });
+      return nextResult;
     } catch (err: any) {
       setFitError(err.message || 'Gagal menjalankan pipeline analisis.');
+      return null;
     } finally {
       setIsRunningFit(false);
     }
   };
 
-  const recordAdvisorAudit = (
+  const pushAuditEntry = (
     actionTitle: string,
-    nextPreproc: AccuracyPreprocessingOptions
+    beforeRes: PanelAccuracyFitResult | null,
+    afterRes: PanelAccuracyFitResult | null
   ) => {
-    if (activeResult) {
-      setPreviousConfigSnapshot({
-        preprocessing: { ...preprocessing },
-        result: activeResult
-      });
-    }
-    const beforeTop = activeResult?.ranking.ranks[0]?.sourceLabel || '-';
-    let afterTop = beforeTop;
-    let statusAfter = activeResult?.ranking.canonicalStatus || '-';
-    try {
-      const simRes = executePanelAccuracyPipeline({
-        dataset: panelDataset,
-        preprocessing: nextPreproc,
-        bootstrapReplications: 499,
-        executionSource: 'client_live'
-      });
-      afterTop = simRes.ranking.ranks[0]?.sourceLabel || '-';
-      statusAfter = simRes.ranking.canonicalStatus;
-    } catch {
-      // ignore if incomplete
-    }
+    const beforeTop = beforeRes?.ranking.ranks[0]?.sourceLabel || '-';
+    const afterTop = afterRes?.ranking.ranks[0]?.sourceLabel || beforeTop;
+    const statusAfter = afterRes?.ranking.canonicalStatus || beforeRes?.ranking.canonicalStatus || '-';
     setAdvisorAuditTrail(prev => [
       {
         timestamp: new Date().toLocaleTimeString('id-ID'),
@@ -872,51 +960,120 @@ export const PanelAccuracyTab: React.FC = () => {
     setShowBeforeAfterCompare(true);
   };
 
-  const handleRevertPreviousConfig = () => {
-    if (!previousConfigSnapshot) return;
-    const prevP = previousConfigSnapshot.preprocessing;
-    recordAdvisorAudit('Kembali ke Pengaturan Sebelumnya', prevP);
-    setPreprocessing({ ...prevP });
+  const applyAndSyncPreprocessing = async (
+    actionTitle: string,
+    nextP: AccuracyPreprocessingOptions,
+    noticeBuilder: (beforeRes: PanelAccuracyFitResult | null, afterRes: PanelAccuracyFitResult | null) => string
+  ) => {
+    const prevRes = activeResult;
+    pushUndoSnapshot(actionTitle, prevRes);
+    setPreprocessing(nextP);
     setServerFitResult(null);
     setVerificationFeedback(null);
-    setAppliedNotice('Pengaturan dikembalikan ke konfigurasi sebelumnya.');
+
+    let afterRes: PanelAccuracyFitResult | null = null;
+    try {
+      afterRes = executePanelAccuracyPipeline({
+        dataset: panelDataset,
+        preprocessing: nextP,
+        bootstrapReplications: 499,
+        executionSource: 'client_live',
+        driscollKraayActivated: driscollKraayActive,
+        correlatedErrorReviewed
+      });
+    } catch {
+      afterRes = null;
+    }
+
+    if (serverFitResult) {
+      const boot = serverFitResult.pairFixedEffects.bootstrapReplications >= 1999 ? 1999 : 999;
+      const mcmc = serverFitResult.latentModel.iterationsPerChain >= 700 ? 800 : 450;
+      const srvAfter = await handleRunServerPipeline({
+        bootstrapReplications: boot,
+        mcmcIterations: mcmc,
+        preprocessingOverride: nextP
+      });
+      if (srvAfter) afterRes = srvAfter;
+    }
+
+    pushAuditEntry(actionTitle, prevRes, afterRes);
+    setAppliedNotice(noticeBuilder(prevRes, afterRes));
   };
 
-  const handleStepRecommendationAction = (
+  const handleRevertPreviousConfig = async () => {
+    if (undoHistoryStack.length === 0) return;
+    const [latest, ...rest] = undoHistoryStack;
+    const curRes = activeResult;
+    setUndoHistoryStack(rest);
+    setDriscollKraayActive(latest.driscollKraayActive);
+    setCorrelatedErrorReviewed(latest.correlatedErrorReviewed);
+    setCorrelatedErrorAuditOpen(latest.correlatedErrorAuditOpen);
+    setPreprocessing({ ...latest.preprocessing });
+    setServerFitResult(latest.serverFitResult);
+    setVerificationFeedback(latest.verificationFeedback);
+    pushAuditEntry(`Undo: ${latest.actionLabel}`, curRes, latest.result);
+    setAppliedNotice(`Tindakan "${latest.actionLabel}" berhasil dibatalkan — konfigurasi dan hasil dikembalikan ke kondisi sebelumnya.`);
+  };
+
+  const handleResetAllRecommendations = () => {
+    const curRes = activeResult;
+    pushUndoSnapshot('Reset Semua Rekomendasi ke Awal', curRes);
+    setPreprocessing({ ...DEFAULT_ACCURACY_PREPROCESSING });
+    setDriscollKraayActive(false);
+    setCorrelatedErrorReviewed(false);
+    setCorrelatedErrorAuditOpen(false);
+    setServerFitResult(null);
+    setVerificationFeedback(null);
+    setShowBeforeAfterCompare(false);
+    pushAuditEntry('Reset Semua ke Kondisi Awal Default', curRes, null);
+    setAppliedNotice('Seluruh rekomendasi dan transformasi dikembalikan ke kondisi awal (tanpa tombol saran).');
+  };
+
+  const handleStepRecommendationAction = async (
     actionType:
       | 'DROP_DUPLICATES'
       | 'APPLY_WINSORIZE'
       | 'APPLY_LOG1P'
       | 'RESET_RAW_BASELINE'
+      | 'APPLY_DRISCOLL_KRAAY_SENSITIVITY'
+      | 'AUDIT_CORRELATED_ERRORS'
       | 'RUN_HIGH_PRECISION_VERIFICATION'
       | 'ADD_THIRD_SOURCE'
       | 'KEEP_CURRENT'
   ) => {
     if (actionType === 'DROP_DUPLICATES') {
-      const nextP = { ...preprocessing, dropDuplicateCityYear: true };
-      recordAdvisorAudit('Aktifkan Penghapusan Duplikat (City, Year)', nextP);
-      setPreprocessing(nextP);
-      setServerFitResult(null);
-      setVerificationFeedback(null);
-      setAppliedNotice('Penghapusan duplikat (City, Year) diaktifkan.');
+      const nextVal = !preprocessing.dropDuplicateCityYear;
+      const nextP = { ...preprocessing, dropDuplicateCityYear: nextVal };
+      await applyAndSyncPreprocessing(
+        nextVal ? 'Aktifkan Penghapusan Duplikat (City, Year)' : 'Batalkan Penghapusan Duplikat',
+        nextP,
+        (b, a) =>
+          nextVal
+            ? `Duplikat (City, Year) dibersihkan (${b?.datasetMeta.nCompletePairs ?? '-'} → ${a?.datasetMeta.nCompletePairs ?? '-'} pasang lengkap).`
+            : `Penghapusan duplikat dibatalkan (${a?.datasetMeta.nCompletePairs ?? '-'} pasang).`
+      );
       return;
     }
     if (actionType === 'APPLY_WINSORIZE') {
-      const nextP = { ...preprocessing, applyWinsorize: true };
-      recordAdvisorAudit('Terapkan Winsorization 2.5%', nextP);
-      setPreprocessing(nextP);
-      setServerFitResult(null);
-      setVerificationFeedback(null);
-      setAppliedNotice('Winsorization 2.5% diaktifkan untuk mengendalikan pengaruh outlier ekstrem.');
+      const nextVal = !preprocessing.applyWinsorize;
+      const nextP = { ...preprocessing, applyWinsorize: nextVal };
+      await applyAndSyncPreprocessing(
+        nextVal ? 'Terapkan Winsorization 2.5%' : 'Batalkan Winsorization 2.5%',
+        nextP,
+        (b, a) =>
+          `${nextVal ? 'Winsorization 2.5% diterapkan' : 'Winsorization 2.5% dibatalkan'}: Total RMSE #1 ${(b?.ranking.ranks[0]?.totalLatentRmse ?? 0).toFixed(3)} → ${(a?.ranking.ranks[0]?.totalLatentRmse ?? 0).toFixed(3)}.`
+      );
       return;
     }
     if (actionType === 'APPLY_LOG1P') {
-      const nextP = { ...preprocessing, applyLog1p: true };
-      recordAdvisorAudit('Terapkan Transformasi log(1 + x)', nextP);
-      setPreprocessing(nextP);
-      setServerFitResult(null);
-      setVerificationFeedback(null);
-      setAppliedNotice('Transformasi skala log(1 + x) diaktifkan untuk mengevaluasi kesalahan relatif proporsional.');
+      const nextVal = !preprocessing.applyLog1p;
+      const nextP = { ...preprocessing, applyLog1p: nextVal };
+      await applyAndSyncPreprocessing(
+        nextVal ? 'Terapkan Transformasi log(1 + x)' : 'Batalkan Transformasi log(1 + x)',
+        nextP,
+        (b, a) =>
+          `${nextVal ? 'Transformasi skala log(1 + x) aktif' : 'Transformasi log(1 + x) dibatalkan (kembali ke skala asli)'}: Total RMSE #1 ${(b?.ranking.ranks[0]?.totalLatentRmse ?? 0).toFixed(3)} → ${(a?.ranking.ranks[0]?.totalLatentRmse ?? 0).toFixed(3)}.`
+      );
       return;
     }
     if (actionType === 'RESET_RAW_BASELINE') {
@@ -926,11 +1083,117 @@ export const PanelAccuracyTab: React.FC = () => {
         applyLog1p: false,
         dropDuplicateCityYear: qualityReport.duplicateKeys.length > 0
       };
-      recordAdvisorAudit('Reset ke Baseline Satuan Fisik Asli', nextP);
-      setPreprocessing(nextP);
-      setServerFitResult(null);
-      setVerificationFeedback(null);
-      setAppliedNotice('Konfigurasi satuan fisik asli optimal diterapkan.');
+      await applyAndSyncPreprocessing(
+        'Reset ke Baseline Satuan Fisik Asli',
+        nextP,
+        (b, a) =>
+          `Kembali ke satuan fisik asli: Total RMSE #1 berubah ${(b?.ranking.ranks[0]?.totalLatentRmse ?? 0).toFixed(3)} → ${(a?.ranking.ranks[0]?.totalLatentRmse ?? 0).toFixed(3)}.`
+      );
+      return;
+    }
+    if (actionType === 'APPLY_DRISCOLL_KRAAY_SENSITIVITY') {
+      const prevRes = activeResult;
+      const nextDk = !driscollKraayActive;
+      pushUndoSnapshot(
+        nextDk ? 'Aktifkan Inferensi Driscoll-Kraay SE' : 'Batalkan Inferensi Driscoll-Kraay SE',
+        prevRes
+      );
+      setDriscollKraayActive(nextDk);
+      if (!nextDk) {
+        let offRes: PanelAccuracyFitResult | null = null;
+        if (serverFitResult) {
+          const boot = serverFitResult.pairFixedEffects.bootstrapReplications >= 1999 ? 1999 : 999;
+          const mcmc = serverFitResult.latentModel.iterationsPerChain >= 700 ? 800 : 450;
+          offRes = await handleRunServerPipeline({
+            bootstrapReplications: boot,
+            mcmcIterations: mcmc,
+            driscollKraayOverride: false
+          });
+        } else {
+          try {
+            offRes = executePanelAccuracyPipeline({
+              dataset: panelDataset,
+              preprocessing,
+              bootstrapReplications: 499,
+              executionSource: 'client_live',
+              driscollKraayActivated: false,
+              correlatedErrorReviewed
+            });
+          } catch {
+            offRes = null;
+          }
+        }
+        pushAuditEntry('Batalkan Inferensi Driscoll-Kraay SE', prevRes, offRes || activeResult);
+        setAppliedNotice('Mode inferensi Driscoll-Kraay SE dibatalkan.');
+        return;
+      }
+
+      const xtsccCmd = [
+        `* Uji Sensitivitas Driscoll-Kraay (Pesaran CD / AR(1) / Heteroskedastisitas)`,
+        `xtset pair_entity ${yearColumn}`,
+        `xtscc ae i.source_id, fe`,
+        `testparm i.source_id`
+      ].join('\n');
+      try {
+        await navigator.clipboard.writeText(xtsccCmd);
+      } catch {
+        // clipboard may be blocked in automated/headless browsers
+      }
+      const nextRes = await handleRunServerPipeline({
+        bootstrapReplications: 1999,
+        mcmcIterations: 800,
+        driscollKraayOverride: true
+      });
+      pushAuditEntry('Aktifkan Inferensi Driscoll-Kraay SE & Salin Uji xtscc', prevRes, nextRes || activeResult);
+      setAppliedNotice(
+        `Inferensi Driscoll-Kraay (DK) SE diaktifkan & perintah "xtscc ae i.source_id, fe" disalin ke clipboard (Skor Diagnostik: ${prevRes?.diagnostics.diagnosticAdvisor?.diagnosticScore ?? '-'} → ${(nextRes || activeResult)?.diagnostics.diagnosticAdvisor?.diagnosticScore ?? '-'}/100).`
+      );
+      return;
+    }
+    if (actionType === 'AUDIT_CORRELATED_ERRORS') {
+      const prevRes = activeResult;
+      const nextCorr = !correlatedErrorReviewed;
+      pushUndoSnapshot(
+        nextCorr ? 'Buka Audit Korelasi Galat' : 'Batalkan Tinjauan Audit Korelasi Galat',
+        prevRes
+      );
+      setCorrelatedErrorReviewed(nextCorr);
+      setCorrelatedErrorAuditOpen(nextCorr);
+      let nextRes: PanelAccuracyFitResult | null = null;
+      if (serverFitResult) {
+        const boot = serverFitResult.pairFixedEffects.bootstrapReplications >= 1999 ? 1999 : 999;
+        const mcmc = serverFitResult.latentModel.iterationsPerChain >= 700 ? 800 : 450;
+        nextRes = await handleRunServerPipeline({
+          bootstrapReplications: boot,
+          mcmcIterations: mcmc,
+          correlatedReviewedOverride: nextCorr
+        });
+      } else {
+        try {
+          nextRes = executePanelAccuracyPipeline({
+            dataset: panelDataset,
+            preprocessing,
+            bootstrapReplications: 499,
+            executionSource: 'client_live',
+            driscollKraayActivated: driscollKraayActive,
+            correlatedErrorReviewed: nextCorr
+          });
+        } catch {
+          nextRes = null;
+        }
+      }
+      const adjId = (nextRes || prevRes)?.latentModel.correlatedErrorAdjustedTopSourceId;
+      const adjLabel = sources.find(s => s.id === adjId)?.label || adjId || '-';
+      pushAuditEntry(
+        nextCorr ? `Audit Korelasi Galat (Adjusted #1: ${adjLabel})` : 'Batalkan Audit Korelasi Galat',
+        prevRes,
+        nextRes || prevRes
+      );
+      setAppliedNotice(
+        nextCorr
+          ? `Panel Audit Korelasi Galat dibuka di bawah: kandidat #1 dengan diskon galat berkorelasi adalah "${adjLabel}".`
+          : 'Status tinjauan Audit Korelasi Galat dibatalkan.'
+      );
       return;
     }
     if (actionType === 'ADD_THIRD_SOURCE') {
@@ -938,23 +1201,14 @@ export const PanelAccuracyTab: React.FC = () => {
       return;
     }
     if (actionType === 'RUN_HIGH_PRECISION_VERIFICATION') {
-      if (activeResult) {
-        setPreviousConfigSnapshot({
-          preprocessing: { ...preprocessing },
-          result: activeResult
-        });
-      }
-      setAdvisorAuditTrail(prev => [
-        {
-          timestamp: new Date().toLocaleTimeString('id-ID'),
-          actionTitle: 'Jalankan Analisis Alternatif Presisi Tinggi (1.999 Bootstrap + 800 MCMC)',
-          beforeTop: activeResult?.ranking.ranks[0]?.sourceLabel || '-',
-          afterTop: activeResult?.ranking.ranks[0]?.sourceLabel || '-',
-          statusAfter: activeResult?.ranking.canonicalStatus || '-'
-        },
-        ...prev.slice(0, 14)
-      ]);
-      void handleRunServerPipeline({ bootstrapReplications: 1999, mcmcIterations: 800 });
+      const prevRes = activeResult;
+      pushUndoSnapshot('Verifikasi Presisi Tinggi (1.999 Bootstrap + 800 MCMC)', prevRes);
+      const nextRes = await handleRunServerPipeline({ bootstrapReplications: 1999, mcmcIterations: 800 });
+      pushAuditEntry(
+        'Verifikasi Presisi Tinggi (1.999 Bootstrap + 800 MCMC)',
+        prevRes,
+        nextRes || prevRes
+      );
       return;
     }
     if (actionType === 'KEEP_CURRENT') {
@@ -1922,14 +2176,26 @@ export const PanelAccuracyTab: React.FC = () => {
                         {recommendation.optimalChecklistNote}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      onClick={() => handleApplyPreprocessingScenario(recommendation.bestScenario)}
-                      style={{ minHeight: '42px', fontSize: '13px' }}
-                    >
-                      <Sparkles size={14} style={{ marginRight: '6px' }} /> Terapkan Seluruh Rekomendasi Terbaik Step 3
-                    </button>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => handleApplyPreprocessingScenario(recommendation.bestScenario)}
+                        style={{ minHeight: '42px', fontSize: '13px' }}
+                      >
+                        <Sparkles size={14} style={{ marginRight: '6px' }} /> Terapkan Seluruh Rekomendasi Terbaik Step 3
+                      </button>
+                      {undoHistoryStack.length > 0 && (
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={() => void handleRevertPreviousConfig()}
+                          style={{ minHeight: '42px', fontSize: '12.5px' }}
+                        >
+                          <RefreshCw size={14} style={{ marginRight: '5px' }} /> Batalkan / Undo ({undoHistoryStack.length})
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {recommendation.actionItems && recommendation.actionItems.length > 0 && (
@@ -1940,6 +2206,7 @@ export const PanelAccuracyTab: React.FC = () => {
                       <RecommendationActionList
                         actions={recommendation.actionItems}
                         onAction={handleStepRecommendationAction}
+                        preprocessing={preprocessing}
                       />
                     </div>
                   )}
@@ -2419,7 +2686,7 @@ export const PanelAccuracyTab: React.FC = () => {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
                   <thead>
                     <tr style={{ background: 'var(--surface-muted)' }}>
-                      {['Sumber Pembanding', 'Mean AE (MAE)', 'Koefisien β (vs Acuan)', 'City Cluster SE', 't-stat', 'Cluster p-value', '95% Cluster CI', 'Wild Bootstrap p-val'].map(h => (
+                      {['Sumber Pembanding', 'Mean AE (MAE)', 'Koefisien β (vs Acuan)', 'City Cluster SE', 'Driscoll-Kraay SE', 't-stat', 'Cluster p-value', '95% Cluster CI', 'Wild Bootstrap p-val'].map(h => (
                         <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Sumber Pembanding' ? 'left' : 'right', borderBottom: '1px solid var(--border)' }}>{h}</th>
                       ))}
                     </tr>
@@ -2435,6 +2702,9 @@ export const PanelAccuracyTab: React.FC = () => {
                           {c.isBaselineComparison ? '0.000 (Ref)' : c.betaDiffVsBaseline.toFixed(3)}
                         </td>
                         <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{c.seCluster.toFixed(3)}</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: driscollKraayActive ? 700 : 500, color: driscollKraayActive ? 'var(--primary)' : 'inherit', borderBottom: '1px solid var(--border-light)' }}>
+                          {c.seDriscollKraay !== undefined ? c.seDriscollKraay.toFixed(3) : '-'}
+                        </td>
                         <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
                           {c.isBaselineComparison ? '-' : c.tStat.toFixed(2)}
                         </td>
@@ -2464,7 +2734,7 @@ export const PanelAccuracyTab: React.FC = () => {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
                     <thead>
                       <tr style={{ background: 'var(--surface-muted)' }}>
-                        {['Pasangan Kontras (A vs B)', 'MAE A', 'MAE B', 'ΔMAE (A − B)', 'Cluster SE', 't-stat', 'Cluster p', 'Wild Bootstrap p', 'Wild 95% CI', 'Keputusan (α=0.05)'].map(h => (
+                        {['Pasangan Kontras (A vs B)', 'MAE A', 'MAE B', 'ΔMAE (A − B)', 'Cluster SE', 'DK SE', 't-stat', 'Cluster p', 'DK p', 'Wild Bootstrap p', 'Wild 95% CI', 'Keputusan (α=0.05)'].map(h => (
                           <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Pasangan Kontras (A vs B)' || h === 'Keputusan (α=0.05)' ? 'left' : 'right', borderBottom: '1px solid var(--border)' }}>{h}</th>
                         ))}
                       </tr>
@@ -2479,8 +2749,14 @@ export const PanelAccuracyTab: React.FC = () => {
                           <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{c.maeB.toFixed(3)}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>{c.diffAminusB.toFixed(3)}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{c.seCluster.toFixed(3)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: driscollKraayActive ? 'var(--primary)' : 'inherit', fontWeight: driscollKraayActive ? 700 : 500, borderBottom: '1px solid var(--border-light)' }}>
+                            {c.seDriscollKraay !== undefined ? c.seDriscollKraay.toFixed(3) : '-'}
+                          </td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{c.tStat.toFixed(2)}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{c.pValueCluster.toFixed(4)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: driscollKraayActive ? 'var(--primary)' : 'inherit', fontWeight: driscollKraayActive ? 700 : 500, borderBottom: '1px solid var(--border-light)' }}>
+                            {c.pValueDriscollKraay !== undefined ? c.pValueDriscollKraay.toFixed(4) : '-'}
+                          </td>
                           <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: 'var(--primary)', borderBottom: '1px solid var(--border-light)' }}>
                             {c.wildBootstrapPValue.toFixed(4)}
                           </td>
@@ -2601,60 +2877,98 @@ export const PanelAccuracyTab: React.FC = () => {
                   actions={activeResult.diagnostics.diagnosticAdvisor.actions}
                   onAction={handleStepRecommendationAction}
                   disabled={isRunningFit}
+                  preprocessing={preprocessing}
+                  driscollKraayActive={driscollKraayActive}
+                  correlatedErrorReviewed={correlatedErrorReviewed}
                 />
 
-                {/* 4 Mandatory Advisor Action Buttons (Section J Step 7) */}
+                {/* 4 Mandatory Advisor Action Buttons + Multi-Step Undo & Reset */}
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', paddingTop: '6px', borderTop: '1px solid var(--border-light)' }}>
                   <button
                     type="button"
                     className="btn btn-primary"
                     disabled={isRunningFit}
                     onClick={() => {
-                      const firstAct = activeResult.diagnostics.diagnosticAdvisor?.actions[0];
-                      if (firstAct) handleStepRecommendationAction(firstAct.actionType);
+                      const priorityAct =
+                        activeResult.diagnostics.diagnosticAdvisor?.actions.find(a => a.priority !== 'OPTIMAL') ||
+                        activeResult.diagnostics.diagnosticAdvisor?.actions[0];
+                      if (priorityAct) void handleStepRecommendationAction(priorityAct.actionType);
                     }}
-                    style={{ minHeight: '40px', fontSize: '12.5px' }}
+                    style={{ minHeight: '42px', fontSize: '12.5px' }}
                   >
-                    <Sparkles size={14} style={{ marginRight: '5px' }} /> Terapkan Rekomendasi
+                    <Sparkles size={14} style={{ marginRight: '5px' }} /> Terapkan Rekomendasi Utama
                   </button>
                   <button
                     type="button"
                     className="btn btn-outline"
                     disabled={isRunningFit}
-                    onClick={() => handleStepRecommendationAction('RUN_HIGH_PRECISION_VERIFICATION')}
-                    style={{ minHeight: '40px', fontSize: '12.5px' }}
+                    onClick={() => {
+                      const altAction = !preprocessing.applyLog1p
+                        ? 'APPLY_LOG1P'
+                        : !preprocessing.applyWinsorize
+                          ? 'APPLY_WINSORIZE'
+                          : 'RESET_RAW_BASELINE';
+                      void handleStepRecommendationAction(altAction);
+                    }}
+                    style={{ minHeight: '42px', fontSize: '12.5px' }}
                   >
-                    <Play size={14} style={{ marginRight: '5px' }} /> Jalankan Analisis Alternatif
+                    <Play size={14} style={{ marginRight: '5px' }} />{' '}
+                    {!preprocessing.applyLog1p
+                      ? 'Analisis Alternatif: Uji Skala log(1+x)'
+                      : !preprocessing.applyWinsorize
+                        ? 'Analisis Alternatif: Uji Winsorize 2.5%'
+                        : 'Analisis Alternatif: Reset Satuan Asli'}
                   </button>
                   <button
                     type="button"
                     className="btn btn-outline"
                     onClick={() => setShowBeforeAfterCompare(v => !v)}
-                    style={{ minHeight: '40px', fontSize: '12.5px' }}
+                    style={{ minHeight: '42px', fontSize: '12.5px' }}
                   >
                     <Sliders size={14} style={{ marginRight: '5px' }} /> {showBeforeAfterCompare ? 'Tutup Perbandingan Hasil' : 'Bandingkan Hasil'}
                   </button>
                   <button
                     type="button"
                     className="btn btn-outline"
-                    disabled={!previousConfigSnapshot}
-                    onClick={handleRevertPreviousConfig}
-                    style={{ minHeight: '40px', fontSize: '12.5px' }}
+                    disabled={undoHistoryStack.length === 0 || isRunningFit}
+                    onClick={() => void handleRevertPreviousConfig()}
+                    style={{ minHeight: '42px', fontSize: '12.5px' }}
                   >
-                    <RefreshCw size={14} style={{ marginRight: '5px' }} /> Kembali ke Pengaturan Sebelumnya
+                    <RefreshCw size={14} style={{ marginRight: '5px' }} /> Undo / Batalkan Terakhir ({undoHistoryStack.length})
                   </button>
+                  {(undoHistoryStack.length > 0 || driscollKraayActive || correlatedErrorReviewed || preprocessing.applyLog1p || preprocessing.applyWinsorize) && (
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      disabled={isRunningFit}
+                      onClick={handleResetAllRecommendations}
+                      style={{ minHeight: '42px', fontSize: '12.5px', color: '#ef4444', borderColor: '#ef4444' }}
+                    >
+                      <Trash2 size={14} style={{ marginRight: '5px' }} /> Reset Semua ke Awal
+                    </button>
+                  )}
                 </div>
 
                 {showBeforeAfterCompare && previousConfigSnapshot && (
-                  <div style={{ padding: '12px', borderRadius: 'var(--radius-sm)', background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                    <strong style={{ fontSize: '13px', display: 'block', marginBottom: '6px', color: 'var(--primary)' }}>
-                      Perbandingan Hasil Sebelum vs Sesudah Tindakan Perbaikan
-                    </strong>
+                  <div style={{ padding: '12px', borderRadius: 'var(--radius-sm)', background: 'var(--surface)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                      <strong style={{ fontSize: '13px', color: 'var(--primary)' }}>
+                        Perbandingan Hasil Sebelum vs Sesudah Tindakan Perbaikan
+                      </strong>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text)' }}>
+                        Skor Diagnostik:{' '}
+                        <code>{previousConfigSnapshot.result.diagnostics.diagnosticAdvisor?.diagnosticScore ?? '-'}</code> →{' '}
+                        <code style={{ color: 'var(--primary)' }}>{activeResult.diagnostics.diagnosticAdvisor?.diagnosticScore ?? '-'}</code>/100
+                        {' '}| Max R-hat:{' '}
+                        <code>{previousConfigSnapshot.result.latentModel.maxRhat.toFixed(4)}</code> →{' '}
+                        <code>{activeResult.latentModel.maxRhat.toFixed(4)}</code>
+                      </span>
+                    </div>
                     <div style={{ overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                         <thead>
                           <tr style={{ background: 'var(--surface-muted)' }}>
-                            {['Sumber', 'Rank Sebelum', 'Total RMSE Sebelum', 'Rank Sesudah', 'Total RMSE Sesudah', 'Perubahan Status'].map(h => (
+                            {['Sumber', 'Rank Sblm→Ssdh', 'TotRMSE Sblm', 'TotRMSE Ssdh', 'Error SD Sblm→Ssdh', 'Rel R² Sblm→Ssdh', 'Status'].map(h => (
                               <th key={h} style={{ padding: '6px 8px', textAlign: h === 'Sumber' ? 'left' : 'right', borderBottom: '1px solid var(--border)' }}>{h}</th>
                             ))}
                           </tr>
@@ -2663,19 +2977,140 @@ export const PanelAccuracyTab: React.FC = () => {
                           {activeResult.ranking.ranks.map(curR => {
                             const prevR = previousConfigSnapshot.result.ranking.ranks.find(p => p.sourceId === curR.sourceId);
                             const rankChanged = prevR && prevR.rank !== curR.rank;
+                            const rmseDelta = prevR ? curR.totalLatentRmse - prevR.totalLatentRmse : 0;
+                            const fmtD = (n: number) => (Math.abs(n) < 10 ? n.toFixed(3) : n.toFixed(2));
                             return (
                               <tr key={curR.sourceId}>
                                 <td style={{ padding: '6px 8px', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>{curR.sourceLabel}</td>
-                                <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>#{prevR?.rank ?? '-'}</td>
-                                <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{prevR ? prevR.totalLatentRmse.toFixed(3) : '-'}</td>
-                                <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 800, color: 'var(--primary)', borderBottom: '1px solid var(--border-light)' }}>#{curR.rank}</td>
-                                <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>{curR.totalLatentRmse.toFixed(3)}</td>
+                                <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>
+                                  #{prevR?.rank ?? '-'} → #{curR.rank}
+                                </td>
+                                <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{prevR ? fmtD(prevR.totalLatentRmse) : '-'}</td>
+                                <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 800, color: 'var(--primary)', borderBottom: '1px solid var(--border-light)' }}>{fmtD(curR.totalLatentRmse)}</td>
+                                <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
+                                  {prevR ? `${fmtD(prevR.errorSd)} → ${fmtD(curR.errorSd)}` : fmtD(curR.errorSd)}
+                                </td>
+                                <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
+                                  {prevR ? `${(prevR.reliabilityR2 * 100).toFixed(1)}% → ${(curR.reliabilityR2 * 100).toFixed(1)}%` : `${(curR.reliabilityR2 * 100).toFixed(1)}%`}
+                                </td>
                                 <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: rankChanged ? '#d97706' : 'var(--success)', borderBottom: '1px solid var(--border-light)' }}>
-                                  {rankChanged ? `Bergeser (#${prevR?.rank} → #${curR.rank})` : 'Tetap Stabil'}
+                                  {rankChanged
+                                    ? `Rank Bergeser (#${prevR?.rank} → #${curR.rank})`
+                                    : Math.abs(rmseDelta) > 0.005
+                                      ? `Rank Stabil (${rmseDelta >= 0 ? '+' : ''}${fmtD(rmseDelta)} RMSE)`
+                                      : 'Tetap Stabil'}
                                 </td>
                               </tr>
                             );
                           })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Panel Sensitivitas Driscoll-Kraay SE vs City-Clustered SE */}
+                {(driscollKraayActive || activeResult.diagnostics.crossSectionalDependenceTest.status === 'warning') && (
+                  <div style={{ padding: '12px', borderRadius: 'var(--radius-sm)', background: 'var(--surface)', border: `1px solid ${driscollKraayActive ? 'var(--success)' : 'var(--border)'}`, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                      <strong style={{ fontSize: '13px', color: driscollKraayActive ? 'var(--success)' : 'var(--primary)' }}>
+                        {driscollKraayActive ? '✓ Inferensi Driscoll-Kraay (1998) SE Aktif — Tahan Pesaran CD & AR(1)' : 'Pratinjau Perbandingan Cluster SE vs Driscoll-Kraay SE (1998)'}
+                      </strong>
+                      <code style={{ fontSize: '11.5px', padding: '2px 8px', borderRadius: '6px', background: 'var(--surface-muted)' }}>
+                        xtscc ae i.source_id, fe
+                      </code>
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                        <thead>
+                          <tr style={{ background: 'var(--surface-muted)' }}>
+                            {['Kontras (A vs B)', 'dMAE (A − B)', 'Cluster SE', 'Driscoll-Kraay SE', 'Cluster p', 'Driscoll-Kraay p', 'Wild Bootstrap p'].map(h => (
+                              <th key={h} style={{ padding: '6px 8px', textAlign: h === 'Kontras (A vs B)' ? 'left' : 'right', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {activeResult.pairFixedEffects.pairwiseContrasts.map((c, idx) => (
+                            <tr key={idx}>
+                              <td style={{ padding: '6px 8px', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>{c.sourceALabel} vs {c.sourceBLabel}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{c.diffAminusB.toFixed(3)}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{c.seCluster.toFixed(3)}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 800, color: 'var(--primary)', borderBottom: '1px solid var(--border-light)' }}>
+                                {c.seDriscollKraay !== undefined ? c.seDriscollKraay.toFixed(3) : '-'}
+                              </td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{c.pValueCluster.toFixed(4)}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 800, color: (c.pValueDriscollKraay ?? 1) < 0.05 ? 'var(--success)' : '#d97706', borderBottom: '1px solid var(--border-light)' }}>
+                                {c.pValueDriscollKraay !== undefined ? c.pValueDriscollKraay.toFixed(4) : '-'}
+                              </td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>{c.wildBootstrapPValue.toFixed(4)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Panel Audit Korelasi Galat & Sensitivitas Sumber Kembar */}
+                {(correlatedErrorAuditOpen || (activeResult.diagnostics.correlatedErrorAudit?.pairs.length ?? 0) > 0) && (
+                  <div style={{ padding: '12px', borderRadius: 'var(--radius-sm)', background: 'var(--surface)', border: `1px solid ${correlatedErrorReviewed ? 'var(--success)' : 'var(--warn-border)'}`, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                      <strong style={{ fontSize: '13px', color: 'var(--primary)' }}>
+                        Audit Matriks Korelasi Residual Corr(ε_a, ε_b) &amp; Sensitivitas Sumber Kembar
+                      </strong>
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        style={{ minHeight: '36px', fontSize: '12px', padding: '4px 10px' }}
+                        onClick={() => setCurrentStep(2)}
+                      >
+                        Tinjau Pemetaan Sumber di Step 2 →
+                      </button>
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                      {activeResult.diagnostics.correlatedErrorAudit?.summary}{' '}
+                      <strong>Adjusted #1 (Diskon Korelasi):</strong>{' '}
+                      <code>
+                        {sources.find(s => s.id === activeResult.latentModel.correlatedErrorAdjustedTopSourceId)?.label ||
+                          activeResult.latentModel.correlatedErrorAdjustedTopSourceId ||
+                          '-'}
+                      </code>
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                        <thead>
+                          <tr style={{ background: 'var(--surface-muted)' }}>
+                            <th style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid var(--border)' }}>Corr(ε_a, ε_b)</th>
+                            {sources.map(s => (
+                              <th key={s.id} style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>{s.name}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {activeResult.latentModel.residualCorrelationMatrix.map((row, rIdx) => (
+                            <tr key={sources[rIdx]?.id || rIdx}>
+                              <td style={{ padding: '6px 8px', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>
+                                {sources[rIdx]?.label || `S${rIdx + 1}`}
+                              </td>
+                              {row.map((val, cIdx) => {
+                                const flagged = rIdx !== cIdx && val > 0.38;
+                                return (
+                                  <td
+                                    key={cIdx}
+                                    style={{
+                                      padding: '6px 8px',
+                                      textAlign: 'right',
+                                      fontWeight: flagged ? 800 : 500,
+                                      color: flagged ? '#d97706' : 'var(--text)',
+                                      borderBottom: '1px solid var(--border-light)'
+                                    }}
+                                  >
+                                    {val.toFixed(3)}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
                         </tbody>
                       </table>
                     </div>
@@ -2871,18 +3306,54 @@ export const PanelAccuracyTab: React.FC = () => {
               )}
             </div>
 
+            {/* Ringkasan Kondisi Aktif dari Step 3 & Step 7 */}
+            {(driscollKraayActive || correlatedErrorReviewed || preprocessing.applyLog1p || preprocessing.applyWinsorize) && (
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {driscollKraayActive && (
+                  <span style={{ padding: '4px 10px', borderRadius: '999px', background: 'var(--info-bg)', border: '1px solid var(--success)', fontSize: '11.5px', fontWeight: 700, color: 'var(--success)' }}>
+                    ✓ Driscoll-Kraay SE Aktif ({activeResult.pairFixedEffects.bootstrapReplications} WildBoot)
+                  </span>
+                )}
+                {correlatedErrorReviewed && (
+                  <span style={{ padding: '4px 10px', borderRadius: '999px', background: 'var(--info-bg)', border: '1px solid var(--primary)', fontSize: '11.5px', fontWeight: 700, color: 'var(--primary)' }}>
+                    ✓ Audit Korelasi Galat Diverifikasi
+                  </span>
+                )}
+                {preprocessing.applyLog1p && (
+                  <span style={{ padding: '4px 10px', borderRadius: '999px', background: 'var(--surface-muted)', border: '1px solid var(--border)', fontSize: '11.5px', fontWeight: 700 }}>
+                    Skala: log(1 + x)
+                  </span>
+                )}
+                {preprocessing.applyWinsorize && (
+                  <span style={{ padding: '4px 10px', borderRadius: '999px', background: 'var(--surface-muted)', border: '1px solid var(--border)', fontSize: '11.5px', fontWeight: 700 }}>
+                    Winsorize 2.5%
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* Ranking Table (ALL J Sources #1..#J) */}
             <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
                 <thead>
                   <tr style={{ background: 'var(--surface-muted)' }}>
-                    {['Peringkat', 'Variabel / Sumber', 'Total Latent RMSE', 'Error SD (σ_ε)', 'Reliabilitas R²', 'Posterior P(Best)', 'LOSO MAE', 'P_Bayes vs #1', 'WildBoot p vs #1', 'Keterangan Evaluasi'].map(h => (
+                    {['Peringkat', 'Variabel / Sumber', 'Total Latent RMSE', 'Error SD (σ_ε)', 'Reliabilitas R²', 'Posterior P(Best)', 'LOSO MAE', 'P_Bayes vs #1', 'WildBoot p vs #1', 'DK p vs #1', 'Keterangan Evaluasi'].map(h => (
                       <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Variabel / Sumber' || h === 'Keterangan Evaluasi' ? 'left' : 'right', borderBottom: '1px solid var(--border)' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {activeResult.ranking.ranks.map(r => (
+                  {activeResult.ranking.ranks.map(r => {
+                    const topSrcId = activeResult.ranking.ranks[0]?.sourceId;
+                    const dkContrast =
+                      r.rank > 1 && topSrcId
+                        ? activeResult.pairFixedEffects.pairwiseContrasts.find(
+                            c =>
+                              (c.sourceAId === r.sourceId && c.sourceBId === topSrcId) ||
+                              (c.sourceBId === r.sourceId && c.sourceAId === topSrcId)
+                          )
+                        : undefined;
+                    return (
                     <tr key={r.sourceId} style={{ background: r.rank === 1 ? 'var(--info-bg)' : 'transparent' }}>
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, borderBottom: '1px solid var(--border-light)' }}>#{r.rank}</td>
                       <td style={{ padding: '8px 10px', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>{r.sourceLabel}</td>
@@ -2905,9 +3376,13 @@ export const PanelAccuracyTab: React.FC = () => {
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>
                         {r.pValueVsTopWildBootstrap !== null ? r.pValueVsTopWildBootstrap.toFixed(4) : '-'}
                       </td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: driscollKraayActive ? 800 : 500, color: driscollKraayActive ? 'var(--primary)' : 'inherit', borderBottom: '1px solid var(--border-light)' }}>
+                        {dkContrast?.pValueDriscollKraay !== undefined ? dkContrast.pValueDriscollKraay.toFixed(4) : '-'}
+                      </td>
                       <td style={{ padding: '8px 10px', fontSize: '12px', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border-light)' }}>{r.rankNote}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

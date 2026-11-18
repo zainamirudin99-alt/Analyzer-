@@ -29,6 +29,8 @@ export interface Step7DiagnosticsContext {
   metrics?: SourceAccuracyMetricRow[];
   pairFixedEffects?: PairFixedEffectsResult;
   preprocessing?: AccuracyPreprocessingOptions;
+  driscollKraayActivated?: boolean;
+  correlatedErrorReviewed?: boolean;
 }
 
 export function computePanelAccuracyDiagnostics(
@@ -528,7 +530,7 @@ function buildStep7DiagnosticAdvisor(params: {
           'Memberikan p-value Rademacher Wild Cluster Bootstrap resolusi tinggi yang diakui literatur untuk klaster kecil.',
         actionType: 'RUN_HIGH_PRECISION_VERIFICATION'
       });
-    } else {
+    } else if (bootReps < 1999) {
       actions.push({
         id: 'diag_small_cluster_ok',
         priority: 'OPTIMAL',
@@ -538,6 +540,17 @@ function buildStep7DiagnosticAdvisor(params: {
         actionLabel: 'Tingkatkan ke 1.999 Bootstrap + 800 MCMC (Opsional)',
         expectedImpact: 'Menguji kestabilan ekstrem replikasi bootstrap dari 999 ke 1.999.',
         actionType: 'RUN_HIGH_PRECISION_VERIFICATION'
+      });
+    } else {
+      actions.push({
+        id: 'diag_small_cluster_ok',
+        priority: 'OPTIMAL',
+        title: `Presisi Maksimum Small Cluster G = ${nClusters} (${bootReps} Replikasi Bootstrap) Aktif`,
+        statisticalBasis:
+          'Inferensi klaster kecil sudah berada pada resolusi tertinggi (1.999 Wild Bootstrap + Bayesian CrI).',
+        actionLabel: 'Presisi Maksimum Aktif — Lanjut ke Step 8',
+        expectedImpact: 'Tidak perlu pengulangan replikasi acak; hasil Step 8 siap disimpulkan.',
+        actionType: 'KEEP_CURRENT'
       });
     }
   }
@@ -550,36 +563,50 @@ function buildStep7DiagnosticAdvisor(params: {
     ]
       .filter(Boolean)
       .join(', ');
+    const dkActivated = Boolean(context?.driscollKraayActivated);
+    if (cdWarning && !dkActivated) {
+      score -= 6;
+    }
 
     actions.push({
       id: 'diag_panel_cov_ok',
-      priority: cdWarning ? 'DISARANKAN' : 'OPTIMAL',
-      title: `Penanganan Struktur Error Panel (${activeFlags})`,
+      priority: cdWarning && !dkActivated ? 'DISARANKAN' : 'OPTIMAL',
+      title: dkActivated
+        ? `Inferensi Driscoll-Kraay SE Aktif Menangani (${activeFlags})`
+        : `Penanganan Struktur Error Panel (${activeFlags})`,
       statisticalBasis:
-        'Pair Fixed Effects (α_it) sudah menyerap guncangan makro tahun-kota bersama, sedangkan SE klaster tingkat kota (vce(cluster city)) + Wild Bootstrap menangani korelasi serial & heteroskedastisitas.',
-      actionLabel: cdWarning
-        ? 'Salin & Jalankan Uji Sensitivitas xtscc di Stata + Verifikasi 1.999 Bootstrap'
-        : 'Jalankan Verifikasi Penuh (1.999 Bootstrap + 800 MCMC)',
-      expectedImpact:
-        'Memastikan seluruh p-value & peringkat pada Step 8 kebal terhadap pelanggaran asumsi klasik i.i.d.',
-      actionType: 'RUN_HIGH_PRECISION_VERIFICATION'
+        'Pair Fixed Effects (α_it) sudah menyerap guncangan makro bersama; SE Driscoll-Kraay (1998) + Rademacher Wild Bootstrap menangani ketergantungan lintas-kota, korelasi serial, dan heteroskedastisitas.',
+      actionLabel: dkActivated
+        ? 'Driscoll-Kraay SE Aktif ✓ (Klik untuk Salin xtscc)'
+        : cdWarning
+          ? 'Aktifkan Driscoll-Kraay SE & Salin Uji xtscc Stata'
+          : 'Aktifkan Panel Perbandingan Driscoll-Kraay SE',
+      expectedImpact: dkActivated
+        ? 'Kolom SE & p-value Driscoll-Kraay kini ditampilkan langsung pada tabel Step 6, 7, & 8.'
+        : 'Menampilkan perbandingan langsung Cluster SE vs Driscoll-Kraay SE di Step 6–8, menyalin xtscc Stata, dan meningkatkan presisi p-value.',
+      actionType: 'APPLY_DRISCOLL_KRAAY_SENSITIVITY'
     });
   }
 
   if (correlatedErrorCount > 0) {
-    score -= 10;
+    const corrReviewed = Boolean(context?.correlatedErrorReviewed);
+    score -= corrReviewed ? 2 : 10;
     actions.push({
       id: 'diag_correlated_errors',
-      priority: 'TINGGI',
-      title: `Indikasi Correlated Measurement Errors (${correlatedErrorCount} Pasangan Sumber)`,
+      priority: corrReviewed ? 'OPTIMAL' : 'TINGGI',
+      title: corrReviewed
+        ? `Audit Korelasi Galat Selesai Ditinjau (${correlatedErrorCount} Pasangan)`
+        : `Indikasi Correlated Measurement Errors (${correlatedErrorCount} Pasangan Sumber)`,
       statisticalBasis:
         'Korelasi galat positif antarsumber melanggar asumsi independensi bersyarat model faktor konvensional dan berisiko menarik konsensus laten ke arah sumber kembar.',
-      actionLabel: 'Periksa Independensi Sumber di Step 2 & Jalankan Verifikasi Presisi',
+      actionLabel: corrReviewed
+        ? 'Audit Korelasi Galat Aktif ✓ (Buka Rincian)'
+        : 'Buka Audit Korelasi Galat & Cek Sensitivitas Sumber Kembar',
       expectedImpact:
-        'Sistem menerapkan penalti korelasi galat untuk menguji apakah kandidat #1 tetap bertahan saat sumber berkorelasi didiskon.',
+        'Memperlihatkan matriks korelasi residual Corr(ε_a, ε_b) dan memverifikasi apakah pemenang #1 tetap bertahan setelah sumber berkorelasi didiskon.',
       riskIfIgnored: 'Sumber yang berbagi bias metode yang sama dapat tampak unggul secara semu.',
       rankingImpactNote: 'Status kesimpulan diturunkan ke KONFLIK_ANTAR_METRIK bila penalti korelasi mengubah peringkat #1.',
-      actionType: 'RUN_HIGH_PRECISION_VERIFICATION'
+      actionType: 'AUDIT_CORRELATED_ERRORS'
     });
   }
 

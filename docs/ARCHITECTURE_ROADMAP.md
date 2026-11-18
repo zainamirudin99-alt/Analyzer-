@@ -199,3 +199,11 @@ Mengacu pada `docs/superpowers/specs/2026-11-13-regression-upgrade-design.md`:
 ## 12. Arsitektur Tahap 14: Tombol `Kode Stata` (Collapsible Step 1–8)
 
 1. **`src/components/PanelAccuracyStepStataPanel.tsx`**: Menambahkan state per-step `expandedByStep` di dalam komponen. Untuk `bundle.stepId <= 8`, default bernilai tertutup (`false`) dan menyediakan tombol **`Kode Stata`** (`minHeight: 44px`, `Terminal` + `ChevronDown`/`ChevronUp`) di header panel. Ketika diklik, bagian 1–6 (Tujuan, Konsep, Kode Stata/R/Stan, Penjelasan Kode, Output & Cara Membaca, LOCO, Interpretasi Statistik) tampil di atas bagian **Ringkasan Keputusan Step (`stepConclusion`)**, sedangkan bagian kesimpulan tersebut tetap tampil di bagian bawah setiap saat. Pada `stepId === 9`, default tetap terbuka (`true`).
+
+---
+
+## 13. Arsitektur Tahap 15: Optimalisasi Aksi Nyata Step 3/7, Audit Korelasi $J=3$, & Kontinuitas ke Step 8
+
+1. **`src/lib/panel-accuracy-types.ts` & `src/lib/panel-accuracy-diagnostics.ts`**: Penambahan union `APPLY_DRISCOLL_KRAAY_SENSITIVITY` dan `AUDIT_CORRELATED_ERRORS` serta dukungan `driscollKraayActivated` / `correlatedErrorReviewed` di `Step7DiagnosticsContext` agar skor kesehatan & prioritas Advisor merespons tindakan pengguna secara nyata.
+2. **`src/lib/panel-accuracy-latent.ts`**: Penambahan *Chi-square sampling-noise guard* pada cabang $J = 3$ untuk mencegah *false positive* deteksi `correlatedErrorPairs` akibat varians sumber ke-3 yang tinggi.
+3. **`src/components/PanelAccuracyTab.tsx`**: Perbaikan *async await* + `preprocessingOverride` (bebas *stale closure*), *auto-reverify server* saat prapemrosesan berubah jika server result aktif, panel **Audit Korelasi Residual** interaktif di Step 7, tampilan **Driscoll-Kraay SE** di Step 6–8, tombol aktif/selesai tanpa perulangan `1999 -> 1999`, tabel **Sebelum vs Sesudah** lengkap (`Rank`, `TotRMSE`, `Rel R²`, `Bias α`, `Skor Diagnostik`), serta dukungan penuh **Undo Multi-Langkah (`undoHistoryStack`) & Toggle-Off Pembatalan** langsung di setiap tombol rekomendasi Step 3 & Step 7.

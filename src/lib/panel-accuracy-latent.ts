@@ -783,6 +783,8 @@ export function fitBayesianLatentMeasurementModel(params: {
       } else if (J === 3 && otherIndices.length === 1) {
         const cIdx = otherIndices[0];
         const varC = sourceEstimates[cIdx].errorVariance / Math.max(0.01, sourceEstimates[cIdx].loadingLambda ** 2);
+        const varEa = sourceEstimates[a].errorVariance / Math.max(0.01, sourceEstimates[a].loadingLambda ** 2);
+        const varEb = sourceEstimates[b].errorVariance / Math.max(0.01, sourceEstimates[b].loadingLambda ** 2);
         const varDiffA =
           resA.reduce((s, v) => s + v * v, 0) / Math.max(1, P - 1);
         const varDiffB =
@@ -790,9 +792,17 @@ export function fitBayesianLatentMeasurementModel(params: {
         const covAB =
           resA.reduce((s, v, idx) => s + v * resB[idx], 0) / Math.max(1, P - 1);
         const excessCov = covAB - varC;
-        const denom = Math.sqrt(Math.max(1e-12, Math.max(1e-9, varDiffA - varC) * Math.max(1e-9, varDiffB - varC)));
-        const rExcess = Math.max(-0.99, Math.min(0.99, excessCov / denom));
-        effectiveR = Math.abs(rExcess) > Math.abs(rPost) ? rExcess : rPost;
+        // Finite-sample Chi-square SE of Var(Z_c): avoids false positive when noisy 3rd source has much larger variance
+        const varCSamplingSe = varC * Math.sqrt(2 / Math.max(1, P - 1));
+        if (Math.abs(excessCov) <= 1.96 * varCSamplingSe) {
+          effectiveR = rPost;
+        } else {
+          const denom = Math.sqrt(
+            Math.max(1e-12, Math.max(0.5 * varEa, varDiffA - varC) * Math.max(0.5 * varEb, varDiffB - varC))
+          );
+          const rExcess = Math.max(-0.99, Math.min(0.99, excessCov / denom));
+          effectiveR = Math.abs(rExcess) > Math.abs(rPost) && Math.sign(rExcess) === Math.sign(rPost) ? rExcess : rPost;
+        }
       }
 
       residualCorrelationMatrix[a][b] = effectiveR;

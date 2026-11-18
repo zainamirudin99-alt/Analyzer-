@@ -241,3 +241,12 @@ Dokumen ini memuat daftar tugas operasional dari Tahap 1 hingga Tahap 3 beserta 
 ## Tahap 14: Tombol `Kode Stata` untuk Kode/Output/Interpretasi Step 1–8 (Kesimpulan Tetap di Bawah)
 - [x] **T14.1**: Pembaruan `src/components/PanelAccuracyStepStataPanel.tsx` untuk melipat bagian Kode, Output & Interpretasi Stata di balik tombol **`Kode Stata`** secara default pada Step 1–8 sambil menjaga bagian **Ringkasan Keputusan Step** tetap tampil di bawah.
 - [x] **T14.2**: Verifikasi build & tes (`tsc --noEmit`, `vitest`, `next build`) serta 0 diff Option 1.
+
+---
+
+## Tahap 15: Optimalisasi Dampak Nyata Tombol Rekomendasi (Step 3, Step 7 → Step 8) & Stabilitas Korelasi J=3
+- [x] **T15.1**: Penambahan aksi spesifik `APPLY_DRISCOLL_KRAAY_SENSITIVITY` & `AUDIT_CORRELATED_ERRORS` serta dukungan state terverifikasi di `panel-accuracy-types.ts`, `panel-accuracy-diagnostics.ts`, & `panel-accuracy-orchestrator.ts`.
+- [x] **T15.2**: Perbaikan *Chi-square sampling-noise guard* korelasi galat $J = 3$ pada `panel-accuracy-latent.ts` untuk menghilangkan *false positive*.
+- [x] **T15.3**: Optimalisasi `PanelAccuracyTab.tsx`: hapus *stale closure* (`preprocessingOverride`), `await` sinkron ke Audit Trail, panel *Driscoll-Kraay SE vs Cluster SE*, panel *Audit Korelasi Residual* di Step 7, lencana *Sudah Aktif ✓* di tombol aksi, tabel Sebelum vs Sesudah diperkaya (`TotRMSE`, `Rel R²`, `Bias`, `Skor`), dan visibilitas `DK SE`/`DK p` di Step 6 & Step 8.
+- [x] **T15.4**: Penambahan unit test Tahap 15 di `tests/unit/panel-accuracy-engine.test.ts` & verifikasi penuh (`tsc --noEmit`, `vitest`, `next build`, 0 diff Option 1).
+- [x] **T15.5**: Dukungan penuh **Undo Multi-Langkah (`undoHistoryStack`)**, pembatalan langsung (**`Batalkan`**) pada setiap tombol rekomendasi yang aktif di Step 3 & Step 7, serta **`Reset ke Awal`**.

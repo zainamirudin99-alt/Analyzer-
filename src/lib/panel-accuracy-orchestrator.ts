@@ -36,6 +36,8 @@ export function executePanelAccuracyPipeline(params: {
   bootstrapReplications?: number;
   mcmcIterations?: number;
   executionSource?: 'client_live' | 'server_verified';
+  driscollKraayActivated?: boolean;
+  correlatedErrorReviewed?: boolean;
 }): PanelAccuracyFitResult {
   const startedAt = Date.now();
   const preprocessing: AccuracyPreprocessingOptions = {
@@ -86,7 +88,9 @@ export function executePanelAccuracyPipeline(params: {
     qualityReport,
     metrics,
     pairFixedEffects,
-    preprocessing
+    preprocessing,
+    driscollKraayActivated: params.driscollKraayActivated,
+    correlatedErrorReviewed: params.correlatedErrorReviewed
   });
   const ranking = computeComparativeSourceRanking({
     metrics,

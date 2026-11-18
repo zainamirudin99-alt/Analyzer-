@@ -579,4 +579,44 @@ describe('Gerbang Verifikasi — Opsi B Reference-Free All-Source Latent & Conse
       '09_Kode_Stata_R_Stan'
     ]);
   });
+
+  it('12. Tahap 15: No J=3 false-positive correlated errors & Step 7 advisor transitions meaningfully when actions applied', () => {
+    const preset = generateMultiSourceCO2PresetDataset();
+    // 1. Clean 3-source dataset with independent errors and unequal variances (like X1 noisy, X2/X3 precise)
+    const j3CleanDataset: PanelDataset = {
+      ...preset,
+      sources: preset.sources.slice(0, 3)
+    };
+    const j3Res = executePanelAccuracyPipeline({
+      dataset: j3CleanDataset,
+      bootstrapReplications: 499
+    });
+    expect(j3Res.latentModel.correlatedErrorPairs).toHaveLength(0);
+
+    // 2. Advisor emits specific action types rather than looping RUN_HIGH_PRECISION_VERIFICATION when already at 1999
+    const beforeAdvisor = executePanelAccuracyPipeline({
+      dataset: preset,
+      bootstrapReplications: 499,
+      driscollKraayActivated: false,
+      correlatedErrorReviewed: false
+    }).diagnostics.diagnosticAdvisor!;
+
+    const afterAdvisor = executePanelAccuracyPipeline({
+      dataset: preset,
+      bootstrapReplications: 1999,
+      mcmcIterations: 800,
+      executionSource: 'server_verified',
+      driscollKraayActivated: true,
+      correlatedErrorReviewed: true
+    }).diagnostics.diagnosticAdvisor!;
+
+    expect(afterAdvisor.diagnosticScore).toBeGreaterThanOrEqual(beforeAdvisor.diagnosticScore);
+    const smallOk = afterAdvisor.actions.find(a => a.id === 'diag_small_cluster_ok');
+    expect(smallOk?.actionType).toBe('KEEP_CURRENT');
+    const panelCov = afterAdvisor.actions.find(a => a.id === 'diag_panel_cov_ok');
+    if (panelCov) {
+      expect(panelCov.actionType).toBe('APPLY_DRISCOLL_KRAAY_SENSITIVITY');
+      expect(panelCov.priority).toBe('OPTIMAL');
+    }
+  });
 });

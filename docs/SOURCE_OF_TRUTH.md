@@ -214,3 +214,19 @@ Spesifikasi terkini untuk **Regresi Data Panel Stata → Option 2** (`PanelAccur
    - Pada **Step 1 s.d. Step 8**, bagian dokumentasi teknis Stata (Tujuan Analisis, Konsep Statistik, Kode Stata/R/Stan, Penjelasan Setiap Kode, Output & Cara Membaca Output Stata, tabel LOCO Step 8, serta Interpretasi Statistik Per Poin) disembunyikan secara default di balik tombol interaktif **`Kode Stata`** (`minHeight >= 44px`, `aria-expanded`, indikator ikon buka/tutup) untuk menjaga keterbacaan alur langkah.
    - **Bagian Kesimpulan Tetap Terlihat**: Kotak **Ringkasan Keputusan Step (`stepConclusion`)** dan **Interpretasi Ringkas Step** tetap selalu tampil di bagian bawah setiap Step 1–8 tanpa perlu membuka tombol `Kode Stata`.
    - **Step 9 Tetap Terbuka Default**: Step 9 (Final Results, Code & Export) menampilkan seluruh panel secara terbuka secara default (tetap dapat dilipat bila tombol `Kode Stata` diklik).
+
+---
+
+## 16. Ekspansi Tahap 15: Optimalisasi Tombol Rekomendasi Nyata (Step 3 & Step 7), Stabilitas `Corr(ε)` J=3, & Sinkronisasi Hasil Step 6–8
+
+1. **Aksi Rekomendasi Spesifik & Berdampak Nyata (`panel-accuracy-types.ts`, `panel-accuracy-diagnostics.ts`, `PanelAccuracyTab.tsx`)**:
+   - Memisahkan aksi `APPLY_DRISCOLL_KRAAY_SENSITIVITY` (mengaktifkan fokus & tabel pembanding *Driscoll-Kraay SE* di Step 6/7/8 + menyalin perintah `xtscc` ke clipboard + memastikan verifikasi presisi penuh) dan `AUDIT_CORRELATED_ERRORS` (membuka panel matriks $\text{Corr}(\hat{\varepsilon}_a, \hat{\varepsilon}_b)$ & uji sensitivitas sumber kembar *Adjusted Top Source* serta menandai tinjauan terverifikasi).
+   - `RUN_HIGH_PRECISION_VERIFICATION` hanya dipicu jika replikasi Bootstrap `< 1999` atau MCMC belum optimal (`R-hat > 1.05` / `ESS < 150`); setelah aktif pada `1.999 Bootstrap + 800 MCMC`, Advisor menandai status **OPTIMAL (Terverifikasi ✓)** alih-alih mengulang komputasi identik dengan delta `0.0000`.
+   - Menghilangkan *stale closure* pada `handleRunServerPipeline` lewat parameter `preprocessingOverride` serta menunggu hasil async (`await`) sebelum mencatat **Audit Trail** dan membuka tabel **Sebelum vs Sesudah** (yang kini menampilkan perbandingan `Total RMSE`, `Reliabilitas R²`, `Bias α`, & perubahan `Skor Diagnostik`).
+2. **Stabilitas Deteksi Korelasi Galat pada $J = 3$ (`panel-accuracy-latent.ts`)**:
+   - Menambahkan penjaga ragam sampel hingga ($\text{SE}(\hat{\sigma}_c^2) = \hat{\sigma}_c^2\sqrt{2/(P-1)}$) dan penyebut stabil pada cabang $J = 3$ agar varians besar dari sumber ke-3 yang bising tidak memicu *false positive* korelasi galat antar dua sumber yang akurat & independen.
+3. **Transparansi Driscoll-Kraay SE di Step 6 & Step 8 (`PanelAccuracyTab.tsx`)**:
+   - Menampilkan kolom `DK SE` pada tabel Pair FE Step 6, `DK p` pada kontras Step 6, serta `DK p vs #1` pada Step 8 ketika inferensi Driscoll-Kraay diaktifkan dari Step 7.
+4. **Undo Multi-Langkah & Pembatalan Langsung Per Tombol Rekomendasi (`PanelAccuracyTab.tsx`)**:
+   - Menambahkan tumpukan snapshot multi-langkah (`undoHistoryStack`, maksimal 15 langkah) yang menyimpan `preprocessing`, `driscollKraayActive`, `correlatedErrorReviewed`, `correlatedErrorAuditOpen`, serta hasil server terverifikasi sebelumnya (`serverFitResult` & `verificationFeedback`).
+   - Memungkinkan pembatalan instan (*toggle off*) langsung lewat tombol **`Batalkan`** pada setiap kartu rekomendasi yang aktif (baik di Step 3 maupun Step 7), tombol **`Undo / Batalkan Terakhir (N)`** di Step 3 & Step 7, serta **`Reset ke Awal`**.

@@ -38,7 +38,9 @@ export async function POST(req: NextRequest) {
       preprocessing,
       bootstrapReplications,
       mcmcIterations,
-      executionSource: 'server_verified'
+      executionSource: 'server_verified',
+      driscollKraayActivated: Boolean(body?.driscollKraayActivated),
+      correlatedErrorReviewed: Boolean(body?.correlatedErrorReviewed)
     });
 
     return NextResponse.json({ success: true, data: result });
