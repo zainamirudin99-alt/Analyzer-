@@ -133,7 +133,46 @@ export function executePanelAccuracyPipeline(params: {
       yearColumn: params.dataset.yearColumn,
       sources: params.dataset.sources,
       preprocessing
-    })
+    }),
+    stanCode: [
+      '// Stan Model: Bayesian Hierarchical Panel Latent Measurement Model',
+      'data {',
+      '  int<lower=1> P;               // Complete-case entity-time pairs',
+      `  int<lower=2> J;               // Evaluated measurement sources (J = ${params.dataset.sources.length})`,
+      '  matrix[P, J] X;               // Observed panel measurements',
+      '}',
+      'parameters {',
+      '  vector[P] theta_raw;',
+      '  real mu_theta;',
+      '  real<lower=1e-6> sigma_theta;',
+      '  vector[J] alpha_raw;',
+      '  vector<lower=0.1>[J] lambda_raw;',
+      '  vector<lower=1e-6>[J] sigma_eps;',
+      '}',
+      'transformed parameters {',
+      '  real geo_lambda = exp(mean(log(lambda_raw)));',
+      '  vector[J] lambda = lambda_raw / geo_lambda;',
+      '  vector[J] alpha = alpha_raw - mean(alpha_raw);',
+      '  vector[P] theta = mu_theta + sigma_theta * geo_lambda * theta_raw;',
+      '}',
+      'model {',
+      '  theta_raw ~ std_normal();',
+      '  log(lambda_raw) ~ normal(0, 0.5);',
+      '  sigma_eps ~ cauchy(0, 5);',
+      '  for (j in 1:J)',
+      '    X[, j] ~ normal(alpha[j] + lambda[j] * theta, sigma_eps[j]);',
+      '}',
+      'generated quantities {',
+      '  vector[J] total_latent_rmse;',
+      '  vector[J] reliability_R2;',
+      '  for (j in 1:J) {',
+      '    real sig_var = square(lambda[j] * sigma_theta);',
+      '    real mse_j = square(alpha[j]) + square((lambda[j] - 1) * sigma_theta) + square(sigma_eps[j]);',
+      '    total_latent_rmse[j] = sqrt(mse_j);',
+      '    reliability_R2[j] = sig_var / (sig_var + square(sigma_eps[j]));',
+      '  }',
+      '}'
+    ].join('\n')
   };
 
   return {

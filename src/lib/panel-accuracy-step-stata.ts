@@ -70,10 +70,17 @@ export interface RobustnessSensitivitySummary {
   outlierTrimmedSummary: string;
 }
 
+export interface StepStatisticalConcepts {
+  theoryAndMethod: string;
+  mathematicalFormula: string;
+  keyAssumptions: string[];
+}
+
 export interface StepStataDocumentationBundle {
   stepId: number;
   stepTitle: string;
   analysisPurpose: StepAnalysisPurpose;
+  statisticalConcepts?: StepStatisticalConcepts;
   stataCode: string;
   companionRCode?: string;
   companionStanCode?: string;
@@ -1130,15 +1137,96 @@ export function buildAllStepStataDocumentation(params: {
     robustnessSummary
   };
 
+  const conceptsByStep: Record<number, StepStatisticalConcepts> = {
+    1: {
+      theoryAndMethod:
+        'Struktur data panel (longitudinal) mengindeks pengamatan berdasarkan entitas lintas-individu i ∈ {1,..,G} dan periode waktu t ∈ {1,..,T}. Deklarasi xtset menjamin operator lag, lead, dan within-entity terdefinisi secara unik.',
+      mathematicalFormula: 'D = {(X_{i1t}, ..., X_{iJt}) : i = 1..G, t ∈ T_i}, dengan kunci unik (i, t).',
+      keyAssumptions: [
+        'Setiap pasangan (entitas, waktu) bersifat unik tanpa duplikasi baris.',
+        'Seluruh J sumber pengukuran diamati pada granularitas entitas-waktu yang setara.'
+      ]
+    },
+    2: {
+      theoryAndMethod:
+        'Model pengukuran laten kongenerik tanpa variabel referensi mengevaluasi seluruh J sumber secara simetris. Agar derajat bebas kovarians mencukupi (J(J+1)/2 ≥ 2J), diperlukan minimal J ≥ 3 sumber.',
+      mathematicalFormula: 'df_cov = J(J + 1)/2 - (2J - 1) ≥ 0  ⇒  J ≥ 3.',
+      keyAssumptions: [
+        'Seluruh J sumber mengukur konstruk laten θ_{it} yang sama dengan arah loading positif (λ_j > 0).',
+        'Tidak ada satu pun sumber yang dikunci sebagai kebenaran mutlak (reference-free).'
+      ]
+    },
+    3: {
+      theoryAndMethod:
+        'Audit kualitas data memeriksa pencilan (outlier), kecondongan distribusi (skewness), dan kesalahan proporsional. Transformasi Winsorization atau log(1+x) hanya diterapkan secara eksplisit bila terbukti memperbaiki stabilitas varians.',
+      mathematicalFormula: 'X^{(w)}_{ijt} = clip(X_{ijt}, Q_{0.025}, Q_{0.975});   X^{(log)}_{ijt} = ln(1 + X_{ijt}).',
+      keyAssumptions: [
+        'Prinsip Hasil Apa Adanya: transformasi tidak boleh dipilih demi memanipulasi p-value.',
+        'Perbandingan skenario antar skala wajib menggunakan metrik bebas-skala (Reliabilitas R², R-hat).'
+      ]
+    },
+    4: {
+      theoryAndMethod:
+        'Dekomposisi korelasi panel memisahkan asosiasi lintas-entitas (between), dalam-entitas (within: X_{ijt} - X̄_{ij·}), dan perubahan tahunan (first-difference: ΔX_{ijt}).',
+      mathematicalFormula: 'r_{within}(a, b) = Corr(X_{iat} - X̄_{ia·}, X_{ibt} - X̄_{ib·});   r_{Δ}(a, b) = Corr(ΔX_{iat}, ΔX_{ibt}).',
+      keyAssumptions: [
+        'Korelasi Pearson/Spearman yang tinggi hanya mengukur asosiasi linear/monotonik, bukan bukti ketiadaan bias sistematis (trueness).'
+      ]
+    },
+    5: {
+      theoryAndMethod:
+        'Bayesian Hierarchical Latent Measurement Model dengan integrasi analitik Woodbury (marginalized Gibbs/MH) mengestimasi bias aditif α_j, faktor skala λ_j, dan varians galat σ²_εj secara simultan tanpa Heywood collapse.',
+      mathematicalFormula: 'X_{ijt} = α_j + λ_j θ_{it} + ε_{ijt},   ε_{ijt} ~ N(0, σ²_εj),   GeoMean(λ_j) = 1,   Median(α_j/λ_j) = 0.',
+      keyAssumptions: [
+        'Independensi bersyarat galat pengukuran Cov(ε_{iat}, ε_{ibt} | θ_{it}) = 0 (diuji melalui matriks korelasi residual).',
+        'Konvergensi rantai Markov terpenuhi (Split R-hat ≤ 1.10 dan ESS memadai).'
+      ]
+    },
+    6: {
+      theoryAndMethod:
+        'Sesuai ISO 5725, akurasi total menggabungkan trueness (bias α_j & distorsi skala λ_j) serta precision (σ_εj) ke dalam Total Latent RMSE, dilengkapi validasi prediktif Leave-One-Source-Out (LOSO) dan regresi Pair Fixed Effects.',
+      mathematicalFormula: 'RMSE_j = sqrt(α²_j + (λ_j - 1)² Var(θ) + σ²_εj);   AE_{ijt} = α_{it} + Σ_m β_m Source_m + u_{ijt}.',
+      keyAssumptions: [
+        'Konsensus LOSO θ̂^{(-j)}_{it} dibentuk murni dari J-1 sumber lain tanpa membocorkan informasi sumber j.',
+        'Standar error Pair FE dikelompokkan pada tingkat entitas (cluster-robust) dan diuji dengan Driscoll-Kraay serta Wild Cluster Bootstrap.'
+      ]
+    },
+    7: {
+      theoryAndMethod:
+        'Pengujian diagnostik mengevaluasi heteroskedastisitas antarsumber, autokorelasi serial AR(1), ketergantungan lintas-entitas Pesaran CD, korelasi galat pengukuran, dan sensitivitas pemangkasan 5% residu ekstrem.',
+      mathematicalFormula: 'CD = sqrt(2 / (G(G-1))) Σ_{i<k} sqrt(T_{ik}) ρ̂_{ik} ~ N(0, 1);   R-hat = sqrt(Var⁺(ψ) / W).',
+      keyAssumptions: [
+        'Bila G < 30 klaster, inferensi mengandalkan Rademacher Wild Cluster Bootstrap dan distribusi posterior penuh.',
+        'Bila peringkat bergeser pada 95% Trimmed MAE atau penalti korelasi galat, status kesimpulan wajib diturunkan.'
+      ]
+    },
+    8: {
+      theoryAndMethod:
+        'Algoritma pemeringkatan transparan mengurutkan sumber berdasarkan Total Latent RMSE dan memverifikasi kelayakan identifikasi, konvergensi MCMC, konsistensi LOSO, serta probabilitas keunggulan posterior.',
+      mathematicalFormula: 'P(Best = j | X) = (1/S) Σ_{s=1}^S I(RMSE^{(s)}_j = min_m RMSE^{(s)}_m);   E[Rank_j | X] = (1/S) Σ_s Rank^{(s)}_j.',
+      keyAssumptions: [
+        'Status PEMENANG_TERBUKTI_RELATIF hanya diberikan bila model teridentifikasi, konvergen, bebas konflik metrik, dan unggul secara posterior/inferensial.'
+      ]
+    },
+    9: {
+      theoryAndMethod:
+        'Reproduksibilitas ilmiah menuntut keselarasan spesifikasi matematis antara mesin internal TypeScript, skrip Stata (.do), skrip R (lavaan/fixest), dan model Stan (.stan).',
+      mathematicalFormula: 'L(α, λ, ψ; X) = Π_{p=1}^P N(X_p | α + λ μ_θ, λ λ^T σ²_θ + diag(ψ)).',
+      keyAssumptions: [
+        'Seluruh kesimpulan berlaku relatif terhadap kumpulan instrumen yang diuji; bias kolektif searah membutuhkan kalibrasi fisik eksternal.'
+      ]
+    }
+  };
+
   return {
-    1: step1Bundle,
-    2: step2Bundle,
-    3: step3Bundle,
-    4: step4Bundle,
-    5: step5Bundle,
-    6: step6Bundle,
-    7: step7Bundle,
-    8: step8Bundle,
-    9: step9Bundle
+    1: { ...step1Bundle, statisticalConcepts: conceptsByStep[1] },
+    2: { ...step2Bundle, statisticalConcepts: conceptsByStep[2] },
+    3: { ...step3Bundle, statisticalConcepts: conceptsByStep[3] },
+    4: { ...step4Bundle, statisticalConcepts: conceptsByStep[4] },
+    5: { ...step5Bundle, statisticalConcepts: conceptsByStep[5] },
+    6: { ...step6Bundle, statisticalConcepts: conceptsByStep[6] },
+    7: { ...step7Bundle, statisticalConcepts: conceptsByStep[7] },
+    8: { ...step8Bundle, statisticalConcepts: conceptsByStep[8] },
+    9: { ...step9Bundle, statisticalConcepts: conceptsByStep[9] }
   };
 }

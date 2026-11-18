@@ -217,3 +217,12 @@ Dokumen ini memuat daftar tugas operasional dari Tahap 1 hingga Tahap 3 beserta 
 - [x] **T11.1**: Normalisasi `globalScale` pada `panel-accuracy-latent.ts`, adaptasi burn-in seluruh blok MH + langkah ridge-shift `(muTheta, alpha)`, serta rescaling output ke satuan fisik asli.
 - [x] **T11.2**: Auto-eskalasi iterasi MCMC di `panel-accuracy-orchestrator.ts` saat $J \ge 3$ awal `maxRhat > 1.08`, serta perbaikan aturan konflik metrik ISO 5725 & format pesan di `panel-accuracy-ranking.ts` + kartu panduan aksi di Step 8 `PanelAccuracyTab.tsx`.
 - [x] **T11.3**: Unit test skenario dataset berskala kecil ($J=3$, bias besar-presisi tinggi vs akurat-rendah bias) di `tests/unit/panel-accuracy-engine.test.ts` serta verifikasi `tsc --noEmit`, `vitest`, `next build`, dan 0 diff Option 1.
+
+---
+
+## Tahap 12: Rekonstruksi Total Opsi 2 (Master Smartprompt — Doctoral-Grade Latent Measurement System)
+- [x] **T12.1**: Perluasan kontrak tipe (`panel-accuracy-types.ts`) dan mesin laten (`panel-accuracy-latent.ts`): true out-of-sample LOSO re-estimation, `scaleDistortion`, `posteriorExpectedLoss`, `expectedRank`, `rankingStabilityPct`, `mcmcTraceDraws`, `residualCorrelationMatrix`, deteksi *correlated errors* & *weak identification*.
+- [x] **T12.2**: Pembaruan `panel-accuracy-metrics.ts` (`losoPredictiveCoverage95`, `losoCalibrationSlope`), `panel-accuracy-fixed-effects.ts` (Driscoll-Kraay SE), `panel-accuracy-diagnostics.ts` (audit korelasi galat, sensitivitas missingness, risiko advisor), dan `panel-accuracy-ranking.ts` (4 status kanonik + 8-poin `whyBestSourceAnalysis`).
+- [x] **T12.3**: Upgrade `panel-accuracy-step-stata.ts` & `PanelAccuracyStepStataPanel.tsx` menjadi 6 bagian wajib (termasuk *2. Konsep Statistik*) serta penyelarasan laporan akademik 13-bagian & ekspor `.stan`/`.do`/`.R`/`.pdf`/`.docx`/`.xlsx`.
+- [x] **T12.4**: Upgrade UI `PanelAccuracyCharts.tsx` (MCMC Trace Plot & Loss Decomposition) dan `PanelAccuracyTab.tsx` (Step 3/7 Before-vs-After Ranking Comparison, 4 tombol Advisor + Audit Trail, Step 8 *Mengapa Sumber Ini Terbaik?*, Step 9 ekspor `.stan`).
+- [x] **T12.5**: Implementasi 16 skenario validasi Vitest di `tests/unit/panel-accuracy-engine.test.ts` serta verifikasi penuh (`tsc --noEmit`, `vitest`, `next build`, 0 diff Option 1).

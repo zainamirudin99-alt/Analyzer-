@@ -140,12 +140,46 @@ export const PanelAccuracyStepStataPanel: React.FC<PanelAccuracyStepStataPanelPr
         </ul>
       </div>
 
-      {/* 2. STATA CODE (+ R / STAN COMPANION IF AVAILABLE) */}
+      {/* 2. KONSEP STATISTIK (TEORI, RUMUS & ASUMSI) */}
+      {bundle.statisticalConcepts && (
+        <div
+          style={{
+            padding: '14px',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--info-bg)',
+            border: '1px solid var(--border)',
+            fontSize: '13px',
+            lineHeight: 1.55
+          }}
+        >
+          <strong style={{ display: 'block', marginBottom: '6px', color: 'var(--primary)', fontSize: '13.5px' }}>
+            2. Konsep Statistik (Teori, Metode, Rumus &amp; Asumsi)
+          </strong>
+          <ul style={{ margin: '0 0 0 18px', padding: 0, display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <li>
+              <strong>Teori &amp; Metode:</strong> {bundle.statisticalConcepts.theoryAndMethod}
+            </li>
+            <li>
+              <strong>Rumus Matematis:</strong>{' '}
+              <code style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                {bundle.statisticalConcepts.mathematicalFormula}
+              </code>
+            </li>
+            {bundle.statisticalConcepts.keyAssumptions.map((asmp, i) => (
+              <li key={i}>
+                <strong>Asumsi {i + 1}:</strong> {asmp}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* 3. STATA COMMAND (+ R / STAN COMPANION IF AVAILABLE) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <strong style={{ fontSize: '13.5px', color: 'var(--primary)' }}>
-              2. Stata Code &amp; Reproducible Implementation
+              3. Stata Command &amp; Reproducible Implementation
             </strong>
             <div style={{ display: 'flex', gap: '6px' }}>
               <button
@@ -228,10 +262,10 @@ export const PanelAccuracyStepStataPanel: React.FC<PanelAccuracyStepStataPanelPr
         </div>
       </div>
 
-      {/* 3. KEGUNAAN SETIAP KODE */}
+      {/* 4. PENJELASAN SETIAP KODE */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         <strong style={{ fontSize: '13.5px', color: 'var(--primary)' }}>
-          3. Kegunaan Setiap Kode (Perintah Stata &amp; Hubungannya dengan Tujuan Analisis)
+          4. Penjelasan Setiap Kode (Perintah Stata &amp; Hubungannya dengan Tujuan Analisis)
         </strong>
         <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
@@ -260,10 +294,10 @@ export const PanelAccuracyStepStataPanel: React.FC<PanelAccuracyStepStataPanelPr
         </div>
       </div>
 
-      {/* 4. PENJELASAN OUTPUT STATA & CARA MEMBACA OUTPUT */}
+      {/* 5. OUTPUT DAN CARA MEMBACA */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         <strong style={{ fontSize: '13.5px', color: 'var(--primary)' }}>
-          4. Penjelasan Output Stata &amp; Cara Membaca Output
+          5. Output dan Cara Membaca Output Stata
         </strong>
         <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
@@ -332,10 +366,10 @@ export const PanelAccuracyStepStataPanel: React.FC<PanelAccuracyStepStataPanelPr
         </div>
       )}
 
-      {/* 5. INTERPRETASI HASIL (PER POIN — 5 DIMENSI WAJIB) */}
+      {/* 6. INTERPRETASI STATISTIK (PER POIN) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         <strong style={{ fontSize: '13.5px', color: 'var(--primary)' }}>
-          5. Interpretasi Hasil Statistik (Per Poin — Berdasarkan Data Aktual)
+          6. Interpretasi Statistik (Per Poin — Berdasarkan Data Aktual)
         </strong>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(310px, 1fr))', gap: '10px' }}>
           {bundle.structuredInterpretations.map((item, idx) => (
@@ -393,7 +427,7 @@ export const PanelAccuracyStepStataPanel: React.FC<PanelAccuracyStepStataPanelPr
             <AlertTriangle size={16} color={statusColor} />
           )}
           <strong style={{ fontSize: '13.5px', color: 'var(--text)' }}>
-            6. Kesimpulan Step {bundle.stepId} ({bundle.stepConclusion.readinessStatus})
+            Ringkasan Keputusan Step {bundle.stepId} ({bundle.stepConclusion.readinessStatus})
           </strong>
         </div>
         <ul style={{ margin: '0 0 0 18px', padding: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>

@@ -174,3 +174,20 @@ Spesifikasi terkini untuk **Regresi Data Panel Stata → Option 2** (`PanelAccur
    - Bila pada dataset $J \ge 3$ hasil MCMC awal mencatat `max R-hat > 1.08`, orkestrator melakukan 1 kali eskalasi otomatis hingga `1.000` iterasi (`burn-in = 550`) agar model $J \ge 3$ yang teridentifikasi secara teoretis tidak tertolak sebagai `MODEL_TIDAK_TERIDENTIFIKASI`.
 3. **Aturan Konflik Metrik Berbasis Total Accuracy (`panel-accuracy-ranking.ts`)**:
    - Menyelaraskan definisi konflik metrik dengan metrologi **ISO 5725 (Trueness + Precision = Total RMSE)**: sumber pemenang dengan `Total Latent RMSE` terendah, `Reliabilitas R² >= 70%` (misal 97.2%), `Posterior P(Best) >= 95%`, dan `WildBoot p < 0.05` **tetap konklusif sebagai pemenang mutlak** meskipun sumber lain memiliki `Error SD` lebih kecil namun membawa bias sistematis besar (`α_j` tinggi sehingga `Total RMSE` jauh lebih buruk). Juga menghilangkan tanda kurung kosong `()` bila `warnings` kosong dan membedakan pesan tidak konvergen vs kurang sumber ($J < 3$).
+
+---
+
+## 13. Ekspansi Tahap 12: Rekonstruksi Total Opsi 2 (Master Smartprompt — Doctoral-Grade Bayesian Hierarchical Latent Measurement System)
+
+1. **Deteksi Korelasi Galat Antarsumber & Identifikasi Lemah (`D1 & D3`)**:
+   - Menghitung matriks korelasi residual pengukuran $\text{Corr}(\hat{\varepsilon}_a, \hat{\varepsilon}_b)$ pasca-estimasi laten, mendeteksi pasangan sumber dengan ketergantungan galat ($|r_{\varepsilon}| > 0.35$), menghitung estimasi sensitivitas terboboti (*Correlated-Error Adjusted Latent Benchmark*), serta menandai *weak identification* ($\hat{\lambda}_j \le 0.15$ atau $R_j^2 < 0.20$).
+2. **Dekomposisi Akurasi, Expected Loss, Expected Rank, & Out-of-Sample LOSO (`E & F`)**:
+   - Dekomposisi `Total Latent MSE` ke 3 komponen eksplisit: $\text{Bias}^2 = \alpha_j^2$, $\text{Scale Distortion}^2 = (\lambda_j - 1)^2 \text{Var}(\theta)$, dan $\text{Imprecision}^2 = \sigma_{\varepsilon_j}^2$, ditambah `Posterior Expected Loss`, `Expected Rank` ($E[\text{Rank}_j \mid X]$), `Ranking Stability (%)`, dan data `mcmcTraceDraws` (3 rantai).
+   - Validasi prediktif **Leave-One-Source-Out (LOSO)** murni dengan mengestimasi ulang $\hat{\theta}_{it}^{(-j)}$ hanya dari sumber $m \ne j$ (tanpa membocorkan parameter sumber $j$), menghasilkan `LOSO MAE`, `LOSO RMSE`, `LOSO MBE`, **95% Predictive Interval Coverage**, dan **LOSO Calibration Slope**.
+3. **Ekonometrika Komplementer & 4 Status Keputusan (`H & I`)**:
+   - Menambahkan **Driscoll-Kraay (1998) Cross-Sectionally & Temporally Robust SE (`seDriscollKraay`)** pada model Pair Fixed Effects di samping City-Clustered SE dan Rademacher Wild Cluster Bootstrap.
+   - Menggunakan 4 status kanonik: `PEMENANG_TERBUKTI_RELATIF`, `KANDIDAT_TERBAIK_BELUM_KONKLUSIF`, `KONFLIK_ANTAR_METRIK`, dan `MODEL_TIDAK_TERIDENTIFIKASI`, serta seksi wajib **`MENGAPA SUMBER INI MENJADI YANG TERBAIK?`** (8 poin).
+4. **Statistical Advisor dengan Audit Trail & Panel 6-Bagian Stata (`J, K, L`)**:
+   - Step 7 memiliki 4 tombol interaktif (`Terapkan Rekomendasi`, `Jalankan Analisis Alternatif`, `Bandingkan Hasil` Sebelum vs Sesudah, `Kembali ke Pengaturan Sebelumnya`) beserta log **Audit Trail**.
+   - Panel **Stata Command & Statistical Implementation** di seluruh Step 1–9 memiliki 6 bagian eksplisit: (1) Tujuan Analisis, (2) Konsep Statistik, (3) Stata Command (+ R & Stan), (4) Penjelasan Setiap Kode, (5) Output dan Cara Membaca, (6) Interpretasi Statistik.
+5. **16 Skenario Validasi Vitest (`O`)**: Mencakup $J=3,4,5$, balanced/unbalanced, missing, duplicate, outlier, scale mismatch, high-bias/low-var, low-bias/high-var, correlated errors, weak identification, non-convergence, small cluster, dan sensitivity rank flip.

@@ -7,8 +7,11 @@
 // locking any variable as a privileged reference source.
 // ============================================================
 
+import { studentTPValueTwoSided } from './panel-accuracy-bland-altman';
+import { computePearsonR } from './panel-accuracy-correlation';
 import {
   CleanedPanelObservation,
+  CorrelatedErrorPairItem,
   LatentModelSummary,
   LatentSourceEstimate,
   MeasurementSource
@@ -19,6 +22,7 @@ export interface LatentEngineInternalOutput {
   summary: LatentModelSummary;
   pairwisePosteriorProb: Record<string, number>;
   losoConsensusBySource: Record<string, number[]>;
+  losoPredictiveSeBySource: Record<string, number>;
   sharedLatentTheta: number[];
 }
 
@@ -518,9 +522,11 @@ export function fitBayesianLatentMeasurementModel(params: {
     }
   }
 
-  // Posterior summaries & Bayesian winner counts across all chains
+  // Posterior summaries, Expected Rank, Ranking Stability & Bayesian winner counts across all chains
   const flatBestTotalCounts = new Array(J).fill(0);
   const flatBestPrecCounts = new Array(J).fill(0);
+  const rankSums = new Array(J).fill(0);
+  const rankCounts: number[][] = Array.from({ length: J }, () => new Array(J).fill(0));
   const pairwiseWins = new Map<string, number>();
 
   for (let c = 0; c < nChains; c++) {
@@ -536,6 +542,13 @@ export function fitBayesianLatentMeasurementModel(params: {
       }
       flatBestTotalCounts[bestTotIdx]++;
       flatBestPrecCounts[bestPrecIdx]++;
+
+      // Order sources in this draw from lowest RMSE (rank 0) to highest RMSE (rank J-1)
+      const order = Array.from({ length: J }, (_, idx) => idx).sort((a, b) => rmses[a] - rmses[b]);
+      order.forEach((srcIdx, rPos) => {
+        rankSums[srcIdx] += rPos + 1;
+        rankCounts[srcIdx][rPos]++;
+      });
 
       for (let a = 0; a < J; a++) {
         for (let b = 0; b < J; b++) {
@@ -609,9 +622,28 @@ export function fitBayesianLatentMeasurementModel(params: {
     const errorSd = meanOf(flatSd);
     const totalLatentRmse = meanOf(flatRmse);
     const totalLatentMse = totalLatentRmse * totalLatentRmse;
+    const posteriorExpectedLoss =
+      flatRmse.reduce((s, r) => s + r * r, 0) / Math.max(1, flatRmse.length);
+    const scaleDistortionComponent =
+      Math.abs(loadingLambda - 1) * Math.sqrt(Math.max(0, avgEmpVarTheta));
     const reliabilityR2 = meanOf(flatR2);
     const signalToNoiseRatio =
-      (loadingLambda * loadingLambda * avgEmpVarTheta) / Math.max(1e-9, errorVariance);
+      (loadingLambda * loadingLambda * avgEmpVarTheta) / Math.max(1e-12, errorVariance);
+    const expectedRank = rankSums[j] / Math.max(1, totalDraws);
+    const maxRankCount = Math.max(...rankCounts[j], 0);
+    const rankingStabilityPct = (maxRankCount / Math.max(1, totalDraws)) * 100;
+
+    // Thin trace draws to at most 60 points per chain for responsive Step 5 Trace Visualization
+    const mcmcTraceDraws = rmseChainsJ.map(ch => {
+      const targetLen = Math.min(60, ch.length);
+      if (targetLen <= 0) return [];
+      const stride = Math.max(1, Math.floor(ch.length / targetLen));
+      const out: number[] = [];
+      for (let idx = 0; idx < ch.length && out.length < targetLen; idx += stride) {
+        out.push(ch[idx]);
+      }
+      return out;
+    });
 
     return {
       sourceId: src.id,
@@ -640,24 +672,67 @@ export function fitBayesianLatentMeasurementModel(params: {
       posteriorProbBestTotalError: flatBestTotalCounts[j] / Math.max(1, totalDraws),
       posteriorProbBestPrecision: flatBestPrecCounts[j] / Math.max(1, totalDraws),
       grubbsErrorVariance: grubbsVar[j],
+      scaleDistortionComponent,
+      posteriorExpectedLoss,
+      expectedRank,
+      rankingStabilityPct,
+      mcmcTraceDraws,
       mcmcRhat: Number(Math.max(convErr.rhat, convAlpha.rhat).toFixed(4)),
       mcmcEss: Math.min(convErr.ess, convAlpha.ess)
     };
   });
 
-  // Compute Leave-One-Source-Out (LOSO) Consensus Benchmark theta_hat^(-j) for each source j
+  // True Out-of-Sample Leave-One-Source-Out (LOSO) Re-Estimation:
+  // For each target source j, re-estimate peer parameters solely from the remaining J-1 sources
   const losoConsensusBySource: Record<string, number[]> = {};
+  const losoPredictiveSeBySource: Record<string, number> = {};
   sources.forEach((targetSrc, targetIdx) => {
     const peerIndices = sources.map((_, m) => m).filter(m => m !== targetIdx);
+    const JSub = peerIndices.length;
+    if (JSub === 0) {
+      losoConsensusBySource[targetSrc.id] = [...sharedLatentTheta];
+      losoPredictiveSeBySource[targetSrc.id] = sourceEstimates[targetIdx]?.errorSd ?? 1;
+      return;
+    }
+
+    const subMatX = centeredX.map(row => peerIndices.map(m => row[m]));
+    const subGrubbs = computeGrubbsTriangulation(subMatX, JSub);
+
+    // Estimate out-of-sample peer loadings & biases solely from subMatX (without target source j)
+    const rawLoadings = peerIndices.map((_, k) => {
+      if (JSub < 2) return 1;
+      let covSum = 0;
+      let cnt = 0;
+      for (let other = 0; other < JSub; other++) {
+        if (other === k) continue;
+        covSum += Math.max(0.05 * Math.sqrt(subGrubbs.sampleVar[k] * subGrubbs.sampleVar[other]), subGrubbs.covMat[k][other]);
+        cnt++;
+      }
+      return Math.max(0.25, Math.sqrt(Math.max(1e-9, covSum / Math.max(1, cnt))));
+    });
+    const geoSubL = Math.pow(rawLoadings.reduce((pr, v) => pr * v, 1), 1 / Math.max(1, JSub));
+    const peerLambdas = rawLoadings.map(v => v / Math.max(1e-6, geoSubL));
+    const peerAnchor = medianOf(subGrubbs.sampleMean.map((m, k) => m / Math.max(0.1, peerLambdas[k])));
+    const peerAlphas = subGrubbs.sampleMean.map((m, k) => m - peerLambdas[k] * peerAnchor);
+    const peerErrVars = subGrubbs.grubbsVar.map(v => Math.max(1e-12, v));
+
+    let wSumTotal = 0;
+    peerIndices.forEach((_, k) => {
+      wSumTotal += (peerLambdas[k] * peerLambdas[k]) / peerErrVars[k];
+    });
+    const varThetaLoso = 1 / Math.max(1e-12, wSumTotal);
+    const targetEst = sourceEstimates[targetIdx];
+    const predVar =
+      targetEst.loadingLambda * targetEst.loadingLambda * varThetaLoso + targetEst.errorVariance;
+    losoPredictiveSeBySource[targetSrc.id] = Math.sqrt(Math.max(1e-12, predVar));
+
     const arr: number[] = observations.map((_, p) => {
       let wSum = 0;
       let valSum = 0;
-      peerIndices.forEach(m => {
-        const est = sourceEstimates[m];
-        const w = (est.loadingLambda * est.loadingLambda) / Math.max(1e-12, est.errorVariance);
+      peerIndices.forEach((m, k) => {
+        const w = (peerLambdas[k] * peerLambdas[k]) / peerErrVars[k];
         const deBiasedPeer =
-          globalCenter +
-          (centeredX[p][m] - est.interceptBiasAlpha) / Math.max(0.1, est.loadingLambda);
+          globalCenter + (centeredX[p][m] - peerAlphas[k]) / Math.max(0.1, peerLambdas[k]);
         valSum += w * deBiasedPeer;
         wSum += w;
       });
@@ -665,6 +740,143 @@ export function fitBayesianLatentMeasurementModel(params: {
     });
     losoConsensusBySource[targetSrc.id] = arr;
   });
+
+  // Residual Error Correlation Matrix & Correlated Measurement Error Detection (Section D3)
+  // Compute de-biased, scale-standardized measurement series Z_pj = (centeredX_pj - alpha_j) / lambda_j
+  const zBySource: number[][] = sources.map((_, j) => {
+    const est = sourceEstimates[j];
+    return observations.map((_, p) => (centeredX[p][j] - est.interceptBiasAlpha) / Math.max(0.1, est.loadingLambda));
+  });
+
+  const residualCorrelationMatrix: number[][] = Array.from({ length: J }, (_, a) =>
+    Array.from({ length: J }, (__, b) => (a === b ? 1 : 0))
+  );
+  const correlatedErrorPairs: CorrelatedErrorPairItem[] = [];
+
+  for (let a = 0; a < J; a++) {
+    for (let b = a + 1; b < J; b++) {
+      // To avoid mechanical negative correlation from including (a, b) in their own reference,
+      // evaluate residuals against remaining peer(s) when J >= 3
+      const otherIndices = sources.map((_, m) => m).filter(m => m !== a && m !== b);
+      const resA: number[] = [];
+      const resB: number[] = [];
+      for (let p = 0; p < P; p++) {
+        const refP =
+          otherIndices.length > 0
+            ? medianOf(otherIndices.map(m => zBySource[m][p]))
+            : sharedLatentTheta[p] - globalCenter;
+        resA.push(zBySource[a][p] - refP);
+        resB.push(zBySource[b][p] - refP);
+      }
+      const rLeavePair = computePearsonR(resA, resB);
+
+      // Direct posterior residual correlation against sharedLatentTheta
+      const postResA = observations.map((_, p) => zBySource[a][p] - (sharedLatentTheta[p] - globalCenter));
+      const postResB = observations.map((_, p) => zBySource[b][p] - (sharedLatentTheta[p] - globalCenter));
+      const rPost = computePearsonR(postResA, postResB);
+
+      // When J == 3, leave-pair-out uses a single 3rd source c, so Cov(Z_a - Z_c, Z_b - Z_c) = Cov(e_a, e_b) + Var(e_c).
+      // Subtract the expected contribution of Var(e_c) so independent sources have ~0 excess correlation!
+      let effectiveR = rPost;
+      if (J >= 4) {
+        effectiveR = 0.65 * rLeavePair + 0.35 * rPost;
+      } else if (J === 3 && otherIndices.length === 1) {
+        const cIdx = otherIndices[0];
+        const varC = sourceEstimates[cIdx].errorVariance / Math.max(0.01, sourceEstimates[cIdx].loadingLambda ** 2);
+        const varDiffA =
+          resA.reduce((s, v) => s + v * v, 0) / Math.max(1, P - 1);
+        const varDiffB =
+          resB.reduce((s, v) => s + v * v, 0) / Math.max(1, P - 1);
+        const covAB =
+          resA.reduce((s, v, idx) => s + v * resB[idx], 0) / Math.max(1, P - 1);
+        const excessCov = covAB - varC;
+        const denom = Math.sqrt(Math.max(1e-12, Math.max(1e-9, varDiffA - varC) * Math.max(1e-9, varDiffB - varC)));
+        const rExcess = Math.max(-0.99, Math.min(0.99, excessCov / denom));
+        effectiveR = Math.abs(rExcess) > Math.abs(rPost) ? rExcess : rPost;
+      }
+
+      residualCorrelationMatrix[a][b] = effectiveR;
+      residualCorrelationMatrix[b][a] = effectiveR;
+
+      const dfR = Math.max(1, P - 2);
+      const tR =
+        Math.abs(effectiveR) < 0.9999
+          ? ( Math.abs(effectiveR) * Math.sqrt(dfR) ) / Math.sqrt(Math.max(1e-12, 1 - effectiveR * effectiveR))
+          : 99;
+      const pVal = studentTPValueTwoSided(tR, dfR);
+
+      if (effectiveR > 0.38 && pVal < 0.05) {
+        correlatedErrorPairs.push({
+          sourceAId: sources[a].id,
+          sourceAName: sources[a].name,
+          sourceBId: sources[b].id,
+          sourceBName: sources[b].name,
+          residualCorr: effectiveR,
+          pValue: pVal,
+          warning: `Terdeteksi korelasi kesalahan pengukuran positif antara ${sources[a].name} dan ${sources[b].name} (r_ε = ${effectiveR.toFixed(3)}, p = ${pVal.toFixed(4)}). Kedua sumber berpotensi berbagi metodologi/sensor/algoritma yang sama.`
+        });
+      }
+    }
+  }
+
+  // Correlated-Error Adjusted Top Source Check (down-weights positively correlated error twins)
+  const corrPenaltyBySource = sources.map((_, j) => {
+    let posCorrSum = 0;
+    for (let m = 0; m < J; m++) {
+      if (m === j) continue;
+      if (residualCorrelationMatrix[j][m] > 0.35) {
+        posCorrSum += residualCorrelationMatrix[j][m];
+      }
+    }
+    return 1 + posCorrSum;
+  });
+
+  const adjTheta = observations.map((_, p) => {
+    let wSum = 0;
+    let valSum = 0;
+    sources.forEach((__, j) => {
+      const est = sourceEstimates[j];
+      const w =
+        (est.loadingLambda * est.loadingLambda) /
+        (Math.max(1e-12, est.errorVariance) * corrPenaltyBySource[j]);
+      valSum += w * (globalCenter + zBySource[j][p]);
+      wSum += w;
+    });
+    return wSum > 1e-12 ? valSum / wSum : sharedLatentTheta[p];
+  });
+
+  let bestAdjId: string | null = null;
+  let bestAdjRmse = Infinity;
+  sources.forEach((src, j) => {
+    let sse = 0;
+    for (let p = 0; p < P; p++) {
+      const err = matX[p][j] - adjTheta[p];
+      sse += err * err * corrPenaltyBySource[j];
+    }
+    const rmseAdj = Math.sqrt(sse / Math.max(1, P));
+    if (rmseAdj < bestAdjRmse) {
+      bestAdjRmse = rmseAdj;
+      bestAdjId = src.id;
+    }
+  });
+
+  const weakIdentificationSources = sourceEstimates
+    .filter((e, j) => {
+      const colJ = observations.map((_, p) => matX[p][j]);
+      let peerCorrSum = 0;
+      let peerCnt = 0;
+      for (let m = 0; m < J; m++) {
+        if (m === j) continue;
+        peerCorrSum += computePearsonR(
+          colJ,
+          observations.map((_, p) => matX[p][m])
+        );
+        peerCnt++;
+      }
+      const meanPeerR = peerCnt > 0 ? peerCorrSum / peerCnt : 1;
+      return e.loadingLambda <= 0.2 || e.reliabilityR2 < 0.25 || meanPeerR < 0.3;
+    })
+    .map(e => e.sourceLabel);
 
   const summary: LatentModelSummary = {
     nSources: J,
@@ -684,6 +896,10 @@ export function fitBayesianLatentMeasurementModel(params: {
         : 'UNDERIDENTIFIED (J < 3): Tanpa sumber ke-3 atau benchmark eksternal, varians galat spesifik tiap sumber tidak teridentifikasi secara unik.',
     epistemologicalCaveat:
       'Keterbatasan Epistemologis: Model Bayesian Latent Truth mengukur kedekatan terhadap sinyal konsensus laten antar-instrumen; bila seluruh instrumen berbagi bias sistematis searah (shared bias), bias kolektif tersebut tidak dapat terdeteksi tanpa kalibrasi fisik eksternal.',
+    residualCorrelationMatrix,
+    correlatedErrorPairs,
+    weakIdentificationSources,
+    correlatedErrorAdjustedTopSourceId: bestAdjId,
     latentThetaSeries,
     sourceEstimates
   };
@@ -692,6 +908,7 @@ export function fitBayesianLatentMeasurementModel(params: {
     summary,
     pairwisePosteriorProb,
     losoConsensusBySource,
+    losoPredictiveSeBySource,
     sharedLatentTheta
   };
 }

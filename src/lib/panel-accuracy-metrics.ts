@@ -217,6 +217,33 @@ export function computeAllSourceAccuracyMetrics(
     }));
     const blandAltman = computeBlandAltmanAgreement(baPairs, src);
 
+    // Out-of-sample 95% Predictive Interval Coverage & Calibration Slope vs LOSO Consensus (Section F)
+    const predSe =
+      latentOut.losoPredictiveSeBySource?.[src.id] ??
+      Math.sqrt(est.errorVariance + 0.05 * est.totalLatentMse);
+    const halfWidth95 = 1.96 * Math.max(1e-6, predSe);
+    let coveredCount = 0;
+    let meanBench = 0;
+    let meanSrc = 0;
+    for (let i = 0; i < nCC; i++) {
+      meanBench += losoBenchCC[i];
+      meanSrc += srcValsCC[i];
+      if (Math.abs(srcValsCC[i] - losoBenchCC[i]) <= halfWidth95) {
+        coveredCount++;
+      }
+    }
+    meanBench /= Math.max(1, nCC);
+    meanSrc /= Math.max(1, nCC);
+    let covBS = 0;
+    let varB = 0;
+    for (let i = 0; i < nCC; i++) {
+      const db = losoBenchCC[i] - meanBench;
+      covBS += db * (srcValsCC[i] - meanSrc);
+      varB += db * db;
+    }
+    const losoCalibrationSlope = varB > 1e-12 ? covBS / varB : 1;
+    const losoPredictiveCoverage95 = (coveredCount / Math.max(1, nCC)) * 100;
+
     return {
       sourceId: src.id,
       sourceName: src.name,
@@ -241,6 +268,12 @@ export function computeAllSourceAccuracyMetrics(
       mcmcRhat: est.mcmcRhat,
       mcmcEss: est.mcmcEss,
       grubbsErrorVariance: est.grubbsErrorVariance,
+      scaleDistortion: est.scaleDistortionComponent,
+      posteriorExpectedLoss: est.posteriorExpectedLoss,
+      expectedRank: est.expectedRank,
+      rankingStabilityPct: est.rankingStabilityPct,
+      losoPredictiveCoverage95,
+      losoCalibrationSlope,
       mae,
       maeSeCluster: maeCluster.seCluster,
       maeCiLower,

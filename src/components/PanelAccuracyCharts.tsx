@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   CorrelationMatricesBundle,
+  LatentModelSummary,
   MeasurementSource,
   PanelAccuracyFitResult,
   SourceAccuracyMetricRow
@@ -502,5 +503,136 @@ export const PanelAccuracyFullVisualizations: React.FC<{
         )}
       </div>
     </div>
+  );
+};
+
+// ============================================================
+// 4. STEP 5 MULTI-CHAIN MCMC TRACE & POSTERIOR CONVERGENCE PLOT
+// ============================================================
+export const PanelAccuracyMcmcTraceChart: React.FC<{
+  latentModel: LatentModelSummary;
+  unitLabel?: string;
+}> = ({ latentModel, unitLabel }) => {
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const est = latentModel.sourceEstimates[selectedIdx] || latentModel.sourceEstimates[0];
+  if (!est || !est.mcmcTraceDraws || est.mcmcTraceDraws.length === 0) return null;
+
+  const allVals = est.mcmcTraceDraws.flat();
+  const minV = allVals.length ? Math.min(...allVals) : 0;
+  const maxV = allVals.length ? Math.max(...allVals) : 1;
+  const span = Math.max(1e-6, maxV - minV);
+  const chainColors = ['#10b981', '#3b82f6', '#f59e0b', '#ec4899'];
+
+  return (
+    <ChartCard
+      title="MCMC Multi-Chain Trace Plot — Konvergensi Posterior Total Latent RMSE"
+      subtitle={`Menampilkan jejak rantai Markov (${latentModel.nChains} rantai × ${latentModel.iterationsPerChain} iterasi pasca burn-in) untuk memeriksa pencampuran stasioner (R-hat = ${est.mcmcRhat.toFixed(4)}, ESS = ${est.mcmcEss}).`}
+      unit={unitLabel}
+    >
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '6px' }}>
+        {latentModel.sourceEstimates.map((s, idx) => (
+          <button
+            key={s.sourceId}
+            type="button"
+            onClick={() => setSelectedIdx(idx)}
+            className={selectedIdx === idx ? 'btn btn-primary' : 'btn btn-outline'}
+            style={{ minHeight: '36px', fontSize: '12px', padding: '4px 10px' }}
+          >
+            {s.sourceLabel} (R-hat {s.mcmcRhat.toFixed(3)})
+          </button>
+        ))}
+      </div>
+      <svg viewBox="0 0 640 170" style={{ width: '100%', height: 'auto', background: 'var(--surface-muted)', borderRadius: '6px', border: '1px solid var(--border-light)' }}>
+        <line x1={44} y1={20} x2={620} y2={20} stroke="var(--border)" strokeDasharray="3 3" />
+        <line x1={44} y1={85} x2={620} y2={85} stroke="var(--border)" strokeDasharray="3 3" />
+        <line x1={44} y1={150} x2={620} y2={150} stroke="var(--border)" strokeDasharray="3 3" />
+        <text x={6} y={24} fontSize="10" fill="var(--text-secondary)">{maxV.toFixed(2)}</text>
+        <text x={6} y={88} fontSize="10" fill="var(--text-secondary)">{((maxV + minV) / 2).toFixed(2)}</text>
+        <text x={6} y={152} fontSize="10" fill="var(--text-secondary)">{minV.toFixed(2)}</text>
+        {est.mcmcTraceDraws.map((chain, cIdx) => {
+          if (chain.length < 2) return null;
+          const pts = chain
+            .map((v, i) => {
+              const x = 44 + (i / Math.max(1, chain.length - 1)) * 576;
+              const y = 150 - ((v - minV) / span) * 130;
+              return `${x.toFixed(1)},${y.toFixed(1)}`;
+            })
+            .join(' ');
+          return (
+            <polyline
+              key={cIdx}
+              fill="none"
+              stroke={chainColors[cIdx % chainColors.length]}
+              strokeWidth="1.5"
+              strokeOpacity="0.82"
+              points={pts}
+            />
+          );
+        })}
+      </svg>
+      <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', fontSize: '11.5px', color: 'var(--text-secondary)' }}>
+        <span>
+          Garis warna merepresentasikan Chain 1 (Hijau), Chain 2 (Biru), dan Chain 3 (Amber) yang saling tumpang-tindih stasioner.
+        </span>
+        <strong>
+          Posterior Mean RMSE = {est.totalLatentRmse.toFixed(3)} (95% CrI [{est.totalLatentRmseCiLower.toFixed(3)}, {est.totalLatentRmseCiUpper.toFixed(3)}])
+        </strong>
+      </div>
+    </ChartCard>
+  );
+};
+
+// ============================================================
+// 5. STEP 6 SOURCE ACCURACY & LOSS DECOMPOSITION CHART
+// ============================================================
+export const PanelAccuracyLossDecompositionChart: React.FC<{
+  metrics: SourceAccuracyMetricRow[];
+  unitLabel?: string;
+}> = ({ metrics, unitLabel }) => {
+  const sorted = [...metrics].sort((a, b) => a.totalLatentRmse - b.totalLatentRmse);
+  const maxRmse = Math.max(...sorted.map(m => m.totalLatentRmse), 1e-6);
+
+  return (
+    <ChartCard
+      title="Komparasi Visual Akurasi & Dekomposisi Komponen Kesalahan (Trueness + Scale + Precision)"
+      subtitle="Membandingkan Total Latent RMSE setiap sumber beserta kontribusi proporsional Bias Sistematis (α²), Distorsi Skala ((λ−1)²Var(θ)), dan Varians Galat Acak (σ²_ε)."
+      unit={unitLabel}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {sorted.map((m, idx) => {
+          const biasSq = m.latentInterceptBias * m.latentInterceptBias;
+          const scaleSq = m.scaleDistortion * m.scaleDistortion;
+          const noiseSq = m.errorVariance;
+          const totSq = Math.max(1e-12, biasSq + scaleSq + noiseSq);
+          const biasShare = (biasSq / totSq) * 100;
+          const scaleShare = (scaleSq / totSq) * 100;
+          const noiseShare = Math.max(0, 100 - biasShare - scaleShare);
+          const barWidthPct = Math.max(8, (m.totalLatentRmse / maxRmse) * 100);
+
+          return (
+            <div key={m.sourceId} style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+                <strong>
+                  #{idx + 1} {m.sourceLabel} {idx === 0 ? '★ Kesalahan Relatif Terkecil' : ''}
+                </strong>
+                <span>
+                  Total RMSE = <strong>{m.totalLatentRmse.toFixed(3)}</strong> | Expected Loss = {m.posteriorExpectedLoss.toFixed(3)} | LOSO RMSE = {m.rmse.toFixed(3)} | PI Cov 95% = {m.losoPredictiveCoverage95.toFixed(1)}%
+                </span>
+              </div>
+              <div style={{ width: `${barWidthPct}%`, height: '16px', display: 'flex', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border)' }}>
+                <div style={{ width: `${biasShare}%`, background: '#ef4444' }} title={`Bias²: ${biasShare.toFixed(1)}%`} />
+                <div style={{ width: `${scaleShare}%`, background: '#f59e0b' }} title={`Distorsi Skala²: ${scaleShare.toFixed(1)}%`} />
+                <div style={{ width: `${noiseShare}%`, background: '#10b981' }} title={`Imprecision (σ²_ε): ${noiseShare.toFixed(1)}%`} />
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                <span style={{ color: '#ef4444', fontWeight: 600 }}>■ Bias²: {biasShare.toFixed(1)}% (|α|={Math.abs(m.latentInterceptBias).toFixed(3)})</span>
+                <span style={{ color: '#d97706', fontWeight: 600 }}>■ Distorsi Skala²: {scaleShare.toFixed(1)}% (λ={m.latentLoading.toFixed(3)})</span>
+                <span style={{ color: '#10b981', fontWeight: 600 }}>■ Varians Acak σ²_ε: {noiseShare.toFixed(1)}% (σ_ε={m.errorSd.toFixed(3)})</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </ChartCard>
   );
 };

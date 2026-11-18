@@ -5,7 +5,10 @@
 // against the shared Bayesian Latent True Emission theta_hat_it inside every City-Year pair.
 // ============================================================
 
-import { studentTCritical95 } from './panel-accuracy-bland-altman';
+import {
+  studentTCritical95,
+  studentTPValueTwoSided
+} from './panel-accuracy-bland-altman';
 import {
   computePairwiseSourceContrast,
   fDistPValue,
@@ -19,6 +22,46 @@ import {
   PairFixedEffectsResult,
   PairwiseSourceContrast
 } from './panel-accuracy-types';
+
+/**
+ * Driscoll-Kraay (1998) Cross-Sectionally & Temporally Robust Standard Error
+ * for a panel difference series d_it across cities i and years t using Bartlett Newey-West kernel.
+ */
+function computeDriscollKraayDiffSe(
+  items: Array<{ year: number; diff: number }>
+): { seDk: number; pValueDk: number } {
+  const P = items.length;
+  if (P < 2) return { seDk: 0, pValueDk: 1 };
+  const meanDiff = items.reduce((s, x) => s + x.diff, 0) / P;
+
+  const byYear = new Map<number, number>();
+  items.forEach(it => {
+    byYear.set(it.year, (byYear.get(it.year) || 0) + (it.diff - meanDiff));
+  });
+  const sortedYears = Array.from(byYear.keys()).sort((a, b) => a - b);
+  const T = sortedYears.length;
+  if (T < 2) {
+    const v = items.reduce((s, x) => s + (x.diff - meanDiff) ** 2, 0) / Math.max(1, P - 1);
+    const se = Math.sqrt(v / P);
+    return { seDk: se, pValueDk: se > 1e-12 ? studentTPValueTwoSided(Math.abs(meanDiff / se), Math.max(1, P - 1)) : 1 };
+  }
+
+  const h = sortedYears.map(yr => byYear.get(yr)!);
+  const maxLag = Math.max(1, Math.min(T - 1, Math.floor(4 * Math.pow(T / 100, 2 / 9))));
+  let omega = h.reduce((s, v) => s + v * v, 0);
+  for (let l = 1; l <= maxLag; l++) {
+    const weight = 1 - l / (maxLag + 1);
+    let gammaL = 0;
+    for (let t = l; t < T; t++) {
+      gammaL += h[t] * h[t - l];
+    }
+    omega += 2 * weight * gammaL;
+  }
+  const seDk = Math.sqrt(Math.max(1e-16, omega)) / P;
+  const tDk = seDk > 1e-12 ? Math.abs(meanDiff) / seDk : 0;
+  const pValueDk = studentTPValueTwoSided(tDk, Math.max(1, T - 1));
+  return { seDk, pValueDk };
+}
 
 export function fitPairFixedEffectsModel(
   prepared: PreparedPanelAccuracyData,
@@ -166,9 +209,18 @@ export function fitPairFixedEffectsModel(
         seed: seed + a * 31 + b * 97
       });
 
+      const dk = computeDriscollKraayDiffSe(
+        completeCaseObservations.map((o, p) => ({
+          year: o.year,
+          diff: aeMatrix[p][a] - aeMatrix[p][b]
+        }))
+      );
+
       const postProbAB = latentOut.pairwisePosteriorProb[`${srcA.id}::${srcB.id}`] ?? 0.5;
       pairwiseContrasts.push({
         ...contrast,
+        seDriscollKraay: dk.seDk,
+        pValueDriscollKraay: dk.pValueDk,
         posteriorProbABetterThanB: postProbAB
       });
     }
@@ -191,6 +243,7 @@ export function fitPairFixedEffectsModel(
         meanAe: maeByIdx[0],
         betaDiffVsBaseline: 0,
         seCluster: baseCluster.seCluster,
+        seDriscollKraay: baseCluster.seCluster,
         tStat: 0,
         pValue: 1,
         ciLower: Math.max(0, maeByIdx[0] - tCrit * baseCluster.seCluster),
@@ -210,6 +263,7 @@ export function fitPairFixedEffectsModel(
       meanAe: maeByIdx[m],
       betaDiffVsBaseline: beta,
       seCluster: c0m.seCluster,
+      seDriscollKraay: c0m.seDriscollKraay,
       tStat: -c0m.tStat,
       pValue: c0m.pValueCluster,
       ciLower: -c0m.ciUpperCluster,

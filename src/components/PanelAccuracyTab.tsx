@@ -60,7 +60,9 @@ import {
 import {
   PanelAccuracyBlandAltmanChart,
   PanelAccuracyEDACharts,
-  PanelAccuracyFullVisualizations
+  PanelAccuracyFullVisualizations,
+  PanelAccuracyLossDecompositionChart,
+  PanelAccuracyMcmcTraceChart
 } from './PanelAccuracyCharts';
 import { PanelAccuracyStepStataPanel } from './PanelAccuracyStepStataPanel';
 import {
@@ -308,11 +310,25 @@ export const PanelAccuracyTab: React.FC = () => {
     executedAt: string;
   } | null>(null);
 
-  // Step 9 Sub-tabs & Export
+  // Step 9 Sub-tabs & Export + Step 7 Advisor Audit Trail & Snapshot
   const [resultSubTab, setResultSubTab] = useState<'stata' | 'visuals' | 'interpret' | 'code'>('stata');
-  const [codeTab, setCodeTab] = useState<'stata' | 'r'>('stata');
+  const [codeTab, setCodeTab] = useState<'stata' | 'r' | 'stan'>('stata');
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<string | null>(null);
+  const [previousConfigSnapshot, setPreviousConfigSnapshot] = useState<{
+    preprocessing: AccuracyPreprocessingOptions;
+    result: PanelAccuracyFitResult;
+  } | null>(null);
+  const [showBeforeAfterCompare, setShowBeforeAfterCompare] = useState<boolean>(false);
+  const [advisorAuditTrail, setAdvisorAuditTrail] = useState<
+    Array<{
+      timestamp: string;
+      actionTitle: string;
+      beforeTop: string;
+      afterTop: string;
+      statusAfter: string;
+    }>
+  >([]);
   const [showAllStepGuides, setShowAllStepGuides] = useState<boolean>(false);
   const [step2ConfigNotice, setStep2ConfigNotice] = useState<string | null>(null);
   const [show14PointAudit, setShow14PointAudit] = useState<boolean>(false);
@@ -705,6 +721,54 @@ export const PanelAccuracyTab: React.FC = () => {
     }
   };
 
+  const recordAdvisorAudit = (
+    actionTitle: string,
+    nextPreproc: AccuracyPreprocessingOptions
+  ) => {
+    if (activeResult) {
+      setPreviousConfigSnapshot({
+        preprocessing: { ...preprocessing },
+        result: activeResult
+      });
+    }
+    const beforeTop = activeResult?.ranking.ranks[0]?.sourceLabel || '-';
+    let afterTop = beforeTop;
+    let statusAfter = activeResult?.ranking.canonicalStatus || '-';
+    try {
+      const simRes = executePanelAccuracyPipeline({
+        dataset: panelDataset,
+        preprocessing: nextPreproc,
+        bootstrapReplications: 499,
+        executionSource: 'client_live'
+      });
+      afterTop = simRes.ranking.ranks[0]?.sourceLabel || '-';
+      statusAfter = simRes.ranking.canonicalStatus;
+    } catch {
+      // ignore if incomplete
+    }
+    setAdvisorAuditTrail(prev => [
+      {
+        timestamp: new Date().toLocaleTimeString('id-ID'),
+        actionTitle,
+        beforeTop,
+        afterTop,
+        statusAfter
+      },
+      ...prev.slice(0, 14)
+    ]);
+    setShowBeforeAfterCompare(true);
+  };
+
+  const handleRevertPreviousConfig = () => {
+    if (!previousConfigSnapshot) return;
+    const prevP = previousConfigSnapshot.preprocessing;
+    recordAdvisorAudit('Kembali ke Pengaturan Sebelumnya', prevP);
+    setPreprocessing({ ...prevP });
+    setServerFitResult(null);
+    setVerificationFeedback(null);
+    setAppliedNotice('Pengaturan dikembalikan ke konfigurasi sebelumnya.');
+  };
+
   const handleStepRecommendationAction = (
     actionType:
       | 'DROP_DUPLICATES'
@@ -716,33 +780,41 @@ export const PanelAccuracyTab: React.FC = () => {
       | 'KEEP_CURRENT'
   ) => {
     if (actionType === 'DROP_DUPLICATES') {
-      setPreprocessing(p => ({ ...p, dropDuplicateCityYear: true }));
+      const nextP = { ...preprocessing, dropDuplicateCityYear: true };
+      recordAdvisorAudit('Aktifkan Penghapusan Duplikat (City, Year)', nextP);
+      setPreprocessing(nextP);
       setServerFitResult(null);
       setVerificationFeedback(null);
       setAppliedNotice('Penghapusan duplikat (City, Year) diaktifkan.');
       return;
     }
     if (actionType === 'APPLY_WINSORIZE') {
-      setPreprocessing(p => ({ ...p, applyWinsorize: true }));
+      const nextP = { ...preprocessing, applyWinsorize: true };
+      recordAdvisorAudit('Terapkan Winsorization 2.5%', nextP);
+      setPreprocessing(nextP);
       setServerFitResult(null);
       setVerificationFeedback(null);
       setAppliedNotice('Winsorization 2.5% diaktifkan untuk mengendalikan pengaruh outlier ekstrem.');
       return;
     }
     if (actionType === 'APPLY_LOG1P') {
-      setPreprocessing(p => ({ ...p, applyLog1p: true }));
+      const nextP = { ...preprocessing, applyLog1p: true };
+      recordAdvisorAudit('Terapkan Transformasi log(1 + x)', nextP);
+      setPreprocessing(nextP);
       setServerFitResult(null);
       setVerificationFeedback(null);
       setAppliedNotice('Transformasi skala log(1 + x) diaktifkan untuk mengevaluasi kesalahan relatif proporsional.');
       return;
     }
     if (actionType === 'RESET_RAW_BASELINE') {
-      setPreprocessing(p => ({
-        ...p,
+      const nextP: AccuracyPreprocessingOptions = {
+        ...preprocessing,
         applyWinsorize: false,
         applyLog1p: false,
         dropDuplicateCityYear: qualityReport.duplicateKeys.length > 0
-      }));
+      };
+      recordAdvisorAudit('Reset ke Baseline Satuan Fisik Asli', nextP);
+      setPreprocessing(nextP);
       setServerFitResult(null);
       setVerificationFeedback(null);
       setAppliedNotice('Konfigurasi satuan fisik asli optimal diterapkan.');
@@ -753,6 +825,22 @@ export const PanelAccuracyTab: React.FC = () => {
       return;
     }
     if (actionType === 'RUN_HIGH_PRECISION_VERIFICATION') {
+      if (activeResult) {
+        setPreviousConfigSnapshot({
+          preprocessing: { ...preprocessing },
+          result: activeResult
+        });
+      }
+      setAdvisorAuditTrail(prev => [
+        {
+          timestamp: new Date().toLocaleTimeString('id-ID'),
+          actionTitle: 'Jalankan Analisis Alternatif Presisi Tinggi (1.999 Bootstrap + 800 MCMC)',
+          beforeTop: activeResult?.ranking.ranks[0]?.sourceLabel || '-',
+          afterTop: activeResult?.ranking.ranks[0]?.sourceLabel || '-',
+          statusAfter: activeResult?.ranking.canonicalStatus || '-'
+        },
+        ...prev.slice(0, 14)
+      ]);
       void handleRunServerPipeline({ bootstrapReplications: 1999, mcmcIterations: 800 });
       return;
     }
@@ -805,10 +893,10 @@ export const PanelAccuracyTab: React.FC = () => {
 
   const activeCodeText = useMemo(() => {
     if (!activeResult) return '';
-    return codeTab === 'stata'
-      ? activeResult.generatedCode.stataDoFile
-      : activeResult.generatedCode.rScript;
-  }, [activeResult, codeTab]);
+    if (codeTab === 'stata') return activeResult.generatedCode.stataDoFile;
+    if (codeTab === 'r') return activeResult.generatedCode.rScript;
+    return activeResult.generatedCode.stanCode || stepStataDocs[5]?.companionStanCode || '';
+  }, [activeResult, codeTab, stepStataDocs]);
 
   const handleCopyCode = async () => {
     if (!activeCodeText) return;
@@ -822,7 +910,9 @@ export const PanelAccuracyTab: React.FC = () => {
     const fname =
       codeTab === 'stata'
         ? 'panel_comparative_accuracy.do'
-        : 'panel_comparative_accuracy.R';
+        : codeTab === 'r'
+          ? 'panel_comparative_accuracy.R'
+          : 'panel_latent_accuracy.stan';
     triggerDownload(new Blob([activeCodeText], { type: 'text/plain;charset=utf-8' }), fname);
   };
 
@@ -2007,6 +2097,55 @@ export const PanelAccuracyTab: React.FC = () => {
               </div>
             </div>
 
+            <PanelAccuracyMcmcTraceChart
+              latentModel={activeResult.latentModel}
+              unitLabel={activeResult.datasetMeta.workingUnitNote}
+            />
+
+            {/* Residual Measurement Error Correlation Matrix (Section D3) */}
+            {activeResult.latentModel.residualCorrelationMatrix.length > 0 && (
+              <div style={{ padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface-muted)' }}>
+                <strong style={{ fontSize: '13.5px', display: 'block', marginBottom: '4px' }}>
+                  Pemeriksaan Independensi Galat &amp; Matriks Korelasi Residual Pengukuran Corr(ε̂_a, ε̂_b)
+                </strong>
+                <p style={{ margin: '0 0 8px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  Menguji apakah kesalahan pengukuran antarsumber saling independen setelah nilai laten θ̂_it diserap. Nilai |r_ε| &gt; 0.38 mengindikasikan ketergantungan instrumen/metodologi bersama.
+                </p>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'center' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ padding: '6px' }}>Sumber</th>
+                        {activeResult.latentModel.sourceEstimates.map(s => (
+                          <th key={s.sourceId} style={{ padding: '6px', borderBottom: '1px solid var(--border)' }}>{s.sourceName}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeResult.latentModel.sourceEstimates.map((rSrc, rIdx) => (
+                        <tr key={rSrc.sourceId}>
+                          <td style={{ padding: '6px', fontWeight: 700, textAlign: 'left', borderBottom: '1px solid var(--border-light)' }}>{rSrc.sourceLabel}</td>
+                          {activeResult.latentModel.residualCorrelationMatrix[rIdx].map((val, cIdx) => (
+                            <td
+                              key={cIdx}
+                              style={{
+                                padding: '6px',
+                                borderBottom: '1px solid var(--border-light)',
+                                fontWeight: rIdx !== cIdx && Math.abs(val) > 0.38 ? 800 : 400,
+                                color: rIdx !== cIdx && val > 0.38 ? '#ef4444' : 'var(--text)'
+                              }}
+                            >
+                              {val.toFixed(3)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             <PanelAccuracyBlandAltmanChart
               metrics={activeResult.metrics}
               referenceLabel="Konsensus Laten Leave-One-Source-Out (θ̂_-j)"
@@ -2019,16 +2158,16 @@ export const PanelAccuracyTab: React.FC = () => {
           </>
         )}
 
-        {/* STEP 6: PANEL FIXED EFFECTS INFERENTIAL COMPARISON */}
+        {/* STEP 6: SOURCE ACCURACY COMPARISON & ECONOMETRIC PAIR FIXED EFFECTS */}
         {currentStep === 6 && activeResult && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
-                  Step 6 — Model Inferensial Panel: Pair Fixed Effects &amp; Wild Cluster Bootstrap
+                  Step 6 — Komparasi Langsung Akurasi Sumber, Validasi LOSO &amp; Model Ekonometrika Pair FE
                 </h3>
                 <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                  Persamaan: <code>AE_ijt = α_it + Σ β_j Source_j + ε_ijt</code> dengan menyerap {activeResult.pairFixedEffects.nCompletePairs} efek tetap pasangan Kota-Tahun (α_it) dan mengelompokkan standar error pada {activeResult.pairFixedEffects.nClustersCity} klaster kota.
+                  Mengadu seluruh sumber secara langsung berdasarkan Total Latent RMSE, Dekomposisi Loss (Bias, Skala, Presisi), Validasi Prediktif LOSO, serta model komplementer Pair Fixed Effects (Cluster-Robust, Driscoll-Kraay, &amp; Wild Bootstrap).
                 </p>
               </div>
               <button
@@ -2044,6 +2183,86 @@ export const PanelAccuracyTab: React.FC = () => {
             </div>
 
             <BootstrapVerificationCard activeResult={activeResult} feedback={verificationFeedback} />
+
+            {/* Direct Source Accuracy & Loss Decomposition Table (Section J Step 6) */}
+            <div>
+              <strong style={{ fontSize: '14px', display: 'block', marginBottom: '8px' }}>
+                Tabel Komparasi Langsung Akurasi Sumber &amp; Validasi Prediktif LOSO (Seluruh J = {activeResult.metrics.length} Sumber)
+              </strong>
+              <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--surface-muted)' }}>
+                      {[
+                        'Sumber',
+                        'Total Latent RMSE',
+                        'Latent MSE',
+                        'Bias Aditif (α)',
+                        'Presisi (σ_ε)',
+                        'Distorsi Skala',
+                        'Expected Loss',
+                        'LOSO MAE',
+                        'LOSO RMSE',
+                        'LOSO MBE',
+                        '95% PI Coverage',
+                        'Expected Rank'
+                      ].map(h => (
+                        <th key={h} style={{ padding: '7px 9px', textAlign: h === 'Sumber' ? 'left' : 'right', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...activeResult.metrics]
+                      .sort((a, b) => a.totalLatentRmse - b.totalLatentRmse)
+                      .map((m, idx) => (
+                        <tr key={m.sourceId} style={{ background: idx === 0 ? 'var(--info-bg)' : 'transparent' }}>
+                          <td style={{ padding: '7px 9px', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>
+                            #{idx + 1} {m.sourceLabel}
+                          </td>
+                          <td style={{ padding: '7px 9px', textAlign: 'right', fontWeight: 800, color: 'var(--primary)', borderBottom: '1px solid var(--border-light)' }}>
+                            {m.totalLatentRmse.toFixed(3)}
+                          </td>
+                          <td style={{ padding: '7px 9px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
+                            {(m.totalLatentRmse * m.totalLatentRmse).toFixed(3)}
+                          </td>
+                          <td style={{ padding: '7px 9px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
+                            {m.latentInterceptBias.toFixed(3)}
+                          </td>
+                          <td style={{ padding: '7px 9px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
+                            {m.errorSd.toFixed(3)}
+                          </td>
+                          <td style={{ padding: '7px 9px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
+                            {m.scaleDistortion.toFixed(3)}
+                          </td>
+                          <td style={{ padding: '7px 9px', textAlign: 'right', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>
+                            {m.posteriorExpectedLoss.toFixed(3)}
+                          </td>
+                          <td style={{ padding: '7px 9px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
+                            {m.mae.toFixed(3)}
+                          </td>
+                          <td style={{ padding: '7px 9px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
+                            {m.rmse.toFixed(3)}
+                          </td>
+                          <td style={{ padding: '7px 9px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>
+                            {m.mbe.toFixed(3)}
+                          </td>
+                          <td style={{ padding: '7px 9px', textAlign: 'right', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>
+                            {m.losoPredictiveCoverage95.toFixed(1)}%
+                          </td>
+                          <td style={{ padding: '7px 9px', textAlign: 'right', fontWeight: 800, borderBottom: '1px solid var(--border-light)' }}>
+                            {m.expectedRank.toFixed(2)} ({m.rankingStabilityPct.toFixed(0)}%)
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <PanelAccuracyLossDecompositionChart
+              metrics={activeResult.metrics}
+              unitLabel={activeResult.datasetMeta.workingUnitNote}
+            />
 
             {fitError && (
               <div style={{ padding: '12px', borderRadius: 'var(--radius-sm)', background: 'var(--danger-bg)', color: '#ef4444', fontSize: '13px' }}>
@@ -2246,6 +2465,98 @@ export const PanelAccuracyTab: React.FC = () => {
                   onAction={handleStepRecommendationAction}
                   disabled={isRunningFit}
                 />
+
+                {/* 4 Mandatory Advisor Action Buttons (Section J Step 7) */}
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', paddingTop: '6px', borderTop: '1px solid var(--border-light)' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={isRunningFit}
+                    onClick={() => {
+                      const firstAct = activeResult.diagnostics.diagnosticAdvisor?.actions[0];
+                      if (firstAct) handleStepRecommendationAction(firstAct.actionType);
+                    }}
+                    style={{ minHeight: '40px', fontSize: '12.5px' }}
+                  >
+                    <Sparkles size={14} style={{ marginRight: '5px' }} /> Terapkan Rekomendasi
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    disabled={isRunningFit}
+                    onClick={() => handleStepRecommendationAction('RUN_HIGH_PRECISION_VERIFICATION')}
+                    style={{ minHeight: '40px', fontSize: '12.5px' }}
+                  >
+                    <Play size={14} style={{ marginRight: '5px' }} /> Jalankan Analisis Alternatif
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => setShowBeforeAfterCompare(v => !v)}
+                    style={{ minHeight: '40px', fontSize: '12.5px' }}
+                  >
+                    <Sliders size={14} style={{ marginRight: '5px' }} /> {showBeforeAfterCompare ? 'Tutup Perbandingan Hasil' : 'Bandingkan Hasil'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    disabled={!previousConfigSnapshot}
+                    onClick={handleRevertPreviousConfig}
+                    style={{ minHeight: '40px', fontSize: '12.5px' }}
+                  >
+                    <RefreshCw size={14} style={{ marginRight: '5px' }} /> Kembali ke Pengaturan Sebelumnya
+                  </button>
+                </div>
+
+                {showBeforeAfterCompare && previousConfigSnapshot && (
+                  <div style={{ padding: '12px', borderRadius: 'var(--radius-sm)', background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                    <strong style={{ fontSize: '13px', display: 'block', marginBottom: '6px', color: 'var(--primary)' }}>
+                      Perbandingan Hasil Sebelum vs Sesudah Tindakan Perbaikan
+                    </strong>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                        <thead>
+                          <tr style={{ background: 'var(--surface-muted)' }}>
+                            {['Sumber', 'Rank Sebelum', 'Total RMSE Sebelum', 'Rank Sesudah', 'Total RMSE Sesudah', 'Perubahan Status'].map(h => (
+                              <th key={h} style={{ padding: '6px 8px', textAlign: h === 'Sumber' ? 'left' : 'right', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {activeResult.ranking.ranks.map(curR => {
+                            const prevR = previousConfigSnapshot.result.ranking.ranks.find(p => p.sourceId === curR.sourceId);
+                            const rankChanged = prevR && prevR.rank !== curR.rank;
+                            return (
+                              <tr key={curR.sourceId}>
+                                <td style={{ padding: '6px 8px', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>{curR.sourceLabel}</td>
+                                <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>#{prevR?.rank ?? '-'}</td>
+                                <td style={{ padding: '6px 8px', textAlign: 'right', borderBottom: '1px solid var(--border-light)' }}>{prevR ? prevR.totalLatentRmse.toFixed(3) : '-'}</td>
+                                <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 800, color: 'var(--primary)', borderBottom: '1px solid var(--border-light)' }}>#{curR.rank}</td>
+                                <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, borderBottom: '1px solid var(--border-light)' }}>{curR.totalLatentRmse.toFixed(3)}</td>
+                                <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700, color: rankChanged ? '#d97706' : 'var(--success)', borderBottom: '1px solid var(--border-light)' }}>
+                                  {rankChanged ? `Bergeser (#${prevR?.rank} → #${curR.rank})` : 'Tetap Stabil'}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {advisorAuditTrail.length > 0 && (
+                  <div style={{ padding: '10px 12px', borderRadius: '6px', background: 'var(--surface)', border: '1px solid var(--border-light)', fontSize: '12px' }}>
+                    <strong style={{ display: 'block', marginBottom: '4px' }}>Audit Trail Tindakan Statistical Advisor:</strong>
+                    <ul style={{ margin: '0 0 0 18px', padding: 0, display: 'flex', flexDirection: 'column', gap: '3px', color: 'var(--text-secondary)' }}>
+                      {advisorAuditTrail.map((log, i) => (
+                        <li key={i}>
+                          <code>[{log.timestamp}]</code> <strong>{log.actionTitle}</strong> — Kandidat #1: {log.beforeTop} → <strong>{log.afterTop}</strong> (Status: <code>{log.statusAfter}</code>)
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2351,12 +2662,12 @@ export const PanelAccuracyTab: React.FC = () => {
                     fontWeight: 800
                   }}
                 >
-                  STATUS: {activeResult.ranking.conclusivenessStatus}
+                  STATUS: {activeResult.ranking.canonicalStatus} ({activeResult.ranking.conclusivenessStatus})
                 </span>
                 <strong style={{ fontSize: '15px' }}>
                   {activeResult.ranking.bestSourceLabel
-                    ? `Variabel Paling Akurat & Benar (Peringkat #1 dari ${activeResult.ranking.ranks.length} Sumber): ${activeResult.ranking.bestSourceLabel}`
-                    : 'Belum Terdapat Bukti Statistik yang Cukup untuk Menetapkan Satu Variabel Terbaik Secara Mutlak'}
+                    ? `Variabel Paling Akurat Secara Relatif (Peringkat #1 dari ${activeResult.ranking.ranks.length} Sumber): ${activeResult.ranking.bestSourceLabel}`
+                    : `Kandidat Estimasi Kesalahan Terendah Sementara: ${activeResult.ranking.bestCandidateLabel || activeResult.ranking.ranks[0]?.sourceLabel || '-'}`}
                 </strong>
               </div>
               <div style={{ fontSize: '13px', lineHeight: 1.55 }}>{activeResult.ranking.rankingSummary}</div>
@@ -2459,6 +2770,46 @@ export const PanelAccuracyTab: React.FC = () => {
                 </tbody>
               </table>
             </div>
+
+            {/* Dedicated Mandatory Section: MENGAPA SUMBER INI MENJADI YANG TERBAIK? (Section J Step 8) */}
+            {activeResult.ranking.whyBestAnalysis && (
+              <div
+                style={{
+                  padding: '16px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1.5px solid var(--primary)',
+                  background: 'var(--surface-muted)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <ShieldCheck size={18} color="var(--primary)" />
+                  <strong style={{ fontSize: '15px', color: 'var(--primary)' }}>
+                    MENGAPA SUMBER INI MENJADI YANG TERBAIK? — {activeResult.ranking.whyBestAnalysis.headline}
+                  </strong>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '10px' }}>
+                  {activeResult.ranking.whyBestAnalysis.points.map((pt, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        padding: '10px 12px',
+                        borderRadius: '6px',
+                        background: 'var(--surface)',
+                        border: '1px solid var(--border-light)',
+                        fontSize: '12.5px',
+                        lineHeight: 1.5
+                      }}
+                    >
+                      <strong style={{ display: 'block', color: 'var(--primary)', marginBottom: '3px' }}>{pt.label}</strong>
+                      <span style={{ color: 'var(--text)' }}>{pt.detail}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {stepPoints && (
               <BulletCard title="Ringkasan Keputusan & Peringkat Seluruh Sumber (Per Poin):" points={stepPoints.step8} />
@@ -2603,13 +2954,21 @@ export const PanelAccuracyTab: React.FC = () => {
                     >
                       R Script (.R)
                     </button>
+                    <button
+                      type="button"
+                      className={codeTab === 'stan' ? 'btn btn-primary' : 'btn btn-outline'}
+                      style={{ minHeight: '40px', fontSize: '12.5px' }}
+                      onClick={() => setCodeTab('stan')}
+                    >
+                      Stan MCMC (.stan)
+                    </button>
                   </div>
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <button type="button" className="btn btn-outline" style={{ minHeight: '40px', fontSize: '12.5px' }} onClick={handleCopyCode}>
                       {copiedCode ? <><Check size={14} style={{ marginRight: '5px' }} />Tersalin</> : <><Copy size={14} style={{ marginRight: '5px' }} />Copy Code</>}
                     </button>
                     <button type="button" className="btn btn-outline" style={{ minHeight: '40px', fontSize: '12.5px' }} onClick={handleDownloadCode}>
-                      <Download size={14} style={{ marginRight: '5px' }} /> Download {codeTab === 'stata' ? '.do' : '.R'}
+                      <Download size={14} style={{ marginRight: '5px' }} /> Download {codeTab === 'stata' ? '.do' : codeTab === 'r' ? '.R' : '.stan'}
                     </button>
                   </div>
                 </div>

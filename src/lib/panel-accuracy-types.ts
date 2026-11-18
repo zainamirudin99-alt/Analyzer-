@@ -233,8 +233,23 @@ export interface LatentSourceEstimate {
   posteriorProbBestTotalError: number; // P(lowest total latent RMSE | data)
   posteriorProbBestPrecision: number;  // P(lowest error variance / highest reliability | data)
   grubbsErrorVariance: number;         // Analytical Grubbs triangulation variance check
+  scaleDistortionComponent: number;    // sqrt((lambda_j - 1)^2 * Var(theta))
+  posteriorExpectedLoss: number;       // E_post[MSE_j | X]
+  expectedRank: number;                // E_post[Rank_j | X] in [1, J]
+  rankingStabilityPct: number;         // max_r P(Rank_j = r | X) * 100
+  mcmcTraceDraws: number[][];          // [chain][draw] thinned trace of Total Latent RMSE
   mcmcRhat: number;
   mcmcEss: number;
+}
+
+export interface CorrelatedErrorPairItem {
+  sourceAId: string;
+  sourceAName: string;
+  sourceBId: string;
+  sourceBName: string;
+  residualCorr: number;
+  pValue: number;
+  warning: string;
 }
 
 export interface LatentModelSummary {
@@ -251,6 +266,10 @@ export interface LatentModelSummary {
   posteriorPredictivePValue: number;
   identificationRule: string;
   epistemologicalCaveat: string;
+  residualCorrelationMatrix: number[][];
+  correlatedErrorPairs: CorrelatedErrorPairItem[];
+  weakIdentificationSources: string[];
+  correlatedErrorAdjustedTopSourceId: string | null;
   latentThetaSeries: Array<{
     pairKey: string;
     city: string;
@@ -288,6 +307,12 @@ export interface SourceAccuracyMetricRow {
   mcmcRhat: number;
   mcmcEss: number;
   grubbsErrorVariance: number;
+  scaleDistortion: number;
+  posteriorExpectedLoss: number;
+  expectedRank: number;
+  rankingStabilityPct: number;
+  losoPredictiveCoverage95: number;
+  losoCalibrationSlope: number;
   // Empirical Deviation vs Leave-One-Source-Out Consensus Benchmark theta_hat^(-j)
   mae: number;
   maeSeCluster: number;
@@ -320,6 +345,7 @@ export interface PairFixedEffectsCoefficient {
   meanAe: number;
   betaDiffVsBaseline: number;
   seCluster: number;
+  seDriscollKraay?: number;
   tStat: number;
   pValue: number;
   ciLower: number;
@@ -337,6 +363,8 @@ export interface PairwiseSourceContrast {
   maeB: number;
   diffAminusB: number;
   seCluster: number;
+  seDriscollKraay?: number;
+  pValueDriscollKraay?: number;
   tStat: number;
   dfCluster: number;
   pValueCluster: number;
@@ -410,6 +438,8 @@ export interface StepRecommendationAction {
   statisticalBasis: string;
   actionLabel: string;
   expectedImpact: string;
+  riskIfIgnored?: string;
+  rankingImpactNote?: string;
   actionType:
     | 'DROP_DUPLICATES'
     | 'APPLY_WINSORIZE'
@@ -456,6 +486,16 @@ export interface PanelAccuracyDiagnosticsResult {
     shapiroProxyPValue: number;
     explanation: string;
   };
+  correlatedErrorAudit?: {
+    hasCorrelatedErrorRisk: boolean;
+    maxAbsResidualCorr: number;
+    pairs: CorrelatedErrorPairItem[];
+    summary: string;
+  };
+  missingDataSensitivityAudit?: {
+    rankConsistentWithAvailableCase: boolean;
+    summary: string;
+  };
   inferenceLimitations: string[];
   diagnosticAdvisor?: Step7DiagnosticAdvisorBundle;
 }
@@ -466,7 +506,14 @@ export interface SourceRankEntry {
   sourceName: string;
   sourceLabel: string;
   totalLatentRmse: number;
+  totalRmseCiLower: number;
+  totalRmseCiUpper: number;
   errorSd: number;
+  scaleDistortion: number;
+  posteriorExpectedLoss: number;
+  expectedRank: number;
+  rankingStabilityPct: number;
+  losoPredictiveCoverage95: number;
   reliabilityR2: number;
   posteriorProbBest: number;
   mae: number;
@@ -485,18 +532,35 @@ export interface SourceRankEntry {
   rankNote: string;
 }
 
+export interface WhyBestSourceAnalysis {
+  headline: string;
+  isProvenWinner: boolean;
+  candidateLabel: string;
+  points: Array<{ label: string; detail: string }>;
+}
+
 export interface ComparativeRankingResult {
   primaryMetric: 'TOTAL_LATENT_RMSE';
   referenceSourceId: string;
   referenceSourceLabel: string;
   isConclusive: boolean;
+  canonicalStatus:
+    | 'PEMENANG_TERBUKTI_RELATIF'
+    | 'KANDIDAT_TERBAIK_BELUM_KONKLUSIF'
+    | 'KONFLIK_ANTAR_METRIK'
+    | 'MODEL_TIDAK_TERIDENTIFIKASI';
   conclusivenessStatus:
     | 'TERBUKTI_BERBEDA_SIGNIFIKAN'
     | 'PERBEDAAN_TIDAK_SIGNIFIKAN'
+    | 'PEMENANG_TERBUKTI_RELATIF'
+    | 'KANDIDAT_TERBAIK_BELUM_KONKLUSIF'
     | 'KONFLIK_ANTAR_METRIK'
     | 'MODEL_TIDAK_TERIDENTIFIKASI';
   bestSourceId: string | null;
   bestSourceLabel: string | null;
+  bestCandidateId: string | null;
+  bestCandidateLabel: string | null;
+  whyBestAnalysis: WhyBestSourceAnalysis;
   tiedTopSourceLabels: string[];
   rankingSummary: string;
   methodologicalCaveat: string;
@@ -558,6 +622,7 @@ export interface AccuracyAcademicInterpretations {
 export interface GeneratedAccuracyCode {
   stataDoFile: string;
   rScript: string;
+  stanCode?: string;
 }
 
 export interface PanelAccuracyFitResult {

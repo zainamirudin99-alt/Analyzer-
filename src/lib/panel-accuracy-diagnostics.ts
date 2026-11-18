@@ -280,10 +280,51 @@ export function computePanelAccuracyDiagnostics(
       `Distribusi kesalahan absolut (AE ≥ 0) secara alami menceng kanan; ketidaknormalan AE bukan cacat validitas karena inferensi Bayesian mengandalkan posterior Gibbs penuh sedangkan Pair Fixed Effects mengandalkan Central Limit Theorem (CLT) & Wild Cluster Bootstrap.`
   };
 
+  // 8. Correlated Measurement Error Audit (Section D3)
+  const corrPairs = latentSummary.correlatedErrorPairs || [];
+  let maxAbsResCorr = 0;
+  const rMat = latentSummary.residualCorrelationMatrix || [];
+  for (let a = 0; a < rMat.length; a++) {
+    for (let b = a + 1; b < (rMat[a]?.length || 0); b++) {
+      maxAbsResCorr = Math.max(maxAbsResCorr, Math.abs(rMat[a][b]));
+    }
+  }
+  const correlatedErrorAudit = {
+    hasCorrelatedErrorRisk: corrPairs.length > 0,
+    maxAbsResidualCorr: maxAbsResCorr,
+    pairs: corrPairs,
+    summary:
+      corrPairs.length > 0
+        ? `PERINGATAN ASUMSI INDEPENDENSI: Ditemukan ${corrPairs.length} pasangan sumber dengan korelasi galat positif signifikan (maks |r_ε| = ${maxAbsResCorr.toFixed(3)}). Validasi LOSO dan konsensus standar telah diuji silang dengan pembobotan penalti korelasi galat.`
+        : `Asumsi independensi galat bersyarat terpenuhi (maks |r_ε| antarsumber = ${maxAbsResCorr.toFixed(3)} ≤ 0.38).`
+  };
+
+  // 9. Missing Data Sensitivity Audit (Complete-Case vs Available-Case)
+  const ccOrder = context?.metrics
+    ? [...context.metrics].sort((a, b) => a.mae - b.mae).map(m => m.sourceId)
+    : [];
+  const availOrder = context?.metrics
+    ? [...context.metrics].sort((a, b) => a.availableCase.mae - b.availableCase.mae).map(m => m.sourceId)
+    : [];
+  const rankConsistentWithAvailableCase =
+    ccOrder.length === 0 || ccOrder[0] === availOrder[0];
+  const missingDataSensitivityAudit = {
+    rankConsistentWithAvailableCase,
+    summary: rankConsistentWithAvailableCase
+      ? `Urutan kandidat terbaik konsisten antara sampel Complete-Case (N = ${P}) dan Available-Case.`
+      : `PERINGATAN MISSINGNESS: Kandidat terbaik pada Complete-Case berbeda dengan Available-Case; periksa pola observasi hilang antar kota/tahun.`
+  };
+
   const inferenceLimitations: string[] = [
     latentSummary.epistemologicalCaveat,
     ...(latentSummary.nSources < 3
       ? ['Jumlah sumber J < 3: model pengukuran laten tanpa variabel referensi bersifat underidentified secara teoretis.']
+      : []),
+    ...(corrPairs.length > 0
+      ? [`Terdapat indikasi korelasi kesalahan antarsumber (${corrPairs.map(p => `${p.sourceAName}-${p.sourceBName}`).join(', ')}); periksa kesamaan metodologi/instrumen.`]
+      : []),
+    ...(latentSummary.weakIdentificationSources.length > 0
+      ? [`Identifikasi lemah pada sumber: ${latentSummary.weakIdentificationSources.join(', ')}.`]
       : []),
     ...(isSmallCluster
       ? [`Jumlah klaster kota terbatas (G = ${G} < 30); prioritaskan Rademacher Wild Cluster Bootstrap & Bayesian Credible Interval.`]
@@ -308,6 +349,8 @@ export function computePanelAccuracyDiagnostics(
     heteroskedasticityWarning: heteroskedasticityTest.status === 'warning',
     serialWarning: serialCorrelationTest.status === 'warning',
     cdWarning: crossSectionalDependenceTest.status === 'warning',
+    correlatedErrorCount: corrPairs.length,
+    weakSourcesCount: latentSummary.weakIdentificationSources.length,
     skew,
     context
   });
@@ -320,6 +363,8 @@ export function computePanelAccuracyDiagnostics(
     outlierSensitivityAudit,
     bayesianConvergenceAudit,
     normalityAndCltNote,
+    correlatedErrorAudit,
+    missingDataSensitivityAudit,
     inferenceLimitations,
     diagnosticAdvisor
   };
@@ -337,6 +382,8 @@ function buildStep7DiagnosticAdvisor(params: {
   heteroskedasticityWarning: boolean;
   serialWarning: boolean;
   cdWarning: boolean;
+  correlatedErrorCount: number;
+  weakSourcesCount: number;
   skew: number;
   context?: Step7DiagnosticsContext;
 }): Step7DiagnosticAdvisorBundle {
@@ -352,6 +399,8 @@ function buildStep7DiagnosticAdvisor(params: {
     heteroskedasticityWarning,
     serialWarning,
     cdWarning,
+    correlatedErrorCount,
+    weakSourcesCount,
     skew,
     context
   } = params;
@@ -514,6 +563,40 @@ function buildStep7DiagnosticAdvisor(params: {
       expectedImpact:
         'Memastikan seluruh p-value & peringkat pada Step 8 kebal terhadap pelanggaran asumsi klasik i.i.d.',
       actionType: 'RUN_HIGH_PRECISION_VERIFICATION'
+    });
+  }
+
+  if (correlatedErrorCount > 0) {
+    score -= 10;
+    actions.push({
+      id: 'diag_correlated_errors',
+      priority: 'TINGGI',
+      title: `Indikasi Correlated Measurement Errors (${correlatedErrorCount} Pasangan Sumber)`,
+      statisticalBasis:
+        'Korelasi galat positif antarsumber melanggar asumsi independensi bersyarat model faktor konvensional dan berisiko menarik konsensus laten ke arah sumber kembar.',
+      actionLabel: 'Periksa Independensi Sumber di Step 2 & Jalankan Verifikasi Presisi',
+      expectedImpact:
+        'Sistem menerapkan penalti korelasi galat untuk menguji apakah kandidat #1 tetap bertahan saat sumber berkorelasi didiskon.',
+      riskIfIgnored: 'Sumber yang berbagi bias metode yang sama dapat tampak unggul secara semu.',
+      rankingImpactNote: 'Status kesimpulan diturunkan ke KONFLIK_ANTAR_METRIK bila penalti korelasi mengubah peringkat #1.',
+      actionType: 'RUN_HIGH_PRECISION_VERIFICATION'
+    });
+  }
+
+  if (weakSourcesCount > 0) {
+    score -= 12;
+    actions.push({
+      id: 'diag_weak_identification',
+      priority: 'TINGGI',
+      title: `Weak Identification pada ${weakSourcesCount} Sumber Pengukuran`,
+      statisticalBasis:
+        'Sumber dengan faktor loading λ ≤ 0.15 atau Reliabilitas R² < 20% mengandung terlalu sedikit sinyal konstruk bersama.',
+      actionLabel: 'Tinjau Kelayakan Sumber di Step 2',
+      expectedImpact:
+        'Memastikan seluruh sumber yang diadu benar-benar mengukur konstruk laten yang sama.',
+      riskIfIgnored: 'Varians laten θ_it menjadi kabur dan interval kredibel melebar.',
+      rankingImpactNote: 'Dapat memicu ketidakpastian posterior tinggi pada sumber lain.',
+      actionType: 'ADD_THIRD_SOURCE'
     });
   }
 

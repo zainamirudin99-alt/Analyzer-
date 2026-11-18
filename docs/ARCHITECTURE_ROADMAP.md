@@ -175,3 +175,12 @@ Mengacu pada `docs/superpowers/specs/2026-11-13-regression-upgrade-design.md`:
 1. **`src/lib/panel-accuracy-latent.ts`**: Normalisasi `globalScale` internal pada MCMC Woodbury + adaptasi step-size seluruh blok burn-in + moves *ridge alignment* + skala ulang presisi balik ke satuan asli (`α`, `σ_ε`, `Total RMSE`, `θ̂`).
 2. **`src/lib/panel-accuracy-orchestrator.ts`**: Auto-eskalasi iterasi MCMC bila $J \ge 3$ awal memiliki `maxRhat > 1.08`.
 3. **`src/lib/panel-accuracy-ranking.ts` & `src/components/PanelAccuracyTab.tsx`**: Koreksi aturan `precisionConflict` agar tidak menolak pemenang ber-bias rendah hanya karena sumber ber-bias besar punya `Error SD` kecil; pembersihan format teks alasan dan panduan syarat konklusif di Step 8.
+
+---
+
+## 10. Arsitektur Tahap 12: Rekonstruksi Total Opsi 2 (Master Smartprompt)
+
+1. **`src/lib/panel-accuracy-types.ts` & `src/lib/panel-accuracy-latent.ts`**: Penambahan dekomposisi kesalahan (`scaleDistortion`, `posteriorExpectedLoss`, `expectedRank`, `rankingStabilityPct`), `mcmcTraceDraws`, matriks korelasi residual $\text{Corr}(\hat{\varepsilon}_a, \hat{\varepsilon}_b)$, deteksi *correlated errors* & *weak identification*, serta estimasi ulang $\hat{\theta}_{it}^{(-j)}$ murni untuk validasi LOSO.
+2. **`src/lib/panel-accuracy-metrics.ts` & `src/lib/panel-accuracy-fixed-effects.ts` & `src/lib/panel-accuracy-diagnostics.ts`**: Perhitungan `losoPredictiveCoverage95`, `losoCalibrationSlope`, standar error **Driscoll-Kraay (`seDriscollKraay`)**, sensitivitas *missing data* (`complete-case` vs `available-case`), dan Advisor dengan proyeksi dampak ranking & risiko.
+3. **`src/lib/panel-accuracy-ranking.ts` & `src/lib/panel-accuracy-step-stata.ts` & `src/components/PanelAccuracyStepStataPanel.tsx`**: Algoritma pemeringkatan 8-tahap dengan 4 status (`PEMENANG_TERBUKTI_RELATIF`, `KANDIDAT_TERBAIK_BELUM_KONKLUSIF`, `KONFLIK_ANTAR_METRIK`, `MODEL_TIDAK_TERIDENTIFIKASI`), seksi 8-poin `whyBestSourceAnalysis`, dan struktur 6-bagian panel Stata (termasuk *2. Konsep Statistik*).
+4. **`src/components/PanelAccuracyCharts.tsx` & `src/components/PanelAccuracyTab.tsx`**: Visualisasi **MCMC Trace Plot** (Step 5) & **Loss Decomposition Chart** (Step 6), fitur perbandingan Sebelum vs Sesudah + **Audit Trail** di Step 3 & Step 7, seksi *Mengapa Sumber Ini Terbaik?* di Step 8, serta laporan akademik 13-bagian & ekspor `.stan` di Step 9.

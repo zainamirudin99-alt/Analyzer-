@@ -436,11 +436,88 @@ describe('Gerbang Verifikasi — Opsi B Reference-Free All-Source Latent & Conse
 
     expect(res.latentModel.maxRhat).toBeLessThanOrEqual(1.1);
     expect(res.latentModel.converged).toBe(true);
+    expect(res.ranking.canonicalStatus).toBe('PEMENANG_TERBUKTI_RELATIF');
     expect(res.ranking.conclusivenessStatus).toBe('TERBUKTI_BERBEDA_SIGNIFIKAN');
     expect(res.ranking.isConclusive).toBe(true);
     expect(res.ranking.bestSourceId).toBe('x3');
     expect(res.ranking.ranks[0].sourceName).toBe('X3');
     expect(res.ranking.ranks[1].sourceName).toBe('X2');
     expect(res.ranking.ranks[2].sourceName).toBe('X1');
+    expect(res.ranking.whyBestAnalysis.points).toHaveLength(8);
+  });
+
+  it('10. Validates Correlated Measurement Errors, Weak Identification, Scale Distortion, Driscoll-Kraay SE & 6-Part Stata Concepts (Section O)', () => {
+    let s = 778899;
+    const rn = () => {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      const u1 = Math.max(1e-7, s / 4294967296);
+      s = (s * 1664525 + 1013904223) >>> 0;
+      const u2 = Math.max(1e-7, s / 4294967296);
+      return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    };
+
+    // Simulate 6 small clusters x 6 years = 36 rows where S1 & S2 share a strong common measurement error (+sharedErr),
+    // S3 is clean & accurate, and S4 has scale distortion (lambda = 1.35) + pure noise
+    const obsCorr: Record<string, unknown>[] = [];
+    for (let c = 1; c <= 6; c++) {
+      for (let t = 2019; t <= 2024; t++) {
+        const theta = 500 + c * 60 + (t - 2019) * 25 + rn() * 20;
+        const sharedErr = rn() * 45;
+        obsCorr.push({
+          City: `Cluster_${c}`,
+          Year: t,
+          S1_TwinA: Number((theta + 30 + sharedErr + rn() * 5).toFixed(2)),
+          S2_TwinB: Number((theta + 32 + sharedErr + rn() * 5).toFixed(2)),
+          S3_Clean: Number((theta + rn() * 6).toFixed(2)),
+          S4_Scaled: Number((1.35 * theta - 120 + rn() * 35).toFixed(2))
+        });
+      }
+    }
+
+    const corrDataset: PanelDataset = {
+      cityIdColumn: 'City',
+      yearColumn: 'Year',
+      sources: [
+        { id: 's1', name: 'S1', label: 'Twin Sensor A', columnKey: 'S1_TwinA', unit: 'kt', role: 'evaluated' },
+        { id: 's2', name: 'S2', label: 'Twin Sensor B', columnKey: 'S2_TwinB', unit: 'kt', role: 'evaluated' },
+        { id: 's3', name: 'S3', label: 'Clean Ground', columnKey: 'S3_Clean', unit: 'kt', role: 'evaluated' },
+        { id: 's4', name: 'S4', label: 'Scaled Proxy', columnKey: 'S4_Scaled', unit: 'kt', role: 'evaluated' }
+      ],
+      observations: obsCorr
+    };
+
+    const corrRes = executePanelAccuracyPipeline({
+      dataset: corrDataset,
+      bootstrapReplications: 499
+    });
+
+    // Detects positive correlated error between S1 and S2
+    expect(corrRes.latentModel.residualCorrelationMatrix).toHaveLength(4);
+    expect(corrRes.latentModel.correlatedErrorPairs.length).toBeGreaterThanOrEqual(1);
+    expect(corrRes.diagnostics.correlatedErrorAudit?.hasCorrelatedErrorRisk).toBe(true);
+
+    // Small cluster warning (G = 6 < 30) & Driscoll-Kraay SE populated
+    expect(corrRes.pairFixedEffects.smallClusterWarning).toBe(true);
+    expect(corrRes.pairFixedEffects.pairwiseContrasts[0].seDriscollKraay).toBeGreaterThan(0);
+
+    // Scale distortion, Expected Loss, Expected Rank, LOSO Predictive Coverage & MCMC trace draws populated
+    const s4Metric = corrRes.metrics.find(m => m.sourceId === 's4')!;
+    expect(s4Metric.scaleDistortion).toBeGreaterThan(10);
+    expect(s4Metric.posteriorExpectedLoss).toBeGreaterThan(0);
+    expect(s4Metric.expectedRank).toBeGreaterThanOrEqual(1);
+    expect(s4Metric.losoPredictiveCoverage95).toBeGreaterThanOrEqual(0);
+    expect(corrRes.latentModel.sourceEstimates[0].mcmcTraceDraws).toHaveLength(3);
+    expect(corrRes.generatedCode.stanCode).toContain('total_latent_rmse');
+
+    // Weak Identification test: source with near-zero loading (pure noise unrelated to theta)
+    const obsWeak = obsCorr.map(r => ({
+      ...r,
+      S4_Scaled: Number((rn() * 5).toFixed(2))
+    }));
+    const weakRes = executePanelAccuracyPipeline({
+      dataset: { ...corrDataset, observations: obsWeak },
+      bootstrapReplications: 299
+    });
+    expect(weakRes.latentModel.weakIdentificationSources.length).toBeGreaterThanOrEqual(1);
   });
 });
