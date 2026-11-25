@@ -4,6 +4,7 @@
 // ============================================================
 
 import {
+  AlignmentType,
   BorderStyle,
   Document,
   Footer,
@@ -583,52 +584,336 @@ export function generateOption3PDF(
   return Buffer.from(pdf, 'utf8');
 }
 
-function docHeading(text: string): Paragraph {
+const fmtSmartAdv = (n: number | null | undefined): string => {
+  if (n === null || n === undefined || !Number.isFinite(n)) return '-';
+  const abs = Math.abs(n);
+  if (abs === 0) return '0.000';
+  if (abs < 10) return n.toFixed(3);
+  if (abs < 1000) return n.toFixed(2);
+  return n.toFixed(1);
+};
+
+const padR = (s: string, w: number): string => {
+  const clean = String(s ?? '');
+  return clean.length > w ? `${clean.slice(0, Math.max(1, w - 2))}..` : clean.padEnd(w);
+};
+
+const padL = (s: string, w: number): string => {
+  const clean = String(s ?? '');
+  return clean.length > w ? clean.slice(0, w) : clean.padStart(w);
+};
+
+const RULE_92 = '-'.repeat(92);
+
+function wrapConsoleLine(prefix: string, body: string, maxWidth = 92): string[] {
+  const indent = ' '.repeat(prefix.length);
+  const avail = Math.max(20, maxWidth - prefix.length);
+  const words = body.split(/\s+/).filter(Boolean);
+  if (!words.length) return [prefix.trimEnd()];
+  const out: string[] = [];
+  let cur = '';
+  for (const w of words) {
+    if (!cur) cur = w;
+    else if (cur.length + 1 + w.length <= avail) cur += ` ${w}`;
+    else {
+      out.push((out.length === 0 ? prefix : indent) + cur);
+      cur = w;
+    }
+  }
+  if (cur) out.push((out.length === 0 ? prefix : indent) + cur);
+  return out;
+}
+
+export interface Option3OrderedStataTableBlock {
+  stepId: number;
+  stepTitle: string;
+  stataCommand: string;
+  outputTableText: string;
+}
+
+/**
+ * Generates clean, fixed-width (<= 92 cols) chronological Stata-style console tables
+ * for Option 3 Steps 1 through 9, ready for publication-grade Word (.docx) reporting.
+ */
+export function buildOption3OrderedStataTables(
+  result: AdvPanelFitResult
+): Option3OrderedStataTableBlock[] {
+  const ds = result.datasetSummary;
+  const est = result.estimation;
+  const rk = result.ranking;
+  const val = result.validation;
+  const mc = result.monteCarlo;
+  const prof = result.preprocessing;
+
+  const step1 = [
+    `. xtset ${ds.entityColumn} ${ds.timeColumn}`,
+    '. xtdescribe // Option 3 Step 1: Struktur Panel & Validasi Identifikasi',
+    RULE_92,
+    `${padR('Parameter Struktur Panel', 38)} | ${padR('Nilai Aktual', 51)}`,
+    RULE_92,
+    `${padR('Kolom Entitas (i)', 38)} | ${padR(`${ds.entityColumn} (G = ${ds.nEntities} entitas)`, 51)}`,
+    `${padR('Kolom Waktu (t)', 38)} | ${padR(`${ds.timeColumn} (T = ${ds.nPeriods} periode)`, 51)}`,
+    `${padR('Jumlah Sumber Pengukuran (J)', 38)} | ${padR(`J = ${ds.nSources} sumber dievaluasi setara`, 51)}`,
+    `${padR('Baris Complete-Case / Raw', 38)} | ${padR(`${ds.nCompletePairs} CC / ${ds.nRawRows} raw baris`, 51)}`,
+    `${padR('Keseimbangan Panel', 38)} | ${padR(ds.isBalanced ? 'Balanced Panel' : 'Unbalanced Panel', 51)}`,
+    `${padR('Status Identifikasi Model Laten', 38)} | ${padR(result.autoDecision.overallIdentifiabilityStatus, 51)}`,
+    RULE_92
+  ].join('\n');
+
+  const step2 = [
+    '. * Option 3 Step 2: 12-Component Validity-First Automatic Decision Engine',
+    `Hierarchy : Validity -> Identifiability -> Assumptions -> Diagnostics -> Robustness`,
+    RULE_92,
+    `${padR('Dimensi Keputusan', 34)} | ${padR('Metode Aktif', 34)} | ${padR('Keyakinan', 18)}`,
+    RULE_92,
+    ...result.autoDecision.decisions.map(
+      d =>
+        `${padR(d.dimensionLabel, 34)} | ${padR(d.selectedMethod, 34)} | ${padR(d.isOverriddenByUser ? 'MANUAL OVERRIDE' : d.confidenceLevel, 18)}`
+    ),
+    RULE_92
+  ].join('\n');
+
+  const step3 = [
+    '. tabstat src_*, stats(n mean sd median mad skew kurt) // Step 3: Panel MAD & Transformasi',
+    `Skala Kerja Aktif: ${prof.workingScaleLabel} (Transformasi: ${prof.chosenTransformation})`,
+    RULE_92,
+    `${padR('Sumber', 22)} | ${padL('N', 5)} ${padL('Mean', 9)} ${padL('SD', 9)} ${padL('Median', 9)} ${padL('MAD', 8)} ${padL('Skew', 6)} ${padL('MADOut', 7)} ${padL('Miss%', 6)}`,
+    RULE_92,
+    ...prof.sourceProfiles.map(
+      sp =>
+        `${padR(`${sp.sourceName} ${sp.sourceLabel}`, 22)} | ${padL(String(sp.nValid), 5)} ${padL(fmtSmartAdv(sp.mean), 9)} ${padL(fmtSmartAdv(sp.sd), 9)} ${padL(fmtSmartAdv(sp.median), 9)} ${padL(fmtSmartAdv(sp.mad), 8)} ${padL(sp.skewness.toFixed(2), 6)} ${padL(String(sp.panelMadOutlierCount), 7)} ${padL(`${sp.missingPct.toFixed(1)}%`, 6)}`
+    ),
+    RULE_92
+  ].join('\n');
+
+  const step4 = [
+    `. bayes, nchains(${est.mcmcDiagnostics.nChains}) burnin(${est.mcmcDiagnostics.warmupPerChain}): gsem (Theta -> src_*) // Woodbury MCMC`,
+    `Vehtari (2021): Split R-hat=${est.mcmcDiagnostics.maxRankNormalizedRhat.toFixed(4)} | Folded R-hat=${est.mcmcDiagnostics.maxFoldedRhat.toFixed(4)} | Bulk-ESS=${est.mcmcDiagnostics.minBulkEss} | Tail-ESS=${est.mcmcDiagnostics.minTailEss}`,
+    RULE_92,
+    `${padR('Sumber', 20)} | ${padL('Alpha(a)', 9)} ${padL('Lambda', 7)} ${padL('ErrSD', 8)} ${padL('R_j(s/l)', 9)} ${padL('Rel R2', 7)} ${padL('SplitR', 7)} ${padL('B-ESS', 6)} ${padL('T-ESS', 6)}`,
+    RULE_92,
+    ...est.sourceParameters.map(sp => {
+      const m = est.mcmcDiagnostics.perSource.find(x => x.sourceId === sp.sourceId);
+      return `${padR(`${sp.sourceName} ${sp.sourceLabel}`, 20)} | ${padL(fmtSmartAdv(sp.biasAlpha), 9)} ${padL(sp.loadingLambda.toFixed(3), 7)} ${padL(fmtSmartAdv(sp.errorSd), 8)} ${padL(fmtSmartAdv(sp.scaleAdjustedNoiseRatio), 9)} ${padL(`${(sp.reliabilityR2 * 100).toFixed(1)}%`, 7)} ${padL(m ? m.rankNormalizedRhat.toFixed(3) : '-', 7)} ${padL(m ? String(m.bulkEss) : '-', 6)} ${padL(m ? String(m.tailEss) : '-', 6)}`;
+    }),
+    RULE_92
+  ].join('\n');
+
+  const srcShortHdrs = est.sourceParameters.map(sp => padL(sp.sourceName, 8)).join(' ');
+  const step5 = [
+    '. * Step 5: Seleksi Ketergantungan Galat (M1-M4 Marginal WAIC / PSIS-LOO) & Corr(eps)',
+    `Model Terpilih: ${est.activeDependencyModel} | Marginal WAIC=${est.mcmcDiagnostics.marginalWaic.toFixed(2)} | LOO ELPD=${est.mcmcDiagnostics.psisLooElpd.toFixed(2)}`,
+    RULE_92,
+    `${padR('Kandidat Model', 36)} | ${padR('ID?', 5)} ${padL('dfCov', 6)} ${padL('MargWAIC', 10)} ${padL('LOO-ELPD', 10)} ${padR('Status', 17)}`,
+    RULE_92,
+    ...est.candidateModels.map(
+      cm =>
+        `${padR(cm.modelLabel, 36)} | ${padR(cm.isIdentifiable ? 'YA' : 'NO', 5)} ${padL(String(cm.degreesOfFreedomCov), 6)} ${padL(cm.marginalWaic.toFixed(2), 10)} ${padL(cm.looElpd.toFixed(2), 10)} ${padR(cm.selected ? 'SELECTED (*)' : 'Candidate', 17)}`
+    ),
+    RULE_92,
+    `${padR('Corr(eps_a,eps_b)', 20)} | ${srcShortHdrs} ${padL('AR1 rho', 8)}`,
+    RULE_92,
+    ...est.sourceParameters.map((sp, rIdx) => {
+      const cells = (est.residualCorrelationMatrix[rIdx] || [])
+        .map(v => padL(v.toFixed(3), 8))
+        .join(' ');
+      return `${padR(`${sp.sourceName} ${sp.sourceLabel}`, 20)} | ${cells} ${padL(sp.ar1RhoResidual.toFixed(3), 8)}`;
+    }),
+    RULE_92
+  ].join('\n');
+
+  const step6 = [
+    '. * Step 6: Pemeringkatan Probabilistik Dual-Estimand & Sensitivitas Multi-Anchor',
+    `Verdict: [${rk.verdictStatus}] | Kendall W(TotalRMSE)=${est.anchorSensitivity.kendallWTotalRmse.toFixed(3)} | Kendall W(R_j)=${est.anchorSensitivity.kendallWNoiseRatio.toFixed(3)}`,
+    RULE_92,
+    `${padR('Rank', 5)} | ${padR('Sumber', 21)} | ${padL('TotRMSE', 8)} ${padL('R_j', 8)} ${padL('P(R=1)', 7)} ${padL('ExpRk', 6)} ${padL('Entr', 6)} ${padL('EntStb', 7)} ${padL('AncShf', 6)}`,
+    RULE_92,
+    ...rk.rows.map(
+      r =>
+        `${padR(`#${r.rank}`, 5)} | ${padR(`${r.sourceName} ${r.sourceLabel}`, 21)} | ${padL(fmtSmartAdv(r.anchorTotalRmse), 8)} ${padL(fmtSmartAdv(r.scaleAdjustedNoiseRatio), 8)} ${padL(`${(r.probRank1 * 100).toFixed(1)}%`, 7)} ${padL(r.expectedRank.toFixed(2), 6)} ${padL(r.rankEntropyNormalized.toFixed(3), 6)} ${padL(`${r.entityStabilityPct.toFixed(0)}%`, 7)} ${padL(String(r.maxAnchorRankShift), 6)}`
+    ),
+    RULE_92
+  ].join('\n');
+
+  const step7 = [
+    `. xtreg abs_err i.source_num, fe vce(${val.selectedSeMethod}) // + Holm (1979) & Mixed LoA`,
+    `Omnibus Pair FE: F = ${val.pairFeOmnibusF.toFixed(3)} | p(asym)=${val.pairFeOmnibusP.toFixed(4)} | p(WildBoot)=${val.pairFeOmnibusWildP.toFixed(4)}`,
+    RULE_92,
+    `${padR('Kontras Pasangan', 28)} | ${padL('Diff|e|', 8)} ${padL('SE', 8)} ${padL('pWild', 7)} ${padL('pHolm', 7)} ${padR('Sim 95% CI', 19)} ${padR('FWER', 5)}`,
+    RULE_92,
+    ...val.pairwiseHolmContrasts.map(
+      c =>
+        `${padR(`${c.sourceALabel}-${c.sourceBLabel}`, 28)} | ${padL(fmtSmartAdv(c.diffAbsErrorAminusB), 8)} ${padL(fmtSmartAdv(c.seSelected), 8)} ${padL(c.pWildBootstrap.toFixed(4), 7)} ${padL(c.pHolmAdjusted.toFixed(4), 7)} ${padR(`[${fmtSmartAdv(c.simultaneous95Ci[0])},${fmtSmartAdv(c.simultaneous95Ci[1])}]`, 19)} ${padR(c.significantFamilywise05 ? 'SIG' : 'NS', 5)}`
+    ),
+    RULE_92,
+    `${padR('LOSO & Mixed-LoA', 22)} | ${padL('LOSO-MAE', 9)} ${padL('LOSO-RMSE', 9)} ${padL('CovAudit', 9)} ${padL('LinCCC', 7)} ${padL('MixLoAW', 9)} ${padL('NaiveW', 9)}`,
+    RULE_92,
+    ...val.losoEntries.map(l => {
+      const rm = val.repeatedMeasuresAgreement.find(a => a.sourceId === l.leftOutSourceId);
+      return `${padR(l.leftOutSourceLabel, 22)} | ${padL(fmtSmartAdv(l.losoPredictiveMae), 9)} ${padL(fmtSmartAdv(l.losoPredictiveRmse), 9)} ${padL(fmtSmartAdv(l.covarianceTermAudit), 9)} ${padL(rm ? rm.linsCcc.toFixed(4) : '-', 7)} ${padL(rm ? fmtSmartAdv(rm.mixedEffectsLoaWidth) : '-', 9)} ${padL(rm ? fmtSmartAdv(rm.naivePooledLoaWidth) : '-', 9)}`;
+    }),
+    RULE_92
+  ].join('\n');
+
+  const step8 = [
+    `. simulate, reps(${mc.scenarios[0]?.replications ?? 30}): sim_panel_latent_mc // 7-Family ADEMP`,
+    `Kalibrasi: G=${mc.calibratedDimensions.G}, T=${mc.calibratedDimensions.T}, J=${mc.calibratedDimensions.J} | Mean Rank #1 Recovery=${mc.meanRankingRecoveryPct.toFixed(1)}% | Mean Cov95=${mc.meanCoverage95Pct.toFixed(1)}%`,
+    RULE_92,
+    `${padR('Skenario Monte Carlo', 38)} | ${padL('Bias', 7)} ${padL('Cov95%', 7)} ${padL('Rk1Rec', 7)} ${padL('T1/Pwr', 8)} ${padL('FailID', 7)}`,
+    RULE_92,
+    ...mc.scenarios.map(
+      s =>
+        `${padR(s.scenarioTitle, 38)} | ${padL(s.parameterBiasMean.toFixed(3), 7)} ${padL(`${s.interval95CoveragePct.toFixed(1)}%`, 7)} ${padL(`${s.top1RankingRecoveryPct.toFixed(1)}%`, 7)} ${padL(s.empiricalTypeIErrorPct > 0 ? `T${s.empiricalTypeIErrorPct.toFixed(0)}%` : `P${s.empiricalPowerPct.toFixed(0)}%`, 8)} ${padL(`${s.identificationFailurePct.toFixed(0)}%`, 7)}`
+    ),
+    RULE_92
+  ].join('\n');
+
+  const step9 = [
+    '. * Step 9: Sintesis Pembuktian Lintas-Metode & Ringkasan Reproduksibilitas',
+    RULE_92,
+    `${padR('Tahap Metode', 34)} | ${padR('Status', 8)} | ${padR('Metrik Kunci', 44)}`,
+    RULE_92,
+    ...result.scientificConclusion.whySelectedEvidence.map(
+      ev => `${padR(ev.stageLabel, 34)} | ${padR(ev.status, 8)} | ${padR(ev.keyMetricBadge, 44)}`
+    ),
+    RULE_92,
+    ...wrapConsoleLine('Kesimpulan Akhir: ', result.scientificConclusion.finalNarrativeConclusion, 92),
+    RULE_92
+  ].join('\n');
+
+  return [
+    { stepId: 1, stepTitle: 'Step 1 — Struktur Panel & Validasi Identifikasi', stataCommand: 'xtset / xtdescribe', outputTableText: step1 },
+    { stepId: 2, stepTitle: 'Step 2 — Keputusan Otomatis 12 Komponen Metodologi', stataCommand: 'auto_decision_engine', outputTableText: step2 },
+    { stepId: 3, stepTitle: 'Step 3 — Audit Panel MAD/IQR & Skala Kerja', stataCommand: 'tabstat / panel_mad', outputTableText: step3 },
+    { stepId: 4, stepTitle: 'Step 4 — Model Laten Bayesian Woodbury & Diagnostik Vehtari (2021)', stataCommand: 'bayes: gsem', outputTableText: step4 },
+    { stepId: 5, stepTitle: 'Step 5 — Seleksi Struktur Error M1-M4 (WAIC/LOO) & Korelasi Residual', stataCommand: 'gsem / pwcorr res_*', outputTableText: step5 },
+    { stepId: 6, stepTitle: 'Step 6 — Pemeringkatan Probabilistik Dual-Estimand & Multi-Anchor', stataCommand: 'nlcom / anchor_loop', outputTableText: step6 },
+    { stepId: 7, stepTitle: 'Step 7 — Validasi LOSO, Pair FE (Holm 1979) & Mixed-Effects LoA', stataCommand: 'xtreg, fe / mtest(holm) / mixed', outputTableText: step7 },
+    { stepId: 8, stepTitle: 'Step 8 — Validasi Simulasi Monte Carlo 7 Keluarga', stataCommand: 'simulate', outputTableText: step8 },
+    { stepId: 9, stepTitle: 'Step 9 — Sintesis Keputusan Multi-Metode & Reproduksibilitas', stataCommand: 'estimates table', outputTableText: step9 }
+  ];
+}
+
+function docH1(text: string): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, bold: true, size: 24, color: '065F46' })],
+    children: [
+      new TextRun({
+        text,
+        bold: true,
+        size: 24,
+        color: '0F2942'
+      })
+    ],
     heading: HeadingLevel.HEADING_1,
-    spacing: { before: 240, after: 100 },
-    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: '059669' } }
+    spacing: { before: 280, after: 110 },
+    border: {
+      bottom: { style: BorderStyle.SINGLE, size: 8, color: '1D4ED8' }
+    }
+  });
+}
+
+function docH2(text: string): Paragraph {
+  return new Paragraph({
+    children: [
+      new TextRun({
+        text,
+        bold: true,
+        size: 21,
+        color: '065F46'
+      })
+    ],
+    spacing: { before: 180, after: 80 }
   });
 }
 
 function docPara(text: string): Paragraph {
   return new Paragraph({
     children: [new TextRun({ text, size: 20, color: '1E293B' })],
-    spacing: { after: 90, line: 270 }
+    spacing: { after: 100, line: 276 }
   });
 }
 
-function docTable(headers: string[], rows: string[][]): Table {
-  const bSpec = {
+function docMonoBlock(title: string, content: string): Paragraph[] {
+  const lines = content.split('\n');
+  return [
+    docH2(title),
+    new Paragraph({
+      children: lines.flatMap((line, idx) => [
+        new TextRun({
+          text: line,
+          font: 'Courier New',
+          size: 16,
+          color: '0F172A'
+        }),
+        ...(idx < lines.length - 1 ? [new TextRun({ break: 1 })] : [])
+      ]),
+      shading: { type: ShadingType.CLEAR, color: 'auto', fill: 'F8FAFC' },
+      border: {
+        top: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
+        bottom: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
+        left: { style: BorderStyle.SINGLE, size: 12, color: '0F766E' },
+        right: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' }
+      },
+      spacing: { before: 60, after: 140, line: 220 }
+    })
+  ];
+}
+
+function docTable(
+  headers: string[],
+  rows: string[][],
+  rightAlignCols: number[] = []
+): Table {
+  const borderSpec = {
     top: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
     bottom: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
     left: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
     right: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' }
   };
+  const cellMargins = { top: 80, bottom: 80, left: 100, right: 100 };
+  const rightSet = new Set(rightAlignCols);
+
+  const mkHeaderCell = (text: string, colIdx: number) =>
+    new TableCell({
+      children: [
+        new Paragraph({
+          alignment: rightSet.has(colIdx) ? AlignmentType.RIGHT : AlignmentType.LEFT,
+          children: [new TextRun({ text, bold: true, size: 18, color: 'FFFFFF' })]
+        })
+      ],
+      shading: { type: ShadingType.CLEAR, color: 'auto', fill: '0F2942' },
+      margins: cellMargins,
+      borders: borderSpec
+    });
+
+  const mkDataCell = (text: string, rowIdx: number, colIdx: number) =>
+    new TableCell({
+      children: [
+        new Paragraph({
+          alignment: rightSet.has(colIdx) ? AlignmentType.RIGHT : AlignmentType.LEFT,
+          children: [new TextRun({ text, size: 17, color: '0F172A' })]
+        })
+      ],
+      shading: {
+        type: ShadingType.CLEAR,
+        color: 'auto',
+        fill: rowIdx % 2 === 1 ? 'F8FAFC' : 'FFFFFF'
+      },
+      margins: cellMargins,
+      borders: borderSpec
+    });
+
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
     rows: [
       new TableRow({
-        children: headers.map(
-          h =>
-            new TableCell({
-              borders: bSpec,
-              shading: { type: ShadingType.CLEAR, color: 'auto', fill: 'ECFDF5' },
-              children: [new Paragraph({ children: [new TextRun({ text: h, bold: true, size: 18, color: '064E3B' })] })]
-            })
-        )
+        tableHeader: true,
+        children: headers.map((h, cIdx) => mkHeaderCell(h, cIdx))
       }),
       ...rows.map(
-        r =>
+        (r, rIdx) =>
           new TableRow({
-            children: r.map(
-              c =>
-                new TableCell({
-                  borders: bSpec,
-                  children: [new Paragraph({ children: [new TextRun({ text: c, size: 18, color: '1E293B' })] })]
-                })
-            )
+            children: r.map((c, cIdx) => mkDataCell(c, rIdx, cIdx))
           })
       )
     ]
@@ -639,16 +924,28 @@ export async function generateOption3Docx(
   result: AdvPanelFitResult,
   datasetName = 'Option3_Panel_Accuracy.xlsx'
 ): Promise<Buffer> {
+  const orderedStata = buildOption3OrderedStataTables(result);
+  const topRunner = result.scientificConclusion.topVsRunnerUp;
+  const est = result.estimation;
+  const rk = result.ranking;
+  const val = result.validation;
+
   const doc = new Document({
     sections: [
       {
+        properties: {
+          page: {
+            margin: { top: 1000, bottom: 1000, left: 1000, right: 1000 }
+          }
+        },
         headers: {
           default: new Header({
             children: [
               new Paragraph({
+                alignment: AlignmentType.RIGHT,
                 children: [
                   new TextRun({
-                    text: `Option 3: Advanced Latent Measurement Model — ${datasetName}`,
+                    text: 'OPTION 3: ADVANCED LATENT MEASUREMENT MODEL & PANEL ACCURACY VALIDATION',
                     size: 16,
                     color: '64748B'
                   })
@@ -661,9 +958,12 @@ export async function generateOption3Docx(
           default: new Footer({
             children: [
               new Paragraph({
+                alignment: AlignmentType.RIGHT,
                 children: [
-                  new TextRun({ text: 'Halaman ', size: 16, color: '64748B' }),
-                  new TextRun({ children: [PageNumber.CURRENT], size: 16, color: '64748B' })
+                  new TextRun({ text: `${datasetName}   |   Halaman `, size: 16, color: '64748B' }),
+                  new TextRun({ children: [PageNumber.CURRENT], size: 16, color: '64748B' }),
+                  new TextRun({ text: ' dari ', size: 16, color: '64748B' }),
+                  new TextRun({ children: [PageNumber.TOTAL_PAGES], size: 16, color: '64748B' })
                 ]
               })
             ]
@@ -673,98 +973,330 @@ export async function generateOption3Docx(
           new Paragraph({
             children: [
               new TextRun({
-                text: 'OPTION 3: ADVANCED LATENT MEASUREMENT MODEL & PANEL ACCURACY VALIDATION',
+                text: 'LAPORAN OPTION 3: ADVANCED LATENT MEASUREMENT MODEL & PANEL ACCURACY VALIDATION',
                 bold: true,
-                size: 28,
-                color: '064E3B'
+                size: 30,
+                color: '0F2942'
               })
             ],
-            spacing: { after: 120 }
+            spacing: { after: 80 }
           }),
-          docPara(
-            `Dataset: ${datasetName} | Entitas G=${result.datasetSummary.nEntities}, Periode T=${result.datasetSummary.nPeriods}, Sumber J=${result.datasetSummary.nSources}, Complete-Case N=${result.datasetSummary.nCompletePairs} | Skala Kerja: ${result.datasetSummary.workingScaleLabel}`
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: 'Komparasi Bayesian Multi-Sumber Lanjutan Tanpa Ground Truth — Laporan Lengkap Step 1 s.d. Step 9',
+                bold: true,
+                size: 21,
+                color: '065F46'
+              })
+            ],
+            spacing: { after: 140 }
+          }),
+
+          // Executive Metadata Summary Table
+          docTable(
+            ['Parameter Ringkasan', 'Nilai Aktual'],
+            [
+              ['Dataset', datasetName],
+              [
+                'Mesin Komputasi',
+                'Option 3 Marginalized Woodbury Bayesian MCMC + Diagnostik Vehtari (2021) + WAIC/PSIS-LOO + Multi-Anchor Sensitivity + Pair FE Holm (1979) & Webb Wild Bootstrap + Mixed-Effects LoA + Monte Carlo 7 Keluarga'
+              ],
+              [
+                'Sumber Dievaluasi (J Setara)',
+                result.preprocessing.sourceProfiles.map(s => `${s.sourceName} (${s.sourceLabel})`).join(', ')
+              ],
+              [
+                'Struktur Panel (G × T)',
+                `G = ${result.datasetSummary.nEntities} entitas × T = ${result.datasetSummary.nPeriods} periode (${result.datasetSummary.isBalanced ? 'Balanced' : 'Unbalanced'})`
+              ],
+              [
+                'Sampel Complete-Case / Raw',
+                `${result.datasetSummary.nCompletePairs} / ${result.datasetSummary.nRawRows} baris`
+              ],
+              [
+                'Skala Kerja & Transformasi',
+                `${result.datasetSummary.workingScaleLabel} (${result.autoDecision.activeConfig.transformation})`
+              ],
+              [
+                'Konvergensi Vehtari (2021)',
+                `Max Split R-hat = ${est.mcmcDiagnostics.maxRankNormalizedRhat.toFixed(4)} | Folded R-hat = ${est.mcmcDiagnostics.maxFoldedRhat.toFixed(4)} | Bulk-ESS = ${est.mcmcDiagnostics.minBulkEss} | Tail-ESS = ${est.mcmcDiagnostics.minTailEss} | PPP = ${est.mcmcDiagnostics.posteriorPredictivePValue.toFixed(3)}`
+              ],
+              [
+                'Struktur Laten & Ketergantungan',
+                `${est.activeLatentStructure} | ${est.activeDependencyModel} (Marginal WAIC = ${est.mcmcDiagnostics.marginalWaic.toFixed(2)})`
+              ],
+              ['Status Keputusan Ranking', rk.verdictStatus],
+              [
+                'Kandidat Terbaik Relatif (#1)',
+                result.scientificConclusion.selectedVariableName || rk.leaderSourceLabel || 'Belum Dapat Ditetapkan Secara Mutlak'
+              ]
+            ]
           ),
-          docHeading('1. Kesimpulan Ilmiah, Alasan Pemilihan Multi-Metode & Batas Epistemologis'),
+
+          // STEP 1-2
+          docH1('Step 1–2. Validasi Struktur Panel, Identifiabilitas & Keputusan Otomatis 12 Komponen'),
+          docPara(
+            `${result.autoDecision.summaryHeadline} Hierarki pemilihan otomatis: ${result.autoDecision.hierarchyRule}. Status identifikasi global: ${result.autoDecision.overallIdentifiabilityStatus} (${result.autoDecision.hasManualOverrides ? 'terdapat manual override pengguna' : 'seluruh keputusan murni otomatis berdasarkan profil data'}).`
+          ),
+          docTable(
+            ['Dimensi Keputusan', 'Metode Terpilih', 'Keyakinan', 'Basis Empiris & Alasan Pemilihan'],
+            result.autoDecision.decisions.map(d => [
+              d.dimensionLabel,
+              d.selectedMethod,
+              d.isOverriddenByUser ? 'MANUAL OVERRIDE' : d.confidenceLevel,
+              `${d.whySelected} (${d.empiricalDataBasis})`
+            ])
+          ),
+
+          // STEP 3
+          docH1('Step 3. Profil Deskriptif, Audit Pencilan Panel MAD/IQR & Evaluasi 10 Transformasi'),
+          docTable(
+            ['Sumber', 'N', 'Mean', 'SD', 'Median', 'MAD', 'Skew', 'MAD Out.', 'Miss (%)'],
+            result.preprocessing.sourceProfiles.map(sp => [
+              `${sp.sourceName} (${sp.sourceLabel})`,
+              String(sp.nValid),
+              fmtSmartAdv(sp.mean),
+              fmtSmartAdv(sp.sd),
+              fmtSmartAdv(sp.median),
+              fmtSmartAdv(sp.mad),
+              sp.skewness.toFixed(2),
+              String(sp.panelMadOutlierCount),
+              `${sp.missingPct.toFixed(1)}%`
+            ]),
+            [1, 2, 3, 4, 5, 6, 7, 8]
+          ),
+          docPara(result.preprocessing.whyNotDefaultGrubbsNote),
+          docH2('Evaluasi 10 Kandidat Skala & Transformasi (Estimand-First)'),
+          docTable(
+            ['Kandidat', 'Pelestarian Estimand', 'Layak', 'Skor Norm.', '|t| Hetero', 'Status & Alasan'],
+            result.preprocessing.transformationEvaluations.map(tr => [
+              tr.selected ? `${tr.label} (*)` : tr.label,
+              tr.estimandPreservation,
+              tr.eligible ? 'YA' : 'TIDAK',
+              tr.eligible ? tr.centralNormalityScore.toFixed(3) : '-',
+              tr.eligible ? tr.proportionalHeteroscedasticityAbsT.toFixed(2) : '-',
+              tr.eligible ? tr.decisionReason : tr.ineligibleReason || 'Tidak memenuhi syarat domain'
+            ]),
+            [3, 4]
+          ),
+
+          // STEP 4
+          docH1('Step 4. Model Pengukuran Laten Bayesian (Woodbury MCMC) & Diagnostik Vehtari (2021)'),
+          docTable(
+            ['Sumber', 'Alpha (α)', 'Lambda (λ)', 'Error SD (σ_ε)', 'R_j = σ/|λ|', 'Rel R²', 'Split R-hat', 'Bulk/Tail ESS'],
+            est.sourceParameters.map(sp => {
+              const mc = est.mcmcDiagnostics.perSource.find(x => x.sourceId === sp.sourceId);
+              return [
+                `${sp.sourceName} (${sp.sourceLabel})`,
+                `${sp.biasAlpha >= 0 ? '+' : ''}${fmtSmartAdv(sp.biasAlpha)}`,
+                sp.loadingLambda.toFixed(3),
+                fmtSmartAdv(sp.errorSd),
+                fmtSmartAdv(sp.scaleAdjustedNoiseRatio),
+                `${(sp.reliabilityR2 * 100).toFixed(2)}%`,
+                mc ? mc.rankNormalizedRhat.toFixed(4) : '-',
+                mc ? `${mc.bulkEss} / ${mc.tailEss}` : '-'
+              ];
+            }),
+            [1, 2, 3, 4, 5, 6, 7]
+          ),
+          docPara(
+            `${est.mcmcDiagnostics.convergenceNote} Dekomposisi varians sinyal laten θ_it: Antar-Entitas = ${est.latentVarianceDecomposition.betweenEntitySharePct.toFixed(1)}%, Antar-Periode = ${est.latentVarianceDecomposition.betweenTimeSharePct.toFixed(1)}%, Persistensi Temporal AR(1) φ = ${est.latentVarianceDecomposition.temporalPersistencePhi.toFixed(3)}.`
+          ),
+          docH2('Audit Sensitivitas 3 Keluarga Prior Bayesian (van Erp et al., 2018)'),
+          docTable(
+            ['Keluarga Prior', 'Kandidat #1', 'Pergeseran Maks σ (%)', 'Konkordan dgn Primer?'],
+            est.priorSensitivity.map(pr => [
+              pr.priorStrategy,
+              est.sourceParameters.find(s => s.sourceId === pr.topSourceId)?.sourceLabel || pr.topSourceId,
+              `${pr.maxAbsParameterShiftPct.toFixed(2)}%`,
+              pr.rankConcordantWithPrimary ? 'YA (Stabil)' : 'BERGESER'
+            ]),
+            [2]
+          ),
+
+          // STEP 5
+          docH1('Step 5. Struktur Ketergantungan Galat (M1–M4 WAIC/LOO) & Korelasi Residual'),
+          docTable(
+            ['Kandidat Model', 'Teridentifikasi', 'df_cov', 'Marginal WAIC', 'PSIS-LOO ELPD', 'Status & Alasan'],
+            est.candidateModels.map(cm => [
+              cm.selected ? `${cm.modelLabel} (*)` : cm.modelLabel,
+              cm.isIdentifiable ? 'YA' : 'TIDAK',
+              String(cm.degreesOfFreedomCov),
+              cm.marginalWaic.toFixed(2),
+              cm.looElpd.toFixed(2),
+              cm.selectionReason
+            ]),
+            [2, 3, 4]
+          ),
+          docH2('Matriks Korelasi Residual Antarsumber Corr(ε̂_a, ε̂_b) & Autokorelasi AR(1)'),
+          docTable(
+            ['Sumber', ...est.sourceParameters.map(s => s.sourceName), 'AR(1) ρ_j', 'Ent-Src RE SD'],
+            est.sourceParameters.map((sp, rIdx) => [
+              `${sp.sourceName} (${sp.sourceLabel})`,
+              ...(est.residualCorrelationMatrix[rIdx] || []).map(v => v.toFixed(3)),
+              sp.ar1RhoResidual.toFixed(3),
+              fmtSmartAdv(sp.entitySourceReSd)
+            ]),
+            Array.from({ length: est.sourceParameters.length + 2 }, (_, idx) => idx + 1)
+          ),
+
+          // STEP 6
+          docH1(`Step 6. Pemeringkatan Probabilistik (#1 s/d #${rk.rows.length}) & Sensitivitas Multi-Anchor`),
+          docTable(
+            ['Rank', 'Sumber', 'Anchor Total RMSE [95% CrI]', 'R_j = σ/|λ|', 'P(R=1)', 'E[Rank]', 'Entropi', 'Stab Ent/Wkt', 'Anchor Shift'],
+            rk.rows.map(r => [
+              `#${r.rank}`,
+              `${r.sourceName} (${r.sourceLabel})`,
+              `${fmtSmartAdv(r.anchorTotalRmse)} [${fmtSmartAdv(r.anchorTotalRmseCrI[0])}, ${fmtSmartAdv(r.anchorTotalRmseCrI[1])}]`,
+              fmtSmartAdv(r.scaleAdjustedNoiseRatio),
+              `${(r.probRank1 * 100).toFixed(1)}%`,
+              r.expectedRank.toFixed(2),
+              r.rankEntropyNormalized.toFixed(3),
+              `${r.entityStabilityPct.toFixed(0)}% / ${r.temporalStabilityPct.toFixed(0)}%`,
+              String(r.maxAnchorRankShift)
+            ]),
+            [2, 3, 4, 5, 6, 7, 8]
+          ),
+          docPara(est.anchorSensitivity.interpretation),
+          docH2(`Evaluasi Lintas ${est.anchorSensitivity.evaluatedAnchors.length} Rezim Anchor`),
+          docTable(
+            ['Rezim Anchor', 'Formula Konstrain', 'Top #1 by R_j (Invarian)', 'Top #1 by Total RMSE'],
+            est.anchorSensitivity.evaluatedAnchors.map(a => [
+              a.anchorLabel,
+              a.constraintFormula,
+              est.sourceParameters.find(s => s.sourceId === a.topRankedByPrecisionRatioId)?.sourceLabel || a.topRankedByPrecisionRatioId,
+              est.sourceParameters.find(s => s.sourceId === a.topRankedByTotalRmseId)?.sourceLabel || a.topRankedByTotalRmseId
+            ])
+          ),
+
+          // STEP 7
+          docH1('Step 7. Validasi LOSO, Pair Fixed Effects (Holm 1979) & Mixed-Effects Bland-Altman LoA'),
+          docH2('7A. Leave-One-Source-Out (LOSO) & Audit Suku Kovarians'),
+          docTable(
+            ['Sumber Dikeluarkan', 'Corr dgn θ_full', 'LOSO MAE', 'LOSO RMSE', 'Audit 2λCov', 'Debiased σ / Full σ', 'Peer Stabil?'],
+            val.losoEntries.map(l => [
+              l.leftOutSourceLabel,
+              l.latentCorrelationWithFull.toFixed(4),
+              fmtSmartAdv(l.losoPredictiveMae),
+              fmtSmartAdv(l.losoPredictiveRmse),
+              fmtSmartAdv(l.covarianceTermAudit),
+              `${fmtSmartAdv(l.debiasedImpliedErrorSd)} / ${fmtSmartAdv(l.fullModelErrorSd)}`,
+              l.rankChangedAmongPeers ? 'Bergeser' : 'Stabil'
+            ]),
+            [1, 2, 3, 4, 5]
+          ),
+          docPara(val.losoVarianceFormulaNote),
+
+          docH2('7B. Kontras Berpasangan Pair Fixed Effects + Koreksi Holm (1979) & Wild Bootstrap'),
+          docTable(
+            ['Kontras (A vs B)', 'Diff |e|', `SE (${val.selectedSeMethod})`, 'p WildBoot', 'p Holm', 'Simultaneous 95% CI', 'FWER 5%'],
+            val.pairwiseHolmContrasts.map(c => [
+              `${c.sourceALabel} vs ${c.sourceBLabel}`,
+              fmtSmartAdv(c.diffAbsErrorAminusB),
+              fmtSmartAdv(c.seSelected),
+              c.pWildBootstrap.toFixed(4),
+              c.pHolmAdjusted.toFixed(4),
+              `[${fmtSmartAdv(c.simultaneous95Ci[0])}, ${fmtSmartAdv(c.simultaneous95Ci[1])}]`,
+              c.significantFamilywise05 ? 'SIGNIFIKAN' : 'TIDAK SIG.'
+            ]),
+            [1, 2, 3, 4, 5]
+          ),
+          docPara(
+            `${val.seSelectionRationale} Uji Omnibus Pair FE menghasilkan F = ${val.pairFeOmnibusF.toFixed(3)} (p asimtotik = ${val.pairFeOmnibusP.toFixed(4)}, p Wild Bootstrap = ${val.pairFeOmnibusWildP.toFixed(4)}).`
+          ),
+
+          docH2('7C. Repeated-Measures Mixed-Effects Bland-Altman LoA & Lin’s CCC (Parker et al., 2020)'),
+          docTable(
+            ['Sumber', 'Lin CCC [95% CI]', 'Within r', 'SD Betw/With', 'Mixed 95% LoA', 'Lebar Mixed vs Naive'],
+            val.repeatedMeasuresAgreement.map(rm => [
+              rm.sourceLabel,
+              `${rm.linsCcc.toFixed(4)} [${rm.linsCccCi[0].toFixed(3)}, ${rm.linsCccCi[1].toFixed(3)}]`,
+              rm.withinEntityR.toFixed(4),
+              `${fmtSmartAdv(rm.betweenEntityDiffSd)} / ${fmtSmartAdv(rm.withinEntityDiffSd)}`,
+              `[${fmtSmartAdv(rm.mixedEffectsLoaLower)}, ${fmtSmartAdv(rm.mixedEffectsLoaUpper)}]`,
+              `${fmtSmartAdv(rm.mixedEffectsLoaWidth)} vs ${fmtSmartAdv(rm.naivePooledLoaWidth)}`
+            ]),
+            [1, 2, 3, 4, 5]
+          ),
+
+          // STEP 8
+          docH1('Step 8. Validasi Simulasi Monte Carlo 7 Keluarga & Audit Common-Mode Bias'),
+          docPara(result.monteCarlo.overallValidationSummary),
+          docTable(
+            ['Skenario Monte Carlo', 'Bias σ', 'Cov 95%', 'Rank #1 Rec.', 'Type I / Power', 'Gagal ID', 'Interpretasi'],
+            result.monteCarlo.scenarios.map(s => [
+              s.scenarioTitle,
+              s.parameterBiasMean.toFixed(3),
+              `${s.interval95CoveragePct.toFixed(1)}%`,
+              `${s.top1RankingRecoveryPct.toFixed(1)}%`,
+              s.empiricalTypeIErrorPct > 0 ? `T1: ${s.empiricalTypeIErrorPct}%` : `Pwr: ${s.empiricalPowerPct}%`,
+              `${s.identificationFailurePct.toFixed(0)}%`,
+              s.interpretation
+            ]),
+            [1, 2, 3, 4, 5]
+          ),
+          docH2('Audit 10 Skenario Batas Epistemologis Common-Mode Bias'),
+          docTable(
+            ['Kode', 'Skenario Bias Bersama', 'Terdeteksi #1', 'Terbaik Fisik', 'Terdeteksi Tanpa GT?', 'Temuan Epistemologis'],
+            rk.commonModeBiasScenarios.map(cm => [
+              cm.scenarioCode,
+              cm.title,
+              cm.detectedTopSourceLabel,
+              cm.trueBestUnderSimulationLabel,
+              cm.biasesRecoverableWithoutGroundTruth ? 'PARSIAL' : 'TIDAK (Butuh GT)',
+              cm.epistemologicalFinding
+            ])
+          ),
+
+          // STEP 9A
+          docH1('Step 9A. Pembuktian Lintas-Metode ("Mengapa Variabel Terpilih?") & Kesimpulan Akhir'),
           docPara(result.scientificConclusion.headline),
           docPara(result.scientificConclusion.finalNarrativeConclusion),
+          ...(topRunner
+            ? [
+                docH2(`Ringkasan Head-to-Head: ${topRunner.topSourceLabel} (#1) vs ${topRunner.runnerUpSourceLabel || 'Pesaing'} (#2)`),
+                docTable(
+                  ['Metrik Evaluasi', `${topRunner.topSourceLabel} (#1)`, `${topRunner.runnerUpSourceLabel || 'Peringkat #2'}`],
+                  [
+                    ['Anchor Total RMSE', fmtSmartAdv(topRunner.topTotalRmse), fmtSmartAdv(topRunner.runnerUpTotalRmse)],
+                    ['Scale-Invariant Noise Ratio R_j = σ/|λ|', fmtSmartAdv(topRunner.topNoiseRatio), fmtSmartAdv(topRunner.runnerUpNoiseRatio)],
+                    ['Error SD (σ_ε)', fmtSmartAdv(topRunner.topErrorSd), fmtSmartAdv(topRunner.runnerUpErrorSd)],
+                    ['Reliabilitas R² (%)', `${topRunner.topReliabilityR2Pct.toFixed(2)}%`, topRunner.runnerUpReliabilityR2Pct !== null ? `${topRunner.runnerUpReliabilityR2Pct.toFixed(2)}%` : '-'],
+                    ['Peluang Posterior P(Rank=1)', `${topRunner.topProbRank1Pct.toFixed(1)}%`, topRunner.runnerUpProbRank1Pct !== null ? `${topRunner.runnerUpProbRank1Pct.toFixed(1)}%` : '-'],
+                    ['Lin’s CCC', topRunner.topCcc !== null ? topRunner.topCcc.toFixed(4) : '-', topRunner.runnerUpCcc !== null ? topRunner.runnerUpCcc.toFixed(4) : '-'],
+                    ['Lebar Mixed-Effects 95% LoA', fmtSmartAdv(topRunner.topMixedLoaWidth), fmtSmartAdv(topRunner.runnerUpMixedLoaWidth)],
+                    ['Uji Pair FE Holm (#1 vs #2)', topRunner.holmPValueVsRunnerUp !== null ? `p_Holm = ${topRunner.holmPValueVsRunnerUp.toFixed(4)}` : '-', topRunner.holmSignificantVsRunnerUp === null ? '-' : topRunner.holmSignificantVsRunnerUp ? 'Signifikan (α_FWER = 5%)' : 'Belum Signifikan']
+                  ],
+                  [1, 2]
+                )
+              ]
+            : []),
+          docH2(`Rincian 6 Tahap Pembuktian Lintas Metode (${result.scientificConclusion.passedMethodsCount}/${result.scientificConclusion.totalMethodsCount} Lulus Penuh)`),
           docTable(
-            ['Tahap & Metode', 'Status', 'Metrik Kunci', 'Temuan & Alasan Pemilihan'],
+            ['Tahap & Metode', 'Status', 'Metrik Kunci', 'Temuan & Kontribusi Keputusan'],
             result.scientificConclusion.whySelectedEvidence.map(ev => [
-              `${ev.stageLabel} (${ev.methodName})`,
+              `${ev.stageLabel}\n(${ev.methodName})`,
               ev.status,
               ev.keyMetricBadge,
               `${ev.finding} ${ev.selectionReason}`
             ])
           ),
+          docH2('Keterbatasan Epistemologis & Metodologis'),
+          ...result.scientificConclusion.keyLimitations.map(lim => docPara(`- ${lim}`)),
           docPara(result.scientificConclusion.epistemologicalGroundTruthBoundary),
 
-          docHeading('2. Keputusan Otomatis 12 Komponen Metodologi (Step 2)'),
-          docTable(
-            ['Dimensi', 'Metode Terpilih', 'Keyakinan', 'Basis Empiris'],
-            result.autoDecision.decisions.map(d => [
-              d.dimensionLabel,
-              d.selectedMethod,
-              d.confidenceLevel,
-              d.empiricalDataBasis
-            ])
+          // STEP 9B
+          docH1('Step 9B. Output Tabel Stata Terurut (Step 1 s.d. Step 9)'),
+          ...orderedStata.flatMap(st =>
+            docMonoBlock(`${st.stepTitle} (. ${st.stataCommand})`, st.outputTableText)
           ),
 
-          docHeading('3. Pemeringkatan Probabilistik & Ketidakpastian Posterior (Step 6)'),
-          docTable(
-            ['Rank', 'Sumber', 'Total RMSE [95% CrI]', 'R_j = σ/|λ|', 'P(R=1)%', 'E[Rank]', 'Entropi', 'Anchor Shift'],
-            result.ranking.rows.map(r => [
-              String(r.rank),
-              `${r.sourceName} (${r.sourceLabel})`,
-              `${fmt(r.anchorTotalRmse, 4)} [${fmt(r.anchorTotalRmseCrI[0], 4)}, ${fmt(r.anchorTotalRmseCrI[1], 4)}]`,
-              fmt(r.scaleAdjustedNoiseRatio, 4),
-              `${fmt(r.probRank1 * 100, 1)}%`,
-              fmt(r.expectedRank, 2),
-              fmt(r.rankEntropyNormalized, 3),
-              String(r.maxAnchorRankShift)
-            ])
-          ),
-
-          docHeading('4. Kontras Pair Fixed Effects Terkoreksi Holm & Mixed-Effects LoA (Step 7)'),
-          docTable(
-            ['Kontras', 'Diff |e|', 'SE', 'p Wild', 'p Holm', 'Sim 95% CI', 'Signifikan?'],
-            result.validation.pairwiseHolmContrasts.map(c => [
-              `${c.sourceALabel} vs ${c.sourceBLabel}`,
-              fmt(c.diffAbsErrorAminusB, 4),
-              fmt(c.seSelected, 4),
-              fmt(c.pWildBootstrap, 4),
-              fmt(c.pHolmAdjusted, 4),
-              `[${fmt(c.simultaneous95Ci[0], 4)}, ${fmt(c.simultaneous95Ci[1], 4)}]`,
-              c.significantFamilywise05 ? 'YA' : 'TIDAK'
-            ])
-          ),
-
-          docHeading('5. Validasi Simulasi Monte Carlo 7 Keluarga (Step 8)'),
-          docPara(result.monteCarlo.overallValidationSummary),
-          docTable(
-            ['Skenario', 'Bias', 'Cakupan 95%', 'Rank #1 Recovery', 'Type I / Power', 'Gagal ID'],
-            result.monteCarlo.scenarios.map(s => [
-              s.scenarioTitle,
-              fmt(s.parameterBiasMean, 4),
-              `${fmt(s.interval95CoveragePct, 1)}%`,
-              `${fmt(s.top1RankingRecoveryPct, 1)}%`,
-              s.empiricalTypeIErrorPct > 0 ? `T1: ${s.empiricalTypeIErrorPct}%` : `Pwr: ${s.empiricalPowerPct}%`,
-              `${fmt(s.identificationFailurePct, 1)}%`
-            ])
-          ),
-
-          docHeading('6. Literatur Ilmiah Terverifikasi'),
-          ...result.literature.map(lit =>
-            docPara(`${lit.authors} (${lit.year}). ${lit.title}. ${lit.journal}, ${lit.volumePages}. DOI: ${lit.doi}`)
-          ),
-
-          docHeading('7. Kode Reproduksibilitas Master Stata 17/18 (.do)'),
-          new Paragraph({
-            children: result.masterStataDoFile.split('\n').flatMap((ln, i, arr) => [
-              new TextRun({ text: ln, font: 'Courier New', size: 15, color: '0F172A' }),
-              ...(i < arr.length - 1 ? [new TextRun({ break: 1 })] : [])
-            ]),
-            shading: { type: ShadingType.CLEAR, color: 'auto', fill: 'F8FAFC' }
-          })
+          // LAMPIRAN
+          docH1('Lampiran. Kode Reproduksibilitas Lengkap (Stata .do, Stan .stan, & R .R)'),
+          ...docMonoBlock('Master Stata 17/18 Do-File (.do)', result.masterStataDoFile),
+          ...docMonoBlock('Companion Bayesian Stan Model (.stan)', result.companionStanCode),
+          ...docMonoBlock('Companion R Script (.R)', result.companionRScript)
         ]
       }
     ]

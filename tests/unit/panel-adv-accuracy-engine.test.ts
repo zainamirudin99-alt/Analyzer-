@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { buildOption3AutoDecisions } from '../../src/lib/panel-adv-auto-engine';
 import { runOption3LatentEstimation } from '../../src/lib/panel-adv-estimation';
 import {
+  buildOption3OrderedStataTables,
   generateOption3CSV,
   generateOption3Docx,
   generateOption3PDF,
@@ -238,6 +239,16 @@ describe('Option 3: Advanced Latent Measurement Model & Panel Accuracy Validatio
     const docxBuf = await generateOption3Docx(res, 'test.xlsx');
     expect(docxBuf[0]).toBe(0x50);
     expect(docxBuf[1]).toBe(0x4b);
+    expect(docxBuf.length).toBeGreaterThan(12000);
+
+    // Verify chronological Step 1-9 Stata console tables stay <= 94 chars wide for neat Word rendering
+    const orderedTables = buildOption3OrderedStataTables(res);
+    expect(orderedTables).toHaveLength(9);
+    orderedTables.forEach(tb => {
+      tb.outputTableText.split('\n').forEach(line => {
+        expect(line.length, `Stata console line overflow on Step ${tb.stepId}: ${line}`).toBeLessThanOrEqual(94);
+      });
+    });
 
     // UI contract: Referensi Metode lives in Step 1 button, while Step 9 shows multi-method conclusion without literature table
     const uiSrc = fs.readFileSync(
