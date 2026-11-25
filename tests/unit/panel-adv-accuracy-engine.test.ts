@@ -248,5 +248,14 @@ describe('Option 3: Advanced Latent Measurement Model & Panel Accuracy Validatio
     expect(uiSrc).toContain('Rincian Pembuktian Lintas Metode (Step 1–8)');
     const step9Section = uiSrc.slice(uiSrc.indexOf('/* ==================== STEP 9 ==================== */'));
     expect(step9Section).not.toContain('Daftar Literatur Ilmiah Peer-Reviewed Terverifikasi');
+
+    // Comparative panel multi-sheet picker contract for Excel & Google Sheets imports
+    const compareSrc = fs.readFileSync(
+      path.join(process.cwd(), 'src/components/PanelMethodologyComparisonPanel.tsx'),
+      'utf8'
+    );
+    expect(compareSrc).toContain('Pilih Sheet Workbook');
+    expect(compareSrc).toContain('handleSelectSheet');
+    expect(compareSrc).toContain('loadWorkbookSheets');
   });
 });

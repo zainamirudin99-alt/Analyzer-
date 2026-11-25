@@ -31,6 +31,9 @@ export const PanelMethodologyComparisonPanel: React.FC = () => {
   const initialPreset = useMemo(() => generateMultiSourceCO2PresetDataset(), []);
 
   const [datasetName, setDatasetName] = useState<string>('panel_co2_multi_source_accuracy.xlsx');
+  const [sheetsData, setSheetsData] = useState<ImportedSheetData[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState<string>('');
+  const [sheetSelectionNote, setSheetSelectionNote] = useState<string | null>(null);
   const [rawRows, setRawRows] = useState<Record<string, unknown>[]>(initialPreset.observations);
   const [entityColumn, setEntityColumn] = useState<string>(initialPreset.cityIdColumn);
   const [timeColumn, setTimeColumn] = useState<string>(initialPreset.yearColumn);
@@ -87,13 +90,22 @@ export const PanelMethodologyComparisonPanel: React.FC = () => {
     serverCompareBundle ??
     (liveComparison && 'comparison' in liveComparison ? liveComparison : null);
 
+  const sheetAudit = useMemo(
+    () => evaluateImportedWorkbookSheets(sheetsData),
+    [sheetsData]
+  );
+
   const applyDataset = (
     name: string,
     rows: Record<string, unknown>[],
+    sheetList: ImportedSheetData[] = [],
+    sheetName = '',
     preset?: { cityIdColumn: string; yearColumn: string; sources: MeasurementSource[] }
   ) => {
     setDatasetName(name);
     setRawRows(rows);
+    setSheetsData(sheetList);
+    setSelectedSheet(sheetName);
     if (preset) {
       setEntityColumn(preset.cityIdColumn);
       setTimeColumn(preset.yearColumn);
@@ -110,6 +122,38 @@ export const PanelMethodologyComparisonPanel: React.FC = () => {
     setErrorMsg(null);
   };
 
+  const loadWorkbookSheets = (resolvedName: string, sheets: ImportedSheetData[]) => {
+    const evalOut = evaluateImportedWorkbookSheets(sheets);
+    const chosen = sheets.find(s => s.sheetName === evalOut.recommendedSheetName) || sheets[0];
+    const rows = chosen.allRows || chosen.previewRows || [];
+    applyDataset(resolvedName, rows, sheets, chosen.sheetName);
+
+    if (sheets.length > 1 && evalOut.autoSwitchedFromFirst) {
+      setSheetSelectionNote(
+        `Workbook memiliki ${sheets.length} sheet. Sheet 1 ("${sheets[0].sheetName}") terdeteksi sebagai cover/dashboard, sehingga otomatis aktif pada "${chosen.sheetName}". Anda bebas memilih sheet lain di bawah.`
+      );
+    } else if (sheets.length > 1) {
+      setSheetSelectionNote(
+        `Ditemukan ${sheets.length} sheet pada "${resolvedName}". Pilih nomor/nama sheet yang ingin dibandingkan (aktif: "${chosen.sheetName}").`
+      );
+    } else {
+      setSheetSelectionNote(
+        `Workbook memuat 1 sheet aktif: "${chosen.sheetName}" (${chosen.rowCount} baris × ${chosen.columnCount} kolom).`
+      );
+    }
+  };
+
+  const handleSelectSheet = (sheetName: string) => {
+    const target = sheetsData.find(s => s.sheetName === sheetName);
+    if (!target) return;
+    const rows = target.allRows || target.previewRows || [];
+    applyDataset(datasetName, rows, sheetsData, target.sheetName);
+    const idx = sheetsData.findIndex(s => s.sheetName === sheetName);
+    setSheetSelectionNote(
+      `Sheet aktif beralih ke Sheet ${idx + 1}: "${target.sheetName}" (${target.rowCount} baris × ${target.columnCount} kolom).`
+    );
+  };
+
   const handleUpload = async (file: File) => {
     setIsLoading(true);
     setErrorMsg(null);
@@ -121,9 +165,7 @@ export const PanelMethodologyComparisonPanel: React.FC = () => {
       if (!res.ok || !json.success) throw new Error(json.error || 'Gagal membaca berkas.');
       const sheets: ImportedSheetData[] = json.data?.sheets || [];
       if (!sheets.length) throw new Error('Berkas kosong.');
-      const evalOut = evaluateImportedWorkbookSheets(sheets);
-      const chosen = sheets.find(s => s.sheetName === evalOut.recommendedSheetName) || sheets[0];
-      applyDataset(json.data?.originalName || file.name, chosen.allRows || chosen.previewRows || []);
+      loadWorkbookSheets(json.data?.originalName || json.data?.fileName || file.name, sheets);
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Gagal unggah berkas.');
     } finally {
@@ -132,7 +174,10 @@ export const PanelMethodologyComparisonPanel: React.FC = () => {
   };
 
   const handleImportSheets = async () => {
-    if (!sheetsUrl.trim()) return;
+    if (!sheetsUrl.trim()) {
+      setErrorMsg('Masukkan tautan publik Google Sheets terlebih dahulu.');
+      return;
+    }
     setIsLoading(true);
     setErrorMsg(null);
     try {
@@ -145,9 +190,10 @@ export const PanelMethodologyComparisonPanel: React.FC = () => {
       if (!res.ok || !json.success) throw new Error(json.error || 'Gagal impor Google Sheets.');
       const sheets: ImportedSheetData[] = json.data?.sheets || [];
       if (!sheets.length) throw new Error('Spreadsheet kosong.');
-      const evalOut = evaluateImportedWorkbookSheets(sheets);
-      const chosen = sheets.find(s => s.sheetName === evalOut.recommendedSheetName) || sheets[0];
-      applyDataset(json.data?.originalName || 'Google_Sheets_Compare.xlsx', chosen.allRows || chosen.previewRows || []);
+      loadWorkbookSheets(
+        json.data?.originalName || json.data?.fileName || 'Google_Sheets_Compare.xlsx',
+        sheets
+      );
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Gagal impor tautan.');
     } finally {
@@ -240,8 +286,9 @@ export const PanelMethodologyComparisonPanel: React.FC = () => {
                 onClick={() => {
                   setImportTab(t.key as typeof importTab);
                   if (t.key === 'preset') {
+                    setSheetSelectionNote(null);
                     const p = generateMultiSourceCO2PresetDataset();
-                    applyDataset('panel_co2_multi_source_accuracy.xlsx', p.observations, p);
+                    applyDataset('panel_co2_multi_source_accuracy.xlsx', p.observations, [], '', p);
                   }
                 }}
                 style={{ minHeight: '44px', padding: '6px 12px', fontSize: '12.5px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
@@ -254,15 +301,21 @@ export const PanelMethodologyComparisonPanel: React.FC = () => {
         </div>
 
         {importTab === 'upload' && (
-          <input
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            onChange={e => {
-              const f = e.target.files?.[0];
-              if (f) handleUpload(f);
-            }}
-            style={{ fontSize: '16px', minHeight: '44px' }}
-          />
+          <div style={{ padding: '14px', borderRadius: '8px', border: '1px dashed var(--primary)', background: 'var(--surface-muted)' }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>
+              <span>Pilih Berkas .xlsx, .xls, atau .csv (Mendukung Multi-Sheet):</span>
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                disabled={isLoading}
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) handleUpload(f);
+                }}
+                style={{ fontSize: '16px', minHeight: '44px' }}
+              />
+            </label>
+          </div>
         )}
 
         {importTab === 'sheets' && (
@@ -272,10 +325,16 @@ export const PanelMethodologyComparisonPanel: React.FC = () => {
               value={sheetsUrl}
               onChange={e => setSheetsUrl(e.target.value)}
               placeholder="https://docs.google.com/spreadsheets/d/..."
-              style={{ flex: 1, minHeight: '44px', fontSize: '16px', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)' }}
+              style={{ flex: 1, minWidth: '240px', minHeight: '44px', fontSize: '16px', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
             />
-            <button type="button" className="btn btn-primary" onClick={handleImportSheets} style={{ minHeight: '44px', padding: '8px 14px' }}>
-              Impor
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={isLoading}
+              onClick={handleImportSheets}
+              style={{ minHeight: '44px', padding: '8px 16px' }}
+            >
+              {isLoading ? 'Mengimpor...' : 'Impor Google Sheets'}
             </button>
           </div>
         )}
@@ -286,7 +345,7 @@ export const PanelMethodologyComparisonPanel: React.FC = () => {
               rows={4}
               value={pasteText}
               onChange={e => setPasteText(e.target.value)}
-              style={{ width: '100%', fontSize: '16px', padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', fontFamily: 'monospace' }}
+              style={{ width: '100%', fontSize: '16px', padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', fontFamily: 'monospace', background: 'var(--surface)', color: 'var(--text)' }}
             />
             <div>
               <button
@@ -295,7 +354,10 @@ export const PanelMethodologyComparisonPanel: React.FC = () => {
                 onClick={() => {
                   const p = parsePastedAccuracyData(pasteText);
                   if (p.error || !p.rows.length) setErrorMsg(p.error || 'Data tidak valid.');
-                  else applyDataset('Pasted_Shared_Dataset.csv', p.rows);
+                  else {
+                    setSheetSelectionNote(null);
+                    applyDataset('Pasted_Shared_Dataset.csv', p.rows, [], '');
+                  }
                 }}
                 style={{ minHeight: '44px', padding: '8px 14px' }}
               >
@@ -305,10 +367,97 @@ export const PanelMethodologyComparisonPanel: React.FC = () => {
           </div>
         )}
 
+        {/* Interactive Multi-Sheet Workbook Selector (Excel & Google Sheets) */}
+        {sheetsData.length > 0 && (
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: '8px',
+              background: 'var(--surface-muted)',
+              border: '1px solid var(--primary)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <strong style={{ fontSize: '13px', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <FileSpreadsheet size={15} />
+                <span>Pilih Sheet Workbook ({sheetsData.length} Sheet Terdeteksi)</span>
+              </strong>
+              <select
+                aria-label="Pilih Sheet Workbook Komparasi"
+                value={selectedSheet}
+                onChange={e => handleSelectSheet(e.target.value)}
+                style={{
+                  minHeight: '44px',
+                  fontSize: '16px',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border)',
+                  background: 'var(--surface)',
+                  color: 'var(--text)'
+                }}
+              >
+                {sheetsData.map((s, idx) => {
+                  const ev = sheetAudit.evaluations.find(e => e.sheetName === s.sheetName);
+                  return (
+                    <option key={s.sheetName} value={s.sheetName}>
+                      Sheet {idx + 1}: {s.sheetName} ({s.rowCount}×{s.columnCount}){ev?.isRecommended ? ' ★ Rekomendasi' : ''}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            {sheetsData.length > 1 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {sheetsData.map((s, idx) => {
+                  const ev = sheetAudit.evaluations.find(e => e.sheetName === s.sheetName);
+                  const active = selectedSheet === s.sheetName;
+                  return (
+                    <button
+                      key={s.sheetName}
+                      type="button"
+                      onClick={() => handleSelectSheet(s.sheetName)}
+                      style={{
+                        minHeight: '44px',
+                        padding: '8px 12px',
+                        borderRadius: '8px',
+                        border: active ? '2px solid var(--primary)' : '1px solid var(--border)',
+                        background: active ? 'var(--info-bg)' : 'var(--surface)',
+                        color: 'var(--text)',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '2px'
+                      }}
+                    >
+                      <span style={{ fontSize: '12.5px', fontWeight: 800, color: active ? 'var(--primary)' : 'var(--text)' }}>
+                        Sheet {idx + 1}: {s.sheetName} {ev?.isRecommended ? '★' : ''}
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                        {s.rowCount} baris × {s.columnCount} kolom · {ev?.statusNote || 'Tabular'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {sheetSelectionNote && (
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{sheetSelectionNote}</div>
+            )}
+          </div>
+        )}
+
         {/* Quick Column Summary & 3 Independent Execution Modes */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', paddingTop: '8px', borderTop: '1px solid var(--border)' }}>
           <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
-            Dataset Aktif: <strong>{datasetName}</strong> · Baris={rawRows.length} · Entitas=<code>{entityColumn}</code> · Waktu=<code>{timeColumn}</code> · Sumber J={sources.length} ({columns.length} kolom tersedia)
+            Dataset Aktif: <strong>{datasetName}</strong>
+            {selectedSheet ? <> · Sheet: <strong>{selectedSheet}</strong></> : null}
+            {' '}· Baris={rawRows.length} · Entitas=<code>{entityColumn}</code> · Waktu=<code>{timeColumn}</code> · Sumber J={sources.length} ({columns.length} kolom tersedia)
           </div>
 
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>

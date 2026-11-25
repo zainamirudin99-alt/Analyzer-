@@ -856,25 +856,69 @@ export const PanelAdvancedAccuracyTab: React.FC<{
               </div>
             )}
 
-            {sheetsData.length > 1 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', padding: '10px 12px', borderRadius: '8px', background: 'var(--surface-muted)' }}>
-                <strong style={{ fontSize: '12.5px' }}>Pilih Sheet Workbook:</strong>
-                <select
-                  value={selectedSheet}
-                  onChange={e => {
-                    const sh = sheetsData.find(s => s.sheetName === e.target.value);
-                    if (sh) {
-                      applyImportedRows(datasetName, sh.allRows || sh.previewRows || [], sheetsData, sh.sheetName);
-                    }
-                  }}
-                  style={{ minHeight: '44px', fontSize: '16px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)' }}
-                >
-                  {sheetsData.map(s => (
-                    <option key={s.sheetName} value={s.sheetName}>
-                      {s.sheetName} ({s.rowCount} baris)
-                    </option>
-                  ))}
-                </select>
+            {sheetsData.length > 0 && (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                  padding: '12px 14px',
+                  borderRadius: '8px',
+                  background: 'var(--surface-muted)',
+                  border: '1px solid var(--primary)'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                  <strong style={{ fontSize: '12.5px', color: 'var(--primary)' }}>
+                    Pilih Sheet Workbook ({sheetsData.length} Sheet):
+                  </strong>
+                  <select
+                    aria-label="Pilih Sheet Workbook Option 3"
+                    value={selectedSheet}
+                    onChange={e => {
+                      const sh = sheetsData.find(s => s.sheetName === e.target.value);
+                      if (sh) {
+                        applyImportedRows(datasetName, sh.allRows || sh.previewRows || [], sheetsData, sh.sheetName);
+                      }
+                    }}
+                    style={{ minHeight: '44px', fontSize: '16px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                  >
+                    {sheetsData.map((s, idx) => (
+                      <option key={s.sheetName} value={s.sheetName}>
+                        Sheet {idx + 1}: {s.sheetName} ({s.rowCount}×{s.columnCount})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {sheetsData.length > 1 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {sheetsData.map((s, idx) => {
+                      const active = selectedSheet === s.sheetName;
+                      return (
+                        <button
+                          key={s.sheetName}
+                          type="button"
+                          onClick={() =>
+                            applyImportedRows(datasetName, s.allRows || s.previewRows || [], sheetsData, s.sheetName)
+                          }
+                          style={{
+                            minHeight: '44px',
+                            padding: '6px 12px',
+                            borderRadius: '8px',
+                            border: active ? '2px solid var(--primary)' : '1px solid var(--border)',
+                            background: active ? 'var(--info-bg)' : 'var(--surface)',
+                            color: active ? 'var(--primary)' : 'var(--text)',
+                            fontSize: '12px',
+                            fontWeight: active ? 800 : 600,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Sheet {idx + 1}: {s.sheetName} ({s.rowCount}×{s.columnCount})
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 {sheetNote && <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{sheetNote}</span>}
               </div>
             )}
