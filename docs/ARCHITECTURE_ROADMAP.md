@@ -207,3 +207,21 @@ Mengacu pada `docs/superpowers/specs/2026-11-13-regression-upgrade-design.md`:
 1. **`src/lib/panel-accuracy-types.ts` & `src/lib/panel-accuracy-diagnostics.ts`**: Penambahan union `APPLY_DRISCOLL_KRAAY_SENSITIVITY` dan `AUDIT_CORRELATED_ERRORS` serta dukungan `driscollKraayActivated` / `correlatedErrorReviewed` di `Step7DiagnosticsContext` agar skor kesehatan & prioritas Advisor merespons tindakan pengguna secara nyata.
 2. **`src/lib/panel-accuracy-latent.ts`**: Penambahan *Chi-square sampling-noise guard* pada cabang $J = 3$ untuk mencegah *false positive* deteksi `correlatedErrorPairs` akibat varians sumber ke-3 yang tinggi.
 3. **`src/components/PanelAccuracyTab.tsx`**: Perbaikan *async await* + `preprocessingOverride` (bebas *stale closure*), *auto-reverify server* saat prapemrosesan berubah jika server result aktif, panel **Audit Korelasi Residual** interaktif di Step 7, tampilan **Driscoll-Kraay SE** di Step 6–8, tombol aktif/selesai tanpa perulangan `1999 -> 1999`, tabel **Sebelum vs Sesudah** lengkap (`Rank`, `TotRMSE`, `Rel R²`, `Bias α`, `Skor Diagnostik`), serta dukungan penuh **Undo Multi-Langkah (`undoHistoryStack`) & Toggle-Off Pembatalan** langsung di setiap tombol rekomendasi Step 3 & Step 7.
+
+---
+
+## 14. Arsitektur Tahap 16: Pengembangan Terisolasi Option 3 & Modul Komparasi Option 2 vs Option 3
+
+1. **Isolasi Modul Backend Option 3 (`src/lib/panel-adv-*.ts`)**:
+   - `panel-adv-types.ts`: Kontrak tipe 6 fase, 9 step, 12 keputusan otomatis, hasil Monte Carlo, dan katalog literatur ilmiah terverifikasi (2016–2023 + klasik).
+   - `panel-adv-preprocessing.ts`: Audit 13 dimensi data panel, diagnostik outlier *Panel MAD/IQR*, dan evaluasi 10 kandidat transformasi berbasis pelestarian estimand.
+   - `panel-adv-auto-engine.ts`: *Automatic Decision Engine* 12 komponen dengan hierarki *validity-first* dan dukungan *manual override* + *restore initial config*.
+   - `panel-adv-estimation.ts`: Mesin Bayesian Hierarchical Panel Latent ($\theta_{it} = \mu_\theta + u_i + v_t + w_{it}$), prior Half-$t$ + sensitivitas prior, diagnostik Vehtari (2021) (Rank-Normalized $\widehat{R}$, Folded $\widehat{R}$, Bulk/Tail ESS, MCSE), evaluasi **Multi-Anchor** ($J+2$ anchor), dan seleksi model ketergantungan galat via Marginal WAIC / LOO-ELPD.
+   - `panel-adv-ranking.ts`: Pemeringkatan multi-indikator ($R_j = \sigma_j/|\lambda_j|$ & $\text{TRMSE}_j^{(a)}$), distribusi probabilitas ranking posterior $P(R_j=1)$ & $P(R_j \le k)$, dispersi ranking, stabilitas entitas/waktu, dan simulasi 10 skenario *Common-Mode Bias*.
+   - `panel-adv-validation.ts`: LOSO dengan audit kovarians $\text{Var}(A-B)$, Pair FE dengan koreksi *Holm (1979)*, seleksi SE adaptif termasuk *Webb 6-Point / Rademacher Wild Cluster Bootstrap*, dan *Repeated-Measures Mixed-Effects Bland-Altman LoA*.
+   - `panel-adv-montecarlo.ts`: Simulator Monte Carlo 7 keluarga skenario (`A`–`G`) dengan 15 metrik pemulihan parameter & ranking.
+   - `panel-adv-stata.ts` & `panel-adv-orchestrator.ts`: Generator kode Stata/R/Stan terverifikasi per Step 1–9, ekspor laporan, dan orkestrator mandiri Option 3.
+2. **Modul Komparasi Metodologi (`src/lib/panel-methodology-comparison.ts`)**:
+   - Menjalankan Option 2 (tanpa modifikasi) dan Option 3 (mandiri) pada `PanelDataset` mentah yang identik, menyusun matriks perbandingan 19 dimensi, atribusi perbedaan ranking, 10 diagnostik komparatif, dan 6 kategori kesimpulan ilmiah.
+3. **API & Antarmuka Pengguna (`src/app/api/panel-adv-accuracy/fit/route.ts`, `src/components/`)**:
+   - `PanelAdvancedAccuracyCharts.tsx`, `PanelAdvancedAccuracyTab.tsx` (9 Step penuh), `PanelMethodologyComparisonPanel.tsx`, serta integrasi pemilih 4 mode (`Option 1`, `Option 2`, `Option 3`, `Komparasi Opsi 2 vs Opsi 3`) pada `PanelTabHub.tsx`.

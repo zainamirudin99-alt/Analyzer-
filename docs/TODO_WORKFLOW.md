@@ -250,3 +250,14 @@ Dokumen ini memuat daftar tugas operasional dari Tahap 1 hingga Tahap 3 beserta 
 - [x] **T15.3**: Optimalisasi `PanelAccuracyTab.tsx`: hapus *stale closure* (`preprocessingOverride`), `await` sinkron ke Audit Trail, panel *Driscoll-Kraay SE vs Cluster SE*, panel *Audit Korelasi Residual* di Step 7, lencana *Sudah Aktif ✓* di tombol aksi, tabel Sebelum vs Sesudah diperkaya (`TotRMSE`, `Rel R²`, `Bias`, `Skor`), dan visibilitas `DK SE`/`DK p` di Step 6 & Step 8.
 - [x] **T15.4**: Penambahan unit test Tahap 15 di `tests/unit/panel-accuracy-engine.test.ts` & verifikasi penuh (`tsc --noEmit`, `vitest`, `next build`, 0 diff Option 1).
 - [x] **T15.5**: Dukungan penuh **Undo Multi-Langkah (`undoHistoryStack`)**, pembatalan langsung (**`Batalkan`**) pada setiap tombol rekomendasi yang aktif di Step 3 & Step 7, serta **`Reset ke Awal`**.
+
+---
+
+## Tahap 16: Pengembangan Option 3 (`Advanced Latent Measurement Model and Panel Accuracy Validation`) & Evaluasi Komparatif Option 2 vs Option 3
+- [x] **T16.1**: Audit baseline Option 2 (pencatatan 29 hash SHA-256 berkas Option 1 & Option 2), verifikasi 13 literatur ilmiah peer-reviewed (2016–2023 + klasik), dan penulisan spesifikasi arsitektur di `docs/`.
+- [x] **T16.2**: Implementasi kontrak tipe, profil data 13 dimensi, evaluasi 10 kandidat transformasi, dan *Automatic Decision Engine* 12-komponen (`panel-adv-types.ts`, `panel-adv-preprocessing.ts`, `panel-adv-auto-engine.ts`).
+- [x] **T16.3**: Implementasi mesin estimasi laten hierarkis, diagnostik MCMC Vehtari (2021), sensitivitas Multi-Anchor, seleksi model ketergantungan galat WAIC/LOO, ranking probabilistik, & 10 skenario Common-Mode Bias (`panel-adv-estimation.ts`, `panel-adv-ranking.ts`).
+- [x] **T16.4**: Implementasi validasi LOSO terkoreksi kovarians, Pair FE + koreksi Holm, SE adaptif (Webb/Rademacher Wild Bootstrap & Driscoll-Kraay), Repeated-Measures Bland-Altman, dan simulator Monte Carlo 7 keluarga skenario (`panel-adv-validation.ts`, `panel-adv-montecarlo.ts`).
+- [x] **T16.5**: Implementasi generator kode Stata 17/18 terverifikasi Step 1–9, orkestrator & ekspor Option 3, API route `/api/panel-adv-accuracy/fit` & `/api/panel-adv-accuracy/export`, serta mesin **Comparative Methodology Evaluation** (`panel-adv-stata.ts`, `panel-adv-orchestrator.ts`, `panel-adv-export.ts`, `panel-methodology-comparison.ts`).
+- [x] **T16.6**: Implementasi komponen visualisasi ketidakpastian, UI 9 Step Option 3, UI Komparasi Option 2 vs Option 3, dan integrasi `PanelTabHub.tsx` (`PanelAdvancedAccuracyCharts.tsx`, `PanelAdvancedAccuracyTab.tsx`, `PanelMethodologyComparisonPanel.tsx`).
+- [x] **T16.7**: Pengujian lengkap (unit, integrasi, Monte Carlo, komparatif, regresi SHA-256 & numerik Option 2, `tsc --noEmit`, `vitest`, `next build`) dan penyusunan laporan akhir Seksi A–J.
