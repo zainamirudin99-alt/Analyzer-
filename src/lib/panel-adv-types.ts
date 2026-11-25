@@ -555,6 +555,39 @@ export interface AdvStepStataSection {
   nextStepRecommendation: string;
 }
 
+export interface AdvMethodEvidenceStep {
+  stageCode: 'STEP_1_3' | 'STEP_4' | 'STEP_5' | 'STEP_6' | 'STEP_7' | 'STEP_8';
+  stageLabel: string;
+  methodName: string;
+  status: 'LULUS' | 'CATATAN' | 'WASPADA';
+  keyMetricBadge: string;
+  finding: string;
+  selectionReason: string;
+}
+
+export interface AdvTopVsRunnerUpComparison {
+  topSourceId: string;
+  topSourceLabel: string;
+  runnerUpSourceId: string | null;
+  runnerUpSourceLabel: string | null;
+  topTotalRmse: number;
+  runnerUpTotalRmse: number | null;
+  topNoiseRatio: number;
+  runnerUpNoiseRatio: number | null;
+  topErrorSd: number;
+  runnerUpErrorSd: number | null;
+  topReliabilityR2Pct: number;
+  runnerUpReliabilityR2Pct: number | null;
+  topProbRank1Pct: number;
+  runnerUpProbRank1Pct: number | null;
+  holmSignificantVsRunnerUp: boolean | null;
+  holmPValueVsRunnerUp: number | null;
+  topCcc: number | null;
+  runnerUpCcc: number | null;
+  topMixedLoaWidth: number | null;
+  runnerUpMixedLoaWidth: number | null;
+}
+
 export interface AdvPanelFitResult {
   methodologyName: 'Option 3: Advanced Latent Measurement Model and Panel Accuracy Validation';
   executedAt: string;
@@ -586,6 +619,12 @@ export interface AdvPanelFitResult {
   scientificConclusion: {
     headline: string;
     relativeReliabilitySummary: string;
+    selectedVariableName: string | null;
+    finalNarrativeConclusion: string;
+    passedMethodsCount: number;
+    totalMethodsCount: number;
+    topVsRunnerUp: AdvTopVsRunnerUpComparison | null;
+    whySelectedEvidence: AdvMethodEvidenceStep[];
     keyLimitations: string[];
     epistemologicalGroundTruthBoundary: string;
   };

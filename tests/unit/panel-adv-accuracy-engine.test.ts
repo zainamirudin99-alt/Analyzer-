@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { describe, expect, it } from 'vitest';
 import { buildOption3AutoDecisions } from '../../src/lib/panel-adv-auto-engine';
 import { runOption3LatentEstimation } from '../../src/lib/panel-adv-estimation';
@@ -133,6 +135,12 @@ describe('Option 3: Advanced Latent Measurement Model & Panel Accuracy Validatio
     });
     expect(res.ranking.commonModeBiasScenarios).toHaveLength(10);
     expect(res.scientificConclusion.epistemologicalGroundTruthBoundary).toContain('BUKAN');
+    expect(res.scientificConclusion.whySelectedEvidence).toHaveLength(6);
+    expect(res.scientificConclusion.selectedVariableName).toContain('Field Sensor');
+    expect(res.scientificConclusion.finalNarrativeConclusion).toContain('Field Sensor');
+    expect(res.scientificConclusion.topVsRunnerUp?.topTotalRmse).toBeLessThan(
+      res.scientificConclusion.topVsRunnerUp?.runnerUpTotalRmse ?? Infinity
+    );
 
     // Construct near-identical noise dataset with independent pseudo-random draws to verify honest tie guard
     let seedTie = 424242;
@@ -230,5 +238,15 @@ describe('Option 3: Advanced Latent Measurement Model & Panel Accuracy Validatio
     const docxBuf = await generateOption3Docx(res, 'test.xlsx');
     expect(docxBuf[0]).toBe(0x50);
     expect(docxBuf[1]).toBe(0x4b);
+
+    // UI contract: Referensi Metode lives in Step 1 button, while Step 9 shows multi-method conclusion without literature table
+    const uiSrc = fs.readFileSync(
+      path.join(process.cwd(), 'src/components/PanelAdvancedAccuracyTab.tsx'),
+      'utf8'
+    );
+    expect(uiSrc).toContain('Referensi Metode (');
+    expect(uiSrc).toContain('Rincian Pembuktian Lintas Metode (Step 1–8)');
+    const step9Section = uiSrc.slice(uiSrc.indexOf('/* ==================== STEP 9 ==================== */'));
+    expect(step9Section).not.toContain('Daftar Literatur Ilmiah Peer-Reviewed Terverifikasi');
   });
 });

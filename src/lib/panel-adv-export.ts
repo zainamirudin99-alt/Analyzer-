@@ -119,9 +119,22 @@ export function generateOption3XLSX(
     [],
     ['KESIMPULAN ILMIAH & BATAS EPISTEMOLOGIS'],
     ['Headline', result.scientificConclusion.headline],
+    ['Narasi Alasan Terpilih (Lintas Metode)', result.scientificConclusion.finalNarrativeConclusion],
+    ['Tahap Lulus Penuh', `${result.scientificConclusion.passedMethodsCount} / ${result.scientificConclusion.totalMethodsCount}`],
     ['Sintesis Keandalan Relatif', result.scientificConclusion.relativeReliabilitySummary],
     ['Batas Ground Truth', result.scientificConclusion.epistemologicalGroundTruthBoundary],
-    ...result.scientificConclusion.keyLimitations.map((l, idx) => [`Batasan ${idx + 1}`, l])
+    ...result.scientificConclusion.keyLimitations.map((l, idx) => [`Batasan ${idx + 1}`, l]),
+    [],
+    ['JEJAK PEMBUKTIAN MULTI-METODE (MENGAPA VARIABEL TERPILIH)'],
+    ['Tahap', 'Metode', 'Status', 'Metrik Utama', 'Temuan Data Aktual', 'Alasan Kontribusi Pemilihan'],
+    ...result.scientificConclusion.whySelectedEvidence.map(ev => [
+      ev.stageLabel,
+      ev.methodName,
+      ev.status,
+      ev.keyMetricBadge,
+      ev.finding,
+      ev.selectionReason
+    ])
   ]);
 
   appendSafeSheet(wb, '02_Auto_Decision_Step2', [
@@ -450,9 +463,12 @@ export function generateOption3PDF(
   );
   pushBody(`Status Keputusan: ${result.ranking.verdictStatus} | Kandidat Relatif #1: ${result.ranking.leaderSourceLabel || 'Inkonklusif'}`);
 
-  pushSection('1. KESIMPULAN ILMIAH & BATAS EPISTEMOLOGIS GROUND TRUTH');
+  pushSection('1. KESIMPULAN ILMIAH, ALASAN PEMILIHAN MULTI-METODE & BATAS GROUND TRUTH');
   pushBody(result.scientificConclusion.headline);
-  pushBody(result.scientificConclusion.relativeReliabilitySummary);
+  pushBody(result.scientificConclusion.finalNarrativeConclusion);
+  result.scientificConclusion.whySelectedEvidence.forEach(ev => {
+    pushBody(`[${ev.status}] ${ev.stageLabel} (${ev.keyMetricBadge}): ${ev.finding} -> ${ev.selectionReason}`);
+  });
   pushBody(result.scientificConclusion.epistemologicalGroundTruthBoundary);
 
   pushSection('2. KEPUTUSAN OTOMATIS 12 KOMPONEN METODOLOGI (STEP 2)');
@@ -668,9 +684,18 @@ export async function generateOption3Docx(
           docPara(
             `Dataset: ${datasetName} | Entitas G=${result.datasetSummary.nEntities}, Periode T=${result.datasetSummary.nPeriods}, Sumber J=${result.datasetSummary.nSources}, Complete-Case N=${result.datasetSummary.nCompletePairs} | Skala Kerja: ${result.datasetSummary.workingScaleLabel}`
           ),
-          docHeading('1. Kesimpulan Ilmiah & Batas Epistemologis'),
+          docHeading('1. Kesimpulan Ilmiah, Alasan Pemilihan Multi-Metode & Batas Epistemologis'),
           docPara(result.scientificConclusion.headline),
-          docPara(result.scientificConclusion.relativeReliabilitySummary),
+          docPara(result.scientificConclusion.finalNarrativeConclusion),
+          docTable(
+            ['Tahap & Metode', 'Status', 'Metrik Kunci', 'Temuan & Alasan Pemilihan'],
+            result.scientificConclusion.whySelectedEvidence.map(ev => [
+              `${ev.stageLabel} (${ev.methodName})`,
+              ev.status,
+              ev.keyMetricBadge,
+              `${ev.finding} ${ev.selectionReason}`
+            ])
+          ),
           docPara(result.scientificConclusion.epistemologicalGroundTruthBoundary),
 
           docHeading('2. Keputusan Otomatis 12 Komponen Metodologi (Step 2)'),

@@ -29,7 +29,7 @@ import {
   UploadCloud
 } from 'lucide-react';
 import { executeAdvancedPanelAccuracyPipeline } from '@/lib/panel-adv-orchestrator';
-import { OPTION3_STEP_GLOSSARY } from '@/lib/panel-adv-stata';
+import { OPTION3_STEP_GLOSSARY, VERIFIED_OPTION3_LITERATURE } from '@/lib/panel-adv-stata';
 import {
   AdvAnchorStrategy,
   AdvBootstrapMethod,
@@ -70,7 +70,7 @@ const OPTION3_STEPS = [
   { id: 6, short: '6. Source Ranking', title: 'Step 6 — Source Ranking, Uncertainty & Anchor Sensitivity' },
   { id: 7, short: '7. Validation & LoA', title: 'Step 7 — LOSO, Pair FE Holm & Repeated-Measures Agreement' },
   { id: 8, short: '8. Robustness & MC', title: 'Step 8 — Common-Mode Bias & Monte Carlo Validation' },
-  { id: 9, short: '9. Final Synthesis', title: 'Step 9 — Final Results, Reproducible Code & Literature' }
+  { id: 9, short: '9. Final Synthesis', title: 'Step 9 — Final Results, Multi-Method Conclusion & Reproducible Code' }
 ];
 
 const CollapsibleStataGuideCard: React.FC<{
@@ -301,6 +301,7 @@ export const PanelAdvancedAccuracyTab: React.FC<{
   const [serverError, setServerError] = useState<string | null>(null);
 
   const [openGlossaryStep, setOpenGlossaryStep] = useState<number | null>(null);
+  const [showMethodReferences, setShowMethodReferences] = useState<boolean>(false);
   const [codeTab, setCodeTab] = useState<'stata' | 'r' | 'stan'>('stata');
   const [copiedMaster, setCopiedMaster] = useState<boolean>(false);
   const [exportingFormat, setExportingFormat] = useState<string | null>(null);
@@ -647,18 +648,95 @@ export const PanelAdvancedAccuracyTab: React.FC<{
             )}
           </div>
 
-          {activeGlossary.length > 0 && (
-            <button
-              type="button"
-              className={openGlossaryStep === currentStep ? 'btn btn-primary' : 'btn btn-outline'}
-              onClick={() => setOpenGlossaryStep(prev => (prev === currentStep ? null : currentStep))}
-              style={{ minHeight: '44px', padding: '6px 12px', fontSize: '12.5px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-            >
-              <Info size={15} />
-              <span>Keterangan ({activeGlossary.length})</span>
-            </button>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {currentStep === 1 && (
+              <button
+                type="button"
+                className={showMethodReferences ? 'btn btn-primary' : 'btn btn-outline'}
+                aria-expanded={showMethodReferences}
+                aria-label="Buka atau tutup daftar referensi metode Option 3"
+                onClick={() => setShowMethodReferences(prev => !prev)}
+                style={{ minHeight: '44px', padding: '6px 12px', fontSize: '12.5px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              >
+                <BookOpen size={15} />
+                <span>Referensi Metode ({VERIFIED_OPTION3_LITERATURE.length})</span>
+              </button>
+            )}
+
+            {activeGlossary.length > 0 && (
+              <button
+                type="button"
+                className={openGlossaryStep === currentStep ? 'btn btn-primary' : 'btn btn-outline'}
+                aria-expanded={openGlossaryStep === currentStep}
+                onClick={() => setOpenGlossaryStep(prev => (prev === currentStep ? null : currentStep))}
+                style={{ minHeight: '44px', padding: '6px 12px', fontSize: '12.5px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Info size={15} />
+                <span>Keterangan ({activeGlossary.length})</span>
+              </button>
+            )}
+          </div>
         </div>
+
+        {currentStep === 1 && showMethodReferences && (
+          <div
+            style={{
+              padding: '14px 16px',
+              borderRadius: '8px',
+              background: 'var(--surface-muted)',
+              border: '1px solid var(--primary)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <BookOpen size={15} />
+                <span>Referensi Metode Ilmiah Peer-Reviewed Option 3 ({VERIFIED_OPTION3_LITERATURE.length} Rujukan)</span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => setShowMethodReferences(false)}
+                style={{ minHeight: '36px', padding: '4px 10px', fontSize: '12px' }}
+              >
+                Tutup
+              </button>
+            </div>
+            <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>
+              Landasan metodologi statistik yang digunakan untuk membangun mesin estimasi Bayesian Woodbury, diagnostik Vehtari (2021), seleksi WAIC/PSIS-LOO, koreksi Holm (1979), Mixed-Effects LoA, dan validasi Monte Carlo pada Option 3.
+            </p>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', background: 'var(--surface)', borderRadius: '6px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid var(--border)', textAlign: 'left' }}>
+                    <th style={{ padding: '8px' }}>Penulis &amp; Tahun</th>
+                    <th style={{ padding: '8px' }}>Judul &amp; Jurnal</th>
+                    <th style={{ padding: '8px' }}>DOI</th>
+                    <th style={{ padding: '8px' }}>Peran pada Option 3</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(activeResult?.literature || VERIFIED_OPTION3_LITERATURE).map(lit => (
+                    <tr key={lit.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '8px', fontWeight: 700 }}>{lit.authors} ({lit.year})</td>
+                      <td style={{ padding: '8px' }}>
+                        {lit.title}. <em>{lit.journal}</em>, {lit.volumePages}.
+                      </td>
+                      <td style={{ padding: '8px', fontFamily: 'monospace' }}>
+                        <a href={`https://doi.org/${lit.doi}`} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)' }}>
+                          {lit.doi}
+                        </a>
+                      </td>
+                      <td style={{ padding: '8px', color: 'var(--text-secondary)' }}>{lit.roleInOption3}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {openGlossaryStep === currentStep && activeGlossary.length > 0 && (
           <div
@@ -1730,17 +1808,209 @@ export const PanelAdvancedAccuracyTab: React.FC<{
         {/* ==================== STEP 9 ==================== */}
         {currentStep === 9 && activeResult && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ padding: '16px', borderRadius: '8px', background: 'var(--info-bg)', border: '2px solid var(--primary)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--primary)' }}>
+            {/* Integrated Verdict & Multi-Method Final Narrative */}
+            <div
+              style={{
+                padding: '18px',
+                borderRadius: '10px',
+                background: 'var(--info-bg)',
+                border: '2px solid var(--primary)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15.5px', fontWeight: 800, color: 'var(--primary)' }}>
+                  <ShieldCheck size={20} />
+                  <span>
+                    {activeResult.scientificConclusion.selectedVariableName
+                      ? `Kesimpulan Akhir: Mengapa ${activeResult.scientificConclusion.selectedVariableName} Terpilih Paling Akurat (Relatif)`
+                      : 'Kesimpulan Akhir Evaluasi Pengukuran Panel'}
+                  </span>
+                </div>
+                <span
+                  style={{
+                    fontSize: '11.5px',
+                    fontWeight: 800,
+                    padding: '4px 10px',
+                    borderRadius: '999px',
+                    background: 'var(--primary)',
+                    color: '#ffffff'
+                  }}
+                >
+                  {activeResult.scientificConclusion.passedMethodsCount} / {activeResult.scientificConclusion.totalMethodsCount} Tahap Metode Lulus Penuh
+                </span>
+              </div>
+
+              <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text)' }}>
                 {activeResult.scientificConclusion.headline}
               </div>
-              <p style={{ margin: 0, fontSize: '13px', color: 'var(--text)', lineHeight: 1.55 }}>
-                {activeResult.scientificConclusion.relativeReliabilitySummary}
+
+              <p style={{ margin: 0, fontSize: '13px', color: 'var(--text)', lineHeight: 1.65 }}>
+                {activeResult.scientificConclusion.finalNarrativeConclusion}
               </p>
+
+              {/* Compact #1 vs #2 Comparison Strip */}
+              {activeResult.scientificConclusion.topVsRunnerUp && (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+                    gap: '10px',
+                    paddingTop: '6px'
+                  }}
+                >
+                  <div style={{ padding: '10px 12px', borderRadius: '8px', background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                      Anchor Total RMSE (#1 vs #2)
+                    </div>
+                    <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--primary)', fontFamily: 'monospace', marginTop: '3px' }}>
+                      {activeResult.scientificConclusion.topVsRunnerUp.topTotalRmse.toFixed(3)}
+                      {activeResult.scientificConclusion.topVsRunnerUp.runnerUpTotalRmse !== null
+                        ? ` vs ${activeResult.scientificConclusion.topVsRunnerUp.runnerUpTotalRmse.toFixed(3)}`
+                        : ''}
+                    </div>
+                  </div>
+                  <div style={{ padding: '10px 12px', borderRadius: '8px', background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                      Presisi Bebas-Anchor R_j = σ/|λ|
+                    </div>
+                    <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text)', fontFamily: 'monospace', marginTop: '3px' }}>
+                      {activeResult.scientificConclusion.topVsRunnerUp.topNoiseRatio.toFixed(3)}
+                      {activeResult.scientificConclusion.topVsRunnerUp.runnerUpNoiseRatio !== null
+                        ? ` vs ${activeResult.scientificConclusion.topVsRunnerUp.runnerUpNoiseRatio.toFixed(3)}`
+                        : ''}
+                    </div>
+                  </div>
+                  <div style={{ padding: '10px 12px', borderRadius: '8px', background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                      Peluang Posterior P(Rank=1) &amp; Reliabilitas R²
+                    </div>
+                    <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--success)', fontFamily: 'monospace', marginTop: '3px' }}>
+                      {activeResult.scientificConclusion.topVsRunnerUp.topProbRank1Pct.toFixed(1)}% · R² {activeResult.scientificConclusion.topVsRunnerUp.topReliabilityR2Pct.toFixed(2)}%
+                    </div>
+                  </div>
+                  <div style={{ padding: '10px 12px', borderRadius: '8px', background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                      Uji Pair FE Holm (#1 vs #2) &amp; Lin&apos;s CCC
+                    </div>
+                    <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text)', fontFamily: 'monospace', marginTop: '3px' }}>
+                      {activeResult.scientificConclusion.topVsRunnerUp.holmPValueVsRunnerUp !== null
+                        ? `p=${activeResult.scientificConclusion.topVsRunnerUp.holmPValueVsRunnerUp.toFixed(4)}`
+                        : 'N/A'}
+                      {activeResult.scientificConclusion.topVsRunnerUp.topCcc !== null
+                        ? ` · CCC ${activeResult.scientificConclusion.topVsRunnerUp.topCcc.toFixed(3)}`
+                        : ''}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div style={{ padding: '10px 12px', borderRadius: '6px', background: 'var(--warn-bg)', border: '1px solid var(--border)', fontSize: '12px', color: 'var(--text)' }}>
                 <AlertTriangle size={14} style={{ verticalAlign: 'middle', marginRight: '6px' }} />
                 {activeResult.scientificConclusion.epistemologicalGroundTruthBoundary}
               </div>
+            </div>
+
+            {/* Step-by-Step Multi-Method Justification Cards */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '14.5px', fontWeight: 800, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <CheckCircle2 size={16} color="var(--primary)" />
+                  <span>Rincian Pembuktian Lintas Metode (Step 1–8) hingga Terpilihnya Variabel</span>
+                </h4>
+                <p style={{ margin: '3px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  Setiap metode berikut menguji aspek berbeda (struktur panel, model laten Bayesian, ketergantungan galat, ketahanan anchor, validasi LOSO/Holm/LoA, dan simulasi Monte Carlo) untuk memastikan keputusan tidak bertumpu pada satu metrik tunggal.
+                </p>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '12px' }}>
+                {activeResult.scientificConclusion.whySelectedEvidence.map((ev, idx) => {
+                  const statusBg =
+                    ev.status === 'LULUS'
+                      ? 'var(--success-bg)'
+                      : ev.status === 'CATATAN'
+                        ? 'var(--warn-bg)'
+                        : 'var(--danger-bg)';
+                  const statusColor =
+                    ev.status === 'LULUS'
+                      ? 'var(--success)'
+                      : ev.status === 'CATATAN'
+                        ? 'var(--warn)'
+                        : 'var(--danger)';
+                  return (
+                    <div
+                      key={ev.stageCode}
+                      style={{
+                        padding: '14px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border)',
+                        background: 'var(--surface)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '7px'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                        <div>
+                          <div style={{ fontSize: '12.5px', fontWeight: 800, color: 'var(--text)' }}>
+                            {idx + 1}. {ev.stageLabel}
+                          </div>
+                          <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                            {ev.methodName}
+                          </div>
+                        </div>
+                        <span
+                          style={{
+                            fontSize: '10.5px',
+                            fontWeight: 800,
+                            padding: '3px 8px',
+                            borderRadius: '999px',
+                            background: statusBg,
+                            color: statusColor,
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {ev.status}
+                        </span>
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: '11.5px',
+                          fontFamily: 'monospace',
+                          fontWeight: 700,
+                          padding: '5px 8px',
+                          borderRadius: '6px',
+                          background: 'var(--surface-muted)',
+                          color: 'var(--primary)'
+                        }}
+                      >
+                        {ev.keyMetricBadge}
+                      </div>
+
+                      <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                        <strong style={{ color: 'var(--text)' }}>Hasil Uji:</strong> {ev.finding}
+                      </p>
+
+                      <p style={{ margin: 0, fontSize: '12px', color: 'var(--text)', lineHeight: 1.5 }}>
+                        <strong style={{ color: 'var(--primary)' }}>Kontribusi Keputusan:</strong> {ev.selectionReason}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Key Limitations Box */}
+            <div style={{ padding: '12px 14px', borderRadius: '8px', background: 'var(--surface-muted)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <strong style={{ fontSize: '12.5px', color: 'var(--text)' }}>Keterbatasan Metodologis yang Wajib Dilaporkan:</strong>
+              <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                {activeResult.scientificConclusion.keyLimitations.map((lim, i) => (
+                  <li key={i}>{lim}</li>
+                ))}
+              </ul>
             </div>
 
             {/* Multi-Format Export Buttons */}
@@ -1810,40 +2080,6 @@ export const PanelAdvancedAccuracyTab: React.FC<{
                       : activeResult.companionRScript}
                 </code>
               </pre>
-            </div>
-
-            {/* Verified Literature Table */}
-            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <BookOpen size={16} />
-              <span>Daftar Literatur Ilmiah Peer-Reviewed Terverifikasi ({activeResult.literature.length} Rujukan)</span>
-            </h4>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid var(--border)', textAlign: 'left' }}>
-                    <th style={{ padding: '8px' }}>Penulis &amp; Tahun</th>
-                    <th style={{ padding: '8px' }}>Judul &amp; Jurnal</th>
-                    <th style={{ padding: '8px' }}>DOI</th>
-                    <th style={{ padding: '8px' }}>Peran pada Option 3</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {activeResult.literature.map(lit => (
-                    <tr key={lit.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '8px', fontWeight: 700 }}>{lit.authors} ({lit.year})</td>
-                      <td style={{ padding: '8px' }}>
-                        {lit.title}. <em>{lit.journal}</em>, {lit.volumePages}.
-                      </td>
-                      <td style={{ padding: '8px', fontFamily: 'monospace' }}>
-                        <a href={`https://doi.org/${lit.doi}`} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)' }}>
-                          {lit.doi}
-                        </a>
-                      </td>
-                      <td style={{ padding: '8px', color: 'var(--text-secondary)' }}>{lit.roleInOption3}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           </div>
         )}
