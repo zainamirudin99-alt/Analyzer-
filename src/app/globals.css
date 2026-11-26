@@ -2252,3 +2252,163 @@ table.result-table {
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================================
+   MSMA OPTION 4 — MODERN WEB GUIDANCE SCOPED STYLES (.msma-*)
+   Zero impact on existing Option 1, Option 2, Option 3, or CED styles
+   ============================================================ */
+
+dialog.msma-dialog {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  padding: 0;
+  margin: auto;
+  max-height: min(86vh, 860px);
+  box-shadow: var(--shadow-lg);
+}
+
+dialog.msma-dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog.msma-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.58);
+  backdrop-filter: blur(3px);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.msma-dialog-inner {
+  display: flex;
+  flex-direction: column;
+  max-height: min(86vh, 860px);
+}
+
+.msma-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+}
+
+.msma-dialog-body {
+  padding: 16px 18px 20px;
+  overflow-y: auto;
+}
+
+.msma-table-wrapper {
+  overflow: auto;
+  max-inline-size: 100%;
+  max-block-size: min(540px, 78vh);
+  container-type: inline-size;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.msma-table-wrapper:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.msma-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12.5px;
+}
+
+.msma-table caption {
+  text-align: left;
+  padding: 10px 12px;
+  font-weight: 800;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--surface-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.msma-table thead {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+}
+
+.msma-table thead th {
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-weight: 800;
+  text-align: left;
+  padding: 9px 11px;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+}
+
+.msma-table tbody td,
+.msma-table tbody th {
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text);
+  vertical-align: top;
+}
+
+.msma-table tbody tr:nth-child(even) td,
+.msma-table tbody tr:nth-child(even) th {
+  background: var(--surface-muted);
+}
+
+.msma-tablist {
+  display: flex;
+  overflow-x: auto;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  scroll-snap-type: inline proximity;
+}
+
+.msma-tab-btn {
+  flex: none;
+  position: relative;
+  min-height: 44px;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  scroll-snap-align: start;
+  white-space: nowrap;
+}
+
+.msma-tab-btn[aria-selected="true"] {
+  color: var(--primary);
+}
+
+.msma-tab-btn[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  border-block-end: 3px solid var(--primary);
+}
+
+.msma-layout-grid {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 920px) {
+  .msma-layout-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+

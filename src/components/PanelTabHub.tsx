@@ -1,21 +1,22 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Layers, Activity, ShieldCheck, Sparkles } from 'lucide-react';
+import { Layers, Activity, ShieldCheck, Sparkles, LayoutGrid } from 'lucide-react';
 import { PanelTab } from './PanelTab';
 import { PanelAccuracyTab } from './PanelAccuracyTab';
 import { PanelAdvancedAccuracyTab } from './PanelAdvancedAccuracyTab';
 import { PanelMethodologyComparisonPanel } from './PanelMethodologyComparisonPanel';
+import { MultiSourceAccuracyTab } from '@/features/multi-source-accuracy/components/MultiSourceAccuracyTab';
 
 /**
  * Hub selector inside menu "Regresi Data Panel Stata".
- * Strictly preserves Option 1 (existing Regresi Data Panel) and Option 2 (existing Latent Accuracy)
- * with zero changes, while adding Option 3 (Advanced Latent Measurement Model & Panel Accuracy Validation)
- * and the dedicated Option 2 vs Option 3 Comparative Methodology Evaluator as isolated siblings.
+ * Strictly preserves Option 1 (existing Regresi Data Panel), Option 2 (existing Latent Accuracy),
+ * Option 3 (Advanced Latent Measurement Model), and Comparative Evaluator with zero changes,
+ * while adding Option 4 (Multi-Source Measurement Accuracy Analysis) as a completely isolated sibling.
  */
 export const PanelTabHub: React.FC = () => {
   const [selectedOption, setSelectedOption] = useState<
-    'classic' | 'accuracy' | 'accuracy_v3' | 'compare_2_3'
+    'classic' | 'accuracy' | 'accuracy_v3' | 'compare_2_3' | 'msma'
   >('classic');
 
   return (
@@ -150,6 +151,34 @@ export const PanelTabHub: React.FC = () => {
               Jalankan Opsi 2 secara terpisah, Opsi 3 secara terpisah, atau keduanya sekaligus pada dataset yang sama — membandingkan peringkat, ketidakpastian posterior, sensitivitas anchor, diagnostik, dan rekomendasi metodologi berbasis bukti.
             </span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setSelectedOption('msma')}
+            style={{
+              textAlign: 'left',
+              padding: '14px 16px',
+              borderRadius: 'var(--radius)',
+              border: selectedOption === 'msma' ? '2px solid var(--primary)' : '1px solid var(--border)',
+              background: selectedOption === 'msma' ? 'var(--info-bg)' : 'var(--surface-muted)',
+              cursor: 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '5px',
+              minHeight: '92px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14.5px', fontWeight: 800, color: 'var(--text)' }}>
+              <LayoutGrid size={18} color="var(--primary)" />
+              OPTION 4: MULTI-SOURCE MEASUREMENT ACCURACY ANALYSIS
+            </div>
+            <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--primary)' }}>
+              Statistical Evaluation Without Ground Truth (TCA, N-Cornered Hat, EC &amp; Deming)
+            </span>
+            <span style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+              Evaluasi adaptif 2 s.d. ≥5 sumber pengukuran data panel tanpa Ground Truth: deteksi Contoh A vs Contoh B, Bland-Altman &amp; Deming (2 sumber), Triple Collocation (3 sumber), N-Cornered Hat &amp; Extended Collocation (≥4 sumber), perintah Stata/Mata per step, Undo/Redo, &amp; Generator Artikel Jurnal.
+            </span>
+          </button>
         </div>
       </div>
 
@@ -160,6 +189,7 @@ export const PanelTabHub: React.FC = () => {
         <PanelAdvancedAccuracyTab onOpenComparison={() => setSelectedOption('compare_2_3')} />
       )}
       {selectedOption === 'compare_2_3' && <PanelMethodologyComparisonPanel />}
+      {selectedOption === 'msma' && <MultiSourceAccuracyTab />}
     </div>
   );
 };

@@ -225,3 +225,17 @@ Mengacu pada `docs/superpowers/specs/2026-11-13-regression-upgrade-design.md`:
    - Menjalankan Option 2 (tanpa modifikasi) dan Option 3 (mandiri) pada `PanelDataset` mentah yang identik, menyusun matriks perbandingan 19 dimensi, atribusi perbedaan ranking, 10 diagnostik komparatif, dan 6 kategori kesimpulan ilmiah.
 3. **API & Antarmuka Pengguna (`src/app/api/panel-adv-accuracy/fit/route.ts`, `src/components/`)**:
    - `PanelAdvancedAccuracyCharts.tsx`, `PanelAdvancedAccuracyTab.tsx` (9 Step penuh), `PanelMethodologyComparisonPanel.tsx`, serta integrasi pemilih 4 mode (`Option 1`, `Option 2`, `Option 3`, `Komparasi Opsi 2 vs Opsi 3`) pada `PanelTabHub.tsx`.
+
+---
+
+## 15. Arsitektur Tahap 17: Pengembangan Terisolasi Option 4 (`Multi-Source Measurement Accuracy Analysis`)
+
+Mengacu pada `docs/superpowers/specs/2026-11-26-multi-source-measurement-accuracy-design.md`:
+1. **Isolasi Modul Fitur (`src/features/multi-source-accuracy/`)**:
+   - `types/index.ts`, `utils/numerical.ts`, `utils/bibliography.ts` (18 literatur Crossref terverifikasi & glosarium Bahasa Indonesia).
+   - `engine/`: `data-validation.ts`, `panel-detection.ts`, `measurement-classification.ts` (Contoh A vs Contoh B), `descriptive-statistics.ts`, `decision-engine.ts` (`selectMeasurementMethod`), `bland-altman-deming.ts` ($J=2$), `triple-collocation.ts` ($J=3$ TCA/ETC), `n-cornered-hat-ec.ts` ($J \ge 4$ NCH & Extended Collocation), `diagnostics.ts`, `transformation.ts`, `uncertainty-robustness.ts` (Entity-Cluster Bootstrap & 8 skenario sensitivitas), `stata-code-generator.ts` (Stata 17/18 + Mata asli), dan `report-generator.ts` (14-bagian generator artikel jurnal).
+   - `services/export-service.ts`, `hooks/use-msma-history.ts` (snapshot Undo/Redo/Restore/Audit Trail), dan `components/` (`MultiSourceAccuracyTab.tsx`, `MsmaCharts.tsx`, `MsmaModals.tsx`).
+2. **Endpoint Server Terisolasi (`src/app/api/msma/`)**:
+   - `export/route.ts` (PDF A4 bergaya jurnal, DOCX kompatibel Google Docs, XLSX multi-sheet aman formula, Stata `.do`) dan `ai-interpret/route.ts` (opsional penyempurnaan narasi berbasis hasil numerik tervalidasi).
+3. **Integrasi Tanpa Regresi (`src/components/PanelTabHub.tsx`)**:
+   - Penambahan kartu pemilih mandiri `msma` tanpa menyentuh state, komponen, atau algoritma Option 1, Option 2, maupun Option 3.
