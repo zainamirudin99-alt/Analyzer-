@@ -21,6 +21,10 @@ import {
   MSMA_GLOSSARY_ITEMS,
   MSMA_VERIFIED_BIBLIOGRAPHY
 } from '../../src/features/multi-source-accuracy/utils/bibliography';
+import {
+  isGoogleSheetsUrlCandidate,
+  parseMsmaGoogleSheetsUrl
+} from '../../src/features/multi-source-accuracy/utils/gsheet-url';
 import { createSeededRng, randomStandardNormal, sanitizeCellText } from '../../src/features/multi-source-accuracy/utils/numerical';
 
 function makeDefaultConfigFromPreset(
@@ -285,5 +289,50 @@ describe('MSMA Option 4 — Statistical Engine & Synthetic Benchmarks (Section Q
     const xlsxBuf = generateMsmaExcelBuffer(fullA, fullA.journalDefault, wbA.fileName);
     expect(xlsxBuf[0]).toBe(0x50);
     expect(xlsxBuf[1]).toBe(0x4b);
+  });
+
+  it('Multi-sheet Google Sheets URL parser preserves full workbook export (strips gid) & blocks SSRF', () => {
+    const shareLink =
+      'https://docs.google.com/spreadsheets/d/1J2qyaIQn4zFBc_4oy5KYxTkien0xyskhRg_h-44IhYA/edit?usp=sharing#gid=987654';
+    const parsed = parseMsmaGoogleSheetsUrl(shareLink);
+    expect(parsed.isValid).toBe(true);
+    expect(parsed.spreadsheetId).toBe('1J2qyaIQn4zFBc_4oy5KYxTkien0xyskhRg_h-44IhYA');
+    expect(parsed.detectedGid).toBe('987654');
+    // Must NOT append &gid= so Google returns ALL worksheets for manual sheet selection
+    expect(parsed.multiSheetExportUrl).toBe(
+      'https://docs.google.com/spreadsheets/d/1J2qyaIQn4zFBc_4oy5KYxTkien0xyskhRg_h-44IhYA/export?format=xlsx'
+    );
+    expect(isGoogleSheetsUrlCandidate(shareLink)).toBe(true);
+    expect(isGoogleSheetsUrlCandidate('Kota,Tahun,S1\nJakarta,2020,100')).toBe(false);
+
+    // SSRF & protocol guards (Invariant I8)
+    expect(parseMsmaGoogleSheetsUrl('http://docs.google.com/spreadsheets/d/1234567890ab/edit').isValid).toBe(false);
+    expect(parseMsmaGoogleSheetsUrl('https://127.0.0.1/spreadsheets/d/1234567890ab/edit').isValid).toBe(false);
+    expect(parseMsmaGoogleSheetsUrl('https://evil.example.com/spreadsheets/d/1234567890ab/edit').isValid).toBe(false);
+    expect(parseMsmaGoogleSheetsUrl('https://docs.google.com:8443/spreadsheets/d/1234567890ab/edit').isValid).toBe(false);
+
+    // Multi-sheet workbook preserves distinct sheets with zero automatic merging
+    const sheet1 = buildRawSheetFromMatrix(
+      'Ringkasan',
+      [
+        ['Judul', 'Nilai'],
+        ['Catatan', 'Cover']
+      ],
+      0
+    );
+    const sheet2 = buildRawSheetFromMatrix(
+      'Panel_CO2_2020_2025',
+      [
+        ['Kota', 'Tahun', 'Pemkot', 'Satelit', 'Sensor'],
+        ['Jakarta', 2020, 1200, 1240, 1215],
+        ['Jakarta', 2021, 1260, 1295, 1272]
+      ],
+      0
+    );
+    const wbMulti = validateWorkbookForMsma('Google_Sheets_Multi.xlsx', 4096, 'google_sheets', [sheet1, sheet2], 'Panel_CO2_2020_2025');
+    expect(wbMulti.sheets.length).toBe(2);
+    expect(wbMulti.activeSheetName).toBe('Panel_CO2_2020_2025');
+    expect(wbMulti.sheets[0].rowCount).toBe(1);
+    expect(wbMulti.sheets[1].rowCount).toBe(2);
   });
 });

@@ -3,12 +3,16 @@
 import React, { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
+  AlertCircle,
   ArrowLeft,
   ArrowRight,
   BookOpen,
+  CheckCircle2,
   Clock,
   Database,
+  FileSpreadsheet,
   Info,
+  Link2,
   Play,
   Plus,
   RefreshCw,
@@ -39,6 +43,10 @@ import {
   MsmaTransformationId,
   MsmaUploadedWorkbook
 } from '../types';
+import {
+  isGoogleSheetsUrlCandidate,
+  parseMsmaGoogleSheetsUrl
+} from '../utils/gsheet-url';
 import { fmtAdaptive } from '../utils/numerical';
 import {
   MsmaBlandAltmanChart,
@@ -122,12 +130,16 @@ export const MultiSourceAccuracyTab: React.FC = () => {
 
   // Step 1 upload helpers
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const gsheetInputRef = useRef<HTMLInputElement | null>(null);
+  const [importMode, setImportMode] = useState<'upload' | 'gsheet' | 'paste'>('upload');
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [sheetStatusNotice, setSheetStatusNotice] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [gsheetUrl, setGsheetUrl] = useState('');
+  const [gsheetTouched, setGsheetTouched] = useState(false);
+  const [gsheetFieldError, setGsheetFieldError] = useState<string | null>(null);
   const [gsheetBusy, setGsheetBusy] = useState(false);
   const [pasteText, setPasteText] = useState('');
-  const [showPasteBox, setShowPasteBox] = useState(false);
 
   const initialSnapshot: MsmaConfigurableSnapshot = useMemo(
     () => ({
@@ -280,20 +292,34 @@ export const MultiSourceAccuracyTab: React.FC = () => {
           },
           file.name
         );
+        setSheetStatusNotice(
+          validated.sheets.length > 1
+            ? `Berhasil memuat ${validated.sheets.length} worksheet dari "${file.name}". Sheet aktif: "${activeSheet.sheetName}" (${activeSheet.rowCount} baris × ${activeSheet.columnCount} kolom). Pilih sheet lain di bawah jika diperlukan.`
+            : `Berhasil memuat berkas "${file.name}" — 1 worksheet aktif: "${activeSheet.sheetName}" (${activeSheet.rowCount} baris × ${activeSheet.columnCount} kolom).`
+        );
       }
     } catch (err: unknown) {
       setUploadError(err instanceof Error ? err.message : 'Gagal membaca struktur berkas unggahan.');
     }
   };
 
-  // Optional Google Sheets public export import via existing SSRF-guarded endpoint
-  const handleImportGoogleSheet = async () => {
-    const trimmed = gsheetUrl.trim();
-    if (!trimmed) return;
+  // Multi-sheet Google Sheets public XLSX importer via isolated SSRF-guarded /api/msma/import-link
+  const handleImportGoogleSheet = async (overrideUrl?: string) => {
+    const trimmed = (overrideUrl ?? gsheetUrl).trim();
+    setGsheetTouched(true);
+    const urlCheck = parseMsmaGoogleSheetsUrl(trimmed);
+    if (!urlCheck.isValid) {
+      setGsheetFieldError(urlCheck.error || 'Tautan Google Sheets tidak valid.');
+      gsheetInputRef.current?.focus();
+      return;
+    }
+
+    setGsheetFieldError(null);
     try {
       setGsheetBusy(true);
       setUploadError(null);
-      const res = await fetch('/api/regression/import-link', {
+      setSheetStatusNotice(null);
+      const res = await fetch('/api/msma/import-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: trimmed })
@@ -302,7 +328,7 @@ export const MultiSourceAccuracyTab: React.FC = () => {
       if (!res.ok || !json.success || !json.data?.fileBase64) {
         throw new Error(
           json.error ||
-            'Tautan Google Sheets tidak dapat diakses publik. Karena OAuth Google pribadi belum diaktifkan, silakan ekspor sheet ke .xlsx / .csv lalu unggah pada kotak di atas.'
+            'Tautan Google Sheets tidak dapat diakses publik. Pastikan pengaturan berbagi diubah ke "Anyone with the link (Viewer)" atau unduh berkas sebagai .xlsx lalu unggah pada tab Excel.'
         );
       }
       const binStr = window.atob(json.data.fileBase64);
@@ -321,6 +347,7 @@ export const MultiSourceAccuracyTab: React.FC = () => {
         rawSheets
       );
       setWorkbook(validated);
+      setJournalOverrides({});
       if (validated.isValid) {
         const activeSheet =
           validated.sheets.find(s => s.sheetName === validated.activeSheetName) ?? validated.sheets[0];
@@ -332,16 +359,29 @@ export const MultiSourceAccuracyTab: React.FC = () => {
           '';
         reinitializeWithWorkbook(
           {
-            ...config,
             activeSheetName: activeSheet.sheetName,
             headerRowIndex: 0,
             entityColumn: entCol,
             timeColumn: timeCol,
             sources: autoSuggestMeasurementSources(profiles, entCol, timeCol),
             classificationOverride: null,
-            userConfirmedClassification: false
+            userConfirmedClassification: false,
+            activeTransformation: 'NONE',
+            rejectedTransformations: [],
+            dropDuplicates: false,
+            outlierHandling: 'KEEP_ALL',
+            missingHandling: 'COMPLETE_CASE',
+            preferredMethodOverride: null,
+            demingLambdaRatio: 1,
+            demingLambdaExternalKnown: false,
+            bootstrapReplications: 250
           },
           validated.fileName
+        );
+        setSheetStatusNotice(
+          validated.sheets.length > 1
+            ? `Berhasil mengimpor ${validated.sheets.length} worksheet dari Google Sheets! Sheet aktif: "${activeSheet.sheetName}" (${activeSheet.rowCount} baris × ${activeSheet.columnCount} kolom). Pilih nomor/nama sheet lain pada panel Pilihan Worksheet di bawah.`
+            : `Berhasil mengimpor Google Sheets — 1 worksheet ditemukan: "${activeSheet.sheetName}" (${activeSheet.rowCount} baris × ${activeSheet.columnCount} kolom).`
         );
       }
     } catch (err: unknown) {
@@ -366,6 +406,7 @@ export const MultiSourceAccuracyTab: React.FC = () => {
     setWorkbook(validated);
     const targetSheet =
       validated.sheets.find(s => s.sheetName === sheetName) ?? validated.sheets[0];
+    const targetIdx = validated.sheets.findIndex(s => s.sheetName === targetSheet.sheetName);
     const profiles = profileSheetColumns(targetSheet);
     const entCol = profiles.find(p => p.suggestedRole === 'entity_id')?.columnName ?? targetSheet.columns[0] ?? '';
     const timeCol =
@@ -387,6 +428,9 @@ export const MultiSourceAccuracyTab: React.FC = () => {
       1,
       'Ubah Sheet / Baris Header',
       `Sheet aktif: "${sheetName}" (baris header ke-${headerIdx + 1}).`
+    );
+    setSheetStatusNotice(
+      `Sheet aktif beralih ke Sheet ${targetIdx + 1}: "${targetSheet.sheetName}" (${targetSheet.rowCount} baris × ${targetSheet.columnCount} kolom, header baris ke-${headerIdx + 1}).`
     );
   };
 
@@ -731,7 +775,7 @@ export const MultiSourceAccuracyTab: React.FC = () => {
           )}
 
           {/* =========================================================
-              STEP 1: DATA UPLOAD, WORKSHEET & HEADER SELECTION, PREVIEW >= 20 ROWS
+              STEP 1: DATA UPLOAD, GOOGLE SHEETS MULTI-SHEET IMPORT, WORKSHEET & HEADER SELECTION
               ========================================================= */}
           {currentStep === 1 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -748,167 +792,374 @@ export const MultiSourceAccuracyTab: React.FC = () => {
                   }}
                 />
 
-                {/* Drag and drop zone */}
+                {/* First-Class 3-Mode Source Importer Tablist */}
+                <div role="tablist" aria-label="Pilih metode sumber data Step 1" className="msma-tablist">
+                  {(
+                    [
+                      { id: 'upload', label: 'Unggah Excel / CSV', icon: UploadCloud },
+                      { id: 'gsheet', label: 'Link Google Sheets (Multi-Sheet)', icon: Link2 },
+                      { id: 'paste', label: 'Tempel Teks CSV / Tabel', icon: FileSpreadsheet }
+                    ] as const
+                  ).map(tab => {
+                    const Icon = tab.icon;
+                    return (
+                      <button
+                        key={tab.id}
+                        id={`msma-step1-tab-${tab.id}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={importMode === tab.id}
+                        className="msma-tab-btn"
+                        onClick={() => {
+                          setImportMode(tab.id);
+                          setUploadError(null);
+                        }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}
+                      >
+                        <Icon size={15} aria-hidden="true" />
+                        <span>{tab.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Tab Panel 1: Excel / CSV File Upload */}
                 <div
-                  onDragOver={e => {
-                    e.preventDefault();
-                    setDragActive(true);
-                  }}
-                  onDragLeave={() => setDragActive(false)}
-                  onDrop={e => {
-                    e.preventDefault();
-                    setDragActive(false);
-                    const f = e.dataTransfer.files?.[0];
-                    if (f) handleUploadedFile(f);
-                  }}
-                  style={{
-                    padding: '24px 18px',
-                    borderRadius: '12px',
-                    border: dragActive ? '2px dashed var(--primary)' : '2px dashed var(--border)',
-                    background: dragActive ? 'var(--info-bg)' : 'var(--surface-muted)',
-                    textAlign: 'center',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '8px'
-                  }}
+                  role="tabpanel"
+                  aria-labelledby="msma-step1-tab-upload"
+                  hidden={importMode !== 'upload'}
                 >
-                  <UploadCloud size={28} color="var(--primary)" />
-                  <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text)' }}>
-                    Tarik &amp; Lepas Berkas Excel (<code>.xlsx</code>, <code>.xls</code>) atau <code>.csv</code> di Sini
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                    Maksimal 10 MB · Mendukung pemilihan worksheet dan baris header secara manual tanpa menggabungkan sheet otomatis.
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      onClick={() => fileInputRef.current?.click()}
-                      style={{ minHeight: '44px', padding: '8px 16px', fontSize: '13px' }}
-                    >
-                      Browse / Ganti File
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-outline"
-                      onClick={() => setShowPasteBox(v => !v)}
-                      style={{ minHeight: '44px', padding: '8px 14px', fontSize: '13px' }}
-                    >
-                      {showPasteBox ? 'Tutup Input CSV/Tabel' : 'Tempel Teks CSV / Spreadsheet'}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-outline"
-                      onClick={() => handleSelectPreset('CONTOH_A_CO2_3SRC')}
-                      style={{ minHeight: '44px', padding: '8px 14px', fontSize: '13px' }}
-                    >
-                      Reset Upload ke Contoh CO₂
-                    </button>
+                  <div
+                    onDragOver={e => {
+                      e.preventDefault();
+                      setDragActive(true);
+                    }}
+                    onDragLeave={() => setDragActive(false)}
+                    onDrop={e => {
+                      e.preventDefault();
+                      setDragActive(false);
+                      const f = e.dataTransfer.files?.[0];
+                      if (f) handleUploadedFile(f);
+                    }}
+                    style={{
+                      padding: '24px 18px',
+                      borderRadius: '12px',
+                      border: dragActive ? '2px dashed var(--primary)' : '2px dashed var(--border)',
+                      background: dragActive ? 'var(--info-bg)' : 'var(--surface-muted)',
+                      textAlign: 'center',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    <UploadCloud size={28} color="var(--primary)" aria-hidden="true" />
+                    <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text)' }}>
+                      Tarik &amp; Lepas Berkas Excel (<code>.xlsx</code>, <code>.xls</code>) atau <code>.csv</code> di Sini
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      Maksimal 10 MB · Seluruh worksheet dalam workbook akan terbaca agar Anda bisa memilih sheet dan baris header secara manual.
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center', marginTop: '4px' }}>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => fileInputRef.current?.click()}
+                        style={{ minHeight: '44px', padding: '8px 16px', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <UploadCloud size={15} aria-hidden="true" />
+                        <span>Browse / Ganti File</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() => setImportMode('gsheet')}
+                        style={{ minHeight: '44px', padding: '8px 14px', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <Link2 size={15} aria-hidden="true" />
+                        <span>Ambil dari Link Google Sheets</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() => {
+                          setSheetStatusNotice(null);
+                          handleSelectPreset('CONTOH_A_CO2_3SRC');
+                        }}
+                        style={{ minHeight: '44px', padding: '8px 14px', fontSize: '13px' }}
+                      >
+                        Reset ke Contoh CO₂
+                      </button>
+                    </div>
                   </div>
                 </div>
 
-                {showPasteBox && (
+                {/* Tab Panel 2: Google Sheets Multi-Sheet Link Importer */}
+                <div
+                  role="tabpanel"
+                  aria-labelledby="msma-step1-tab-gsheet"
+                  hidden={importMode !== 'gsheet'}
+                >
+                  <form
+                    method="POST"
+                    noValidate
+                    onSubmit={e => {
+                      e.preventDefault();
+                      handleImportGoogleSheet();
+                    }}
+                    style={{
+                      padding: '16px 18px',
+                      borderRadius: '12px',
+                      background: 'var(--surface-muted)',
+                      border: '1px solid var(--border)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label htmlFor="msma-gsheet-url" style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--text)' }}>
+                        Tautan Google Sheets Publik (Semua Sheet Otomatis Terdeteksi){' '}
+                        <span aria-hidden="true" style={{ color: 'var(--danger)' }}>*</span>
+                      </label>
+                      <span id="msma-gsheet-hint" style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                        Tempel link lengkap (contoh: <code>https://docs.google.com/spreadsheets/d/ID/edit?usp=sharing</code>). Pastikan izin berbagi disetel ke <strong>Anyone with the link (Viewer)</strong>. Sistem mengunduh seluruh workbook (<code>.xlsx</code>) sehingga Anda bebas memilih sheet mana pun pada panel di bawah.
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'stretch' }}>
+                      <div style={{ flex: 1, minWidth: '240px' }}>
+                        <input
+                          ref={gsheetInputRef}
+                          id="msma-gsheet-url"
+                          name="gsheetUrl"
+                          type="url"
+                          required
+                          autoCorrect="off"
+                          autoCapitalize="none"
+                          spellCheck={false}
+                          enterKeyHint="go"
+                          className="msma-input"
+                          value={gsheetUrl}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setGsheetUrl(val);
+                            if (gsheetFieldError) {
+                              const recheck = parseMsmaGoogleSheetsUrl(val);
+                              if (recheck.isValid) setGsheetFieldError(null);
+                            }
+                          }}
+                          onBlur={() => {
+                            if (gsheetUrl.trim().length > 0) {
+                              setGsheetTouched(true);
+                              const check = parseMsmaGoogleSheetsUrl(gsheetUrl);
+                              setGsheetFieldError(check.isValid ? null : check.error || 'Tautan tidak valid.');
+                            }
+                          }}
+                          aria-invalid={gsheetTouched && Boolean(gsheetFieldError) ? 'true' : 'false'}
+                          aria-describedby={
+                            gsheetTouched && gsheetFieldError
+                              ? 'msma-gsheet-hint msma-gsheet-error'
+                              : 'msma-gsheet-hint'
+                          }
+                          placeholder="https://docs.google.com/spreadsheets/d/.../edit?usp=sharing"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        className="btn btn-primary"
+                        disabled={gsheetBusy}
+                        style={{ minHeight: '48px', padding: '10px 18px', fontSize: '13px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <Link2 size={15} aria-hidden="true" />
+                        <span>{gsheetBusy ? 'Mengunduh Semua Sheet...' : 'Impor & Baca Semua Sheet'}</span>
+                      </button>
+                    </div>
+
+                    {gsheetTouched && gsheetFieldError && (
+                      <div
+                        id="msma-gsheet-error"
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--danger)', fontSize: '12.5px', fontWeight: 700 }}
+                      >
+                        <AlertCircle size={15} aria-hidden="true" />
+                        <span>Error: {gsheetFieldError}</span>
+                      </div>
+                    )}
+                  </form>
+                </div>
+
+                {/* Tab Panel 3: Direct Tabular CSV / TSV Paste (with smart Google Sheets URL auto-routing) */}
+                <div
+                  role="tabpanel"
+                  aria-labelledby="msma-step1-tab-paste"
+                  hidden={importMode !== 'paste'}
+                >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label htmlFor="msma-paste-csv" style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text)' }}>
+                      Tempel Baris Data CSV / Tab-Separated (bukan tautan URL)
+                    </label>
+                    <span id="msma-paste-hint" style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      Salin langsung sel tabel (baris 1 = nama kolom, baris berikutnya = data panel). Jika Anda menempel link Google Sheets di sini, sistem otomatis mengalihkannya ke tab Link Google Sheets.
+                    </span>
                     <textarea
+                      id="msma-paste-csv"
                       rows={5}
-                      aria-label="Tempel teks CSV atau tabel"
+                      aria-describedby="msma-paste-hint"
+                      className="msma-input"
                       value={pasteText}
                       onChange={e => setPasteText(e.target.value)}
-                      placeholder="Kota,Tahun,Emisi_Pemkot,Emisi_Satelit,Emisi_Sensor..."
-                      style={{ width: '100%', padding: '10px', fontSize: '16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
+                      placeholder="Kota,Tahun,Emisi_Pemkot,Emisi_Satelit,Emisi_Sensor&#10;Jakarta,2020,1240,1295,1270"
+                      style={{ fontFamily: 'monospace' }}
                     />
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      onClick={() => {
-                        const sh = parseDelimitedTextToSheet(pasteText, 'Pasted_Sheet');
-                        const val = validateWorkbookForMsma('Tempel_Data_Panel.csv', pasteText.length, 'paste', [sh]);
-                        setWorkbook(val);
-                        if (val.isValid) {
-                          const profs = profileSheetColumns(sh);
-                          const ent = profs.find(p => p.suggestedRole === 'entity_id')?.columnName ?? sh.columns[0] ?? '';
-                          const tm = profs.find(p => p.suggestedRole === 'time_id' && p.columnName !== ent)?.columnName ?? sh.columns[1] ?? '';
-                          reinitializeWithWorkbook(
-                            {
-                              ...config,
-                              activeSheetName: sh.sheetName,
-                              headerRowIndex: 0,
-                              entityColumn: ent,
-                              timeColumn: tm,
-                              sources: autoSuggestMeasurementSources(profs, ent, tm)
-                            },
-                            val.fileName
-                          );
-                          setShowPasteBox(false);
-                        }
-                      }}
-                      style={{ minHeight: '44px', alignSelf: 'flex-start', padding: '8px 16px' }}
-                    >
-                      Muat Data Tempel
-                    </button>
-                  </div>
-                )}
-
-                {/* Honest Google Sheets public export importer + XLSX/CSV fallback note */}
-                <div style={{ padding: '12px 14px', borderRadius: '10px', background: 'var(--surface-muted)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                    <strong>Impor Google Sheets (Tautan Publik Ekspor XLSX):</strong> Integrasi Google OAuth privat belum diaktifkan pada lingkungan ini; hanya spreadsheet yang dibagikan publik (&ldquo;Anyone with the link&rdquo;) yang dapat diunduh melalui pengaman anti-SSRF. Untuk spreadsheet privat, unduh sebagai <code>.xlsx</code> atau <code>.csv</code> lalu unggah di atas.
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <input
-                      type="url"
-                      value={gsheetUrl}
-                      onChange={e => setGsheetUrl(e.target.value)}
-                      placeholder="https://docs.google.com/spreadsheets/d/..."
-                      aria-label="URL Google Sheets publik"
-                      style={{ flex: 1, minWidth: '240px', minHeight: '44px', padding: '8px 12px', fontSize: '16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-outline"
-                      disabled={gsheetBusy || !gsheetUrl.trim()}
-                      onClick={handleImportGoogleSheet}
-                      style={{ minHeight: '44px', padding: '8px 16px' }}
-                    >
-                      {gsheetBusy ? 'Mengunduh...' : 'Impor Spreadsheet Publik'}
-                    </button>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        disabled={gsheetBusy}
+                        onClick={() => {
+                          const trimmed = pasteText.trim();
+                          if (isGoogleSheetsUrlCandidate(trimmed)) {
+                            setImportMode('gsheet');
+                            setGsheetUrl(trimmed);
+                            setPasteText('');
+                            handleImportGoogleSheet(trimmed);
+                            return;
+                          }
+                          setUploadError(null);
+                          const sh = parseDelimitedTextToSheet(pasteText, 'Pasted_Sheet');
+                          const val = validateWorkbookForMsma('Tempel_Data_Panel.csv', pasteText.length, 'paste', [sh]);
+                          setWorkbook(val);
+                          setJournalOverrides({});
+                          if (val.isValid) {
+                            const profs = profileSheetColumns(sh);
+                            const ent = profs.find(p => p.suggestedRole === 'entity_id')?.columnName ?? sh.columns[0] ?? '';
+                            const tm = profs.find(p => p.suggestedRole === 'time_id' && p.columnName !== ent)?.columnName ?? sh.columns[1] ?? '';
+                            reinitializeWithWorkbook(
+                              {
+                                activeSheetName: sh.sheetName,
+                                headerRowIndex: 0,
+                                entityColumn: ent,
+                                timeColumn: tm,
+                                sources: autoSuggestMeasurementSources(profs, ent, tm),
+                                classificationOverride: null,
+                                userConfirmedClassification: false,
+                                activeTransformation: 'NONE',
+                                rejectedTransformations: [],
+                                dropDuplicates: false,
+                                outlierHandling: 'KEEP_ALL',
+                                missingHandling: 'COMPLETE_CASE',
+                                preferredMethodOverride: null,
+                                demingLambdaRatio: 1,
+                                demingLambdaExternalKnown: false,
+                                bootstrapReplications: 250
+                              },
+                              val.fileName
+                            );
+                            setSheetStatusNotice(
+                              `Data tempel berhasil dimuat: ${sh.rowCount} baris × ${sh.columnCount} kolom.`
+                            );
+                          }
+                        }}
+                        style={{ minHeight: '44px', padding: '8px 16px' }}
+                      >
+                        Muat Data Tempel
+                      </button>
+                    </div>
                   </div>
                 </div>
 
                 {uploadError && (
-                  <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', color: 'var(--danger)', fontSize: '12.5px', fontWeight: 700 }}>
-                    {uploadError}
+                  <div
+                    role="alert"
+                    style={{ padding: '10px 14px', borderRadius: '8px', background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', color: 'var(--danger)', fontSize: '12.5px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}
+                  >
+                    <AlertCircle size={16} aria-hidden="true" />
+                    <span>{uploadError}</span>
                   </div>
                 )}
 
-                {/* File summary, Sheet Selector & Header Row Selector */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '10px' }}>
+                {sheetStatusNotice && (
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    style={{ padding: '10px 14px', borderRadius: '8px', background: 'var(--success-bg)', border: '1px solid var(--success-border)', color: 'var(--text)', fontSize: '12.5px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}
+                  >
+                    <CheckCircle2 size={16} color="var(--success)" aria-hidden="true" />
+                    <span>{sheetStatusNotice}</span>
+                  </div>
+                )}
+
+                {/* Prominent Multi-Sheet Selector (Visible Radio Cards for 2-5 sheets + Select Dropdown for 6+ / quick jump) */}
+                {workbook.sheets.length >= 2 && workbook.sheets.length <= 5 && (
+                  <fieldset className="msma-sheet-fieldset">
+                    <legend>
+                      Pilih Worksheet Aktif ({workbook.sheets.length} Sheet Terdeteksi pada{' '}
+                      {workbook.sourceKind === 'google_sheets' ? 'Google Sheets' : workbook.fileName})
+                    </legend>
+                    <div className="msma-sheet-grid">
+                      {workbook.sheets.map((sh, idx) => {
+                        const isSelected = sh.sheetName === config.activeSheetName;
+                        const radioId = `msma-sheet-radio-${idx}`;
+                        return (
+                          <label
+                            key={sh.sheetName}
+                            htmlFor={radioId}
+                            className="msma-sheet-option"
+                            data-selected={isSelected ? 'true' : 'false'}
+                          >
+                            <input
+                              id={radioId}
+                              type="radio"
+                              name="msma-active-sheet"
+                              value={sh.sheetName}
+                              checked={isSelected}
+                              onChange={() => handleChangeSheetOrHeader(sh.sheetName, config.headerRowIndex)}
+                            />
+                            <span style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              <strong style={{ fontSize: '12.5px', color: 'var(--text)' }}>
+                                Sheet {idx + 1}: {sh.sheetName}
+                              </strong>
+                              <span style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>
+                                {sh.rowCount} baris × {sh.columnCount} kolom
+                                {isSelected ? ' · Aktif' : ''}
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+                )}
+
+                {/* File Summary, Dropdown Sheet Selector (always usable for 1 or 6+ sheets) & Header Row Selector */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(195px, 1fr))', gap: '10px' }}>
                   <div style={{ padding: '10px 12px', borderRadius: '8px', background: 'var(--surface-muted)', border: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Nama &amp; Ukuran Berkas</div>
-                    <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Sumber &amp; Nama Berkas ({workbook.sourceKind === 'google_sheets' ? 'Google Sheets' : workbook.sourceKind === 'upload' ? 'Excel/CSV' : workbook.sourceKind === 'paste' ? 'Tempel CSV' : 'Preset'})
+                    </div>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text)', overflowWrap: 'anywhere' }}>
                       {workbook.fileName} ({(workbook.fileSizeBytes / 1024).toFixed(1)} KB)
                     </div>
                   </div>
                   <div style={{ padding: '10px 12px', borderRadius: '8px', background: 'var(--surface-muted)', border: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Jumlah Worksheet &amp; Dimensi</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Jumlah Worksheet &amp; Dimensi Aktif</div>
                     <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text)' }}>
                       {workbook.sheets.length} Sheet · {activeSheet?.rowCount ?? 0} Baris × {activeSheet?.columnCount ?? 0} Kolom
                     </div>
                   </div>
                   <div>
                     <label htmlFor="msma-sheet-select" style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                      Ganti Worksheet Aktif:
+                      Pilih Sheet ({workbook.sheets.length} Tersedia):
                     </label>
                     <select
                       id="msma-sheet-select"
+                      className="msma-input"
                       value={config.activeSheetName}
                       onChange={e => handleChangeSheetOrHeader(e.target.value, config.headerRowIndex)}
-                      style={{ width: '100%', minHeight: '44px', padding: '8px 10px', fontSize: '16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
                     >
-                      {workbook.sheets.map(sh => (
+                      {workbook.sheets.map((sh, idx) => (
                         <option key={sh.sheetName} value={sh.sheetName}>
-                          {sh.sheetName} ({sh.rowCount} baris × {sh.columnCount} kolom)
+                          Sheet {idx + 1}: {sh.sheetName} ({sh.rowCount} baris × {sh.columnCount} kolom)
                         </option>
                       ))}
                     </select>
@@ -919,9 +1170,9 @@ export const MultiSourceAccuracyTab: React.FC = () => {
                     </label>
                     <select
                       id="msma-header-row"
+                      className="msma-input"
                       value={config.headerRowIndex}
                       onChange={e => handleChangeSheetOrHeader(config.activeSheetName, Number(e.target.value))}
-                      style={{ width: '100%', minHeight: '44px', padding: '8px 10px', fontSize: '16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
                     >
                       {[0, 1, 2, 3, 4].map(rIdx => (
                         <option key={rIdx} value={rIdx}>

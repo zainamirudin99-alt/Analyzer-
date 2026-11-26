@@ -2412,3 +2412,87 @@ dialog.msma-dialog::backdrop {
   }
 }
 
+.msma-input {
+  font: inherit;
+  font-size: max(1rem, 1em);
+  min-height: 48px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  box-sizing: border-box;
+  width: 100%;
+}
+
+@media (pointer: coarse) {
+  .msma-input {
+    min-height: 52px;
+  }
+}
+
+.msma-input:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+}
+
+:is(.msma-input:user-invalid, .msma-input[aria-invalid="true"]) {
+  border-color: var(--danger);
+  background-color: var(--danger-bg);
+}
+
+.msma-input:user-valid {
+  border-color: var(--success);
+}
+
+.msma-sheet-fieldset {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--primary);
+  background: var(--surface-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.msma-sheet-fieldset legend {
+  padding: 0 6px;
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--primary);
+}
+
+.msma-sheet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+}
+
+.msma-sheet-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 48px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.msma-sheet-option[data-selected="true"] {
+  border: 2px solid var(--primary);
+  background: var(--info-bg);
+}
+
+.msma-sheet-option input[type="radio"] {
+  accent-color: var(--primary);
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+
