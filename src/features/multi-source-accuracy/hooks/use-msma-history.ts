@@ -170,6 +170,7 @@ export function useMsmaHistory(initialConfig: MsmaConfigurableSnapshot) {
         next.demingLambdaRatio = 1;
         next.demingLambdaExternalKnown = false;
         next.bootstrapReplications = base.bootstrapReplications;
+        next.bootstrapSeed = base.bootstrapSeed ?? 20261126;
       }
 
       const entry: MsmaAuditTrailEntry = {

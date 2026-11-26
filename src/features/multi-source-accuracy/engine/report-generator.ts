@@ -83,6 +83,10 @@ export function runFullMsmaPipeline(
 
   const J = config.sources.length;
   const ncc = descriptives.nCompleteCasesAllSources;
+  const activeBootstrapSeed = Math.max(
+    1,
+    Math.floor(Math.abs(config.bootstrapSeed ?? 20261126))
+  );
 
   // Pre-probe estimation to feed empirical identifiability / error correlation facts into selectMeasurementMethod()
   let prelimTca: ReturnType<typeof runTripleCollocationEngine> | null = null;
@@ -93,7 +97,8 @@ export function runFullMsmaPipeline(
       workingObservations,
       [config.sources[0], config.sources[1], config.sources[2]],
       classification.propagatedConversionVarianceBySource,
-      config.bootstrapReplications
+      config.bootstrapReplications,
+      activeBootstrapSeed
     );
   } else if (classification.allowsJointCollocationRanking && J >= 4 && ncc >= 8) {
     const prefEst =
@@ -107,7 +112,8 @@ export function runFullMsmaPipeline(
       config.sources,
       classification.propagatedConversionVarianceBySource,
       prefEst,
-      config.bootstrapReplications
+      config.bootstrapReplications,
+      activeBootstrapSeed
     );
   }
 
@@ -208,11 +214,23 @@ export function runFullMsmaPipeline(
       ? config.preferredMethodOverride
       : decision.recommendedMethod;
 
+  const clampedB = Math.max(100, Math.min(2000, config.bootstrapReplications));
   let estimation: MsmaEstimationBundle = {
     executedMethod: effectiveMethod,
     executedMethodLabel: getMethodHumanLabel(effectiveMethod),
     uncertaintyMethod: 'NONE_BLOCKED',
-    bootstrapReplications: config.bootstrapReplications,
+    bootstrapReplications: clampedB,
+    bootstrapSeed: activeBootstrapSeed,
+    bootstrapDiagnostics: {
+      requestedReplications: clampedB,
+      bootstrapSeed: activeBootstrapSeed,
+      validConvergedDraws: 0,
+      heywoodOrSingularDraws: 0,
+      convergenceRatePct: 0,
+      heywoodDrawRatePct: 0,
+      statisticalTieTop2: false,
+      statisticalTieNote: 'Inferensi bootstrap ditangguhkan karena model belum memenuhi syarat konstruk atau ukuran sampel minimum.'
+    },
     workingScaleNote:
       config.activeTransformation === 'NONE'
         ? `Skala satuan fisik asli (${config.sources[0]?.unit ?? 'unit'})`
@@ -231,18 +249,30 @@ export function runFullMsmaPipeline(
       {
         demingLambdaRatio: config.demingLambdaRatio,
         demingLambdaExternalKnown: config.demingLambdaExternalKnown,
-        bootstrapReplications: config.bootstrapReplications
+        bootstrapReplications: clampedB,
+        bootstrapSeed: activeBootstrapSeed
       }
     );
     estimation = {
       ...estimation,
       uncertaintyMethod: 'ENTITY_CLUSTER_BOOTSTRAP',
+      bootstrapDiagnostics: {
+        requestedReplications: clampedB,
+        bootstrapSeed: activeBootstrapSeed,
+        validConvergedDraws: twoRes.nEntities >= 2 ? clampedB : 0,
+        heywoodOrSingularDraws: 0,
+        convergenceRatePct: twoRes.nEntities >= 2 ? 100 : 0,
+        heywoodDrawRatePct: 0,
+        statisticalTieTop2: false,
+        statisticalTieNote: `Seluruh B = ${clampedB} replikasi klaster kota konvergen untuk estimasi SE dan 95% CI selisih rata-rata, RM-LoA, serta kemiringan Deming.`
+      },
       twoSourceResult: twoRes
     };
   } else if (classification.allowsJointCollocationRanking && J === 3 && prelimTca) {
     estimation = {
       ...estimation,
       uncertaintyMethod: 'ENTITY_CLUSTER_BOOTSTRAP',
+      bootstrapDiagnostics: prelimTca.bootstrapDiagnostics,
       tcaResult: prelimTca.result,
       residualsBySource: prelimTca.residualsBySource
     };
@@ -250,6 +280,7 @@ export function runFullMsmaPipeline(
     estimation = {
       ...estimation,
       uncertaintyMethod: 'ENTITY_CLUSTER_BOOTSTRAP',
+      bootstrapDiagnostics: prelimMulti.bootstrapDiagnostics,
       multiSourceResult: prelimMulti.result,
       residualsBySource: prelimMulti.residualsBySource
     };
@@ -283,7 +314,8 @@ export function runFullMsmaPipeline(
     decision,
     transformation,
     demingLambdaRatio: config.demingLambdaRatio,
-    bootstrapReplications: config.bootstrapReplications
+    bootstrapReplications: clampedB,
+    bootstrapSeed: activeBootstrapSeed
   });
 
   const stataCompilation = buildStataCompilation9Sections({

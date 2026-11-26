@@ -1,5 +1,6 @@
 
 import {
+  MsmaBootstrapDiagnostics,
   MsmaErrorCovariancePair,
   MsmaMultiSourceCollocationResult,
   MsmaSourceAccuracyEstimate,
@@ -11,7 +12,8 @@ import {
   jacobiSymmetricEigen,
   mean,
   median,
-  quantileSorted
+  quantileSorted,
+  sampleSd
 } from '../utils/numerical';
 import { AlignedPanelObservation } from './descriptive-statistics';
 
@@ -390,9 +392,11 @@ export function runMultiSourceCollocationEngine(
   sources: MsmaSourceConfig[],
   propagatedConvVars: Record<string, number>,
   preferredEstimator: 'N_CORNERED_HAT' | 'EXTENDED_COLLOCATION' | 'AUTO',
-  bootstrapReplications = 300
+  bootstrapReplications = 300,
+  bootstrapSeed = 20261126
 ): {
   result: MsmaMultiSourceCollocationResult;
+  bootstrapDiagnostics: MsmaBootstrapDiagnostics;
   residualsBySource: Record<string, Array<{ entity: string; period: number; approxResidual: number }>>;
 } {
   const J = sources.length;
@@ -433,8 +437,9 @@ export function runMultiSourceCollocationEngine(
     byEntityIdx.set(row.entity, arr);
   });
 
-  const B = Math.max(100, Math.min(800, bootstrapReplications));
-  const rng = createSeededRng(20260804);
+  const B = Math.max(100, Math.min(2000, bootstrapReplications));
+  const cleanSeed = Math.max(1, Math.floor(Math.abs(bootstrapSeed || 20261126)));
+  const rng = createSeededRng(cleanSeed);
   const bootVarsSel: number[][] = Array.from({ length: J }, () => []);
   const bootSdsSel: number[][] = Array.from({ length: J }, () => []);
   const bootBetas: number[][] = Array.from({ length: J }, () => []);
@@ -442,8 +447,9 @@ export function runMultiSourceCollocationEngine(
   const rank1Counts = Array.from({ length: J }, () => 0);
   const rankSums = Array.from({ length: J }, () => 0);
   let validBoot = 0;
+  let heywoodBoot = 0;
 
-  if (core.identifiable && nEntities >= 3 && nCompleteCases >= 12) {
+  if (nEntities >= 3 && nCompleteCases >= 9) {
     for (let b = 0; b < B; b++) {
       const bCols: number[][] = Array.from({ length: J }, () => []);
       for (let g = 0; g < nEntities; g++) {
@@ -453,9 +459,20 @@ export function runMultiSourceCollocationEngine(
           for (let k = 0; k < J; k++) bCols[k].push(cols[k][rIdx]);
         }
       }
-      if (bCols[0].length < 8) continue;
+      if (bCols[0].length < 8) {
+        heywoodBoot++;
+        continue;
+      }
       const bCore = solveMultiSourceCore(bCols, names);
-      if (!bCore.identifiable) continue;
+      if (!bCore.identifiable) {
+        heywoodBoot++;
+        continue;
+      }
+      const hasDrawHeywood =
+        selectedEstimator === 'EXTENDED_COLLOCATION'
+          ? bCore.ecHeywoodFlags.some(Boolean)
+          : bCore.nchHeywoodFlags.some(Boolean);
+      if (hasDrawHeywood) heywoodBoot++;
 
       validBoot++;
       const chosenVec =
@@ -486,7 +503,7 @@ export function runMultiSourceCollocationEngine(
   }
 
   const getCi = (arr: number[], fallback: number): [number, number] => {
-    if (arr.length < 10) return [fallback, fallback];
+    if (arr.length < 5) return [fallback, fallback];
     const sorted = [...arr].sort((a, b) => a - b);
     return [quantileSorted(sorted, 0.025), quantileSorted(sorted, 0.975)];
   };
@@ -529,6 +546,7 @@ export function runMultiSourceCollocationEngine(
         totalComparableErrorVariance: totVar,
         errorVarianceCi95: useBootstrapStats ? getCi(bootVarsSel[k], totVar) : [totVar, totVar],
         errorStandardDeviation: sd,
+        errorSdBootstrapSe: useBootstrapStats && bootSdsSel[k].length >= 5 ? sampleSd(bootSdsSel[k]) : 0,
         errorSdCi95: useBootstrapStats ? getCi(bootSdsSel[k], sd) : [sd, sd],
         relativeErrorPct: (sd / refMeanAbs) * 100,
         etcCorrelationR2: Math.max(0, Math.min(1, r2)),
@@ -597,6 +615,35 @@ export function runMultiSourceCollocationEngine(
       : `Scale-Calibrated N-Cornered Hat berkendala PSD (Premoli & Tavella, 1993) dipilih karena struktur galat antarsumber konsisten dengan asumsi independensi (tidak ada pasangan dengan |r_ε| ≥ 0.25), memberikan estimator paling efisien dengan derajat bebas over-identifikasi df = ${overidentificationDf}.`;
 
   const rankingAllowed = core.identifiable && nCompleteCases >= 12;
+  const rankedEsts = [...primaryEsts]
+    .filter(e => e.relativeRank !== null)
+    .sort((a, b) => (a.relativeRank ?? 99) - (b.relativeRank ?? 99));
+  const r1 = rankedEsts[0];
+  const r2 = rankedEsts[1];
+  const statisticalTieTop2 = Boolean(
+    r1 &&
+      r2 &&
+      validBoot >= 10 &&
+      (r1.errorSdCi95[1] >= r2.errorSdCi95[0] || r1.bootstrapRank1ProbPct < 75)
+  );
+  const statisticalTieNote = !rankingAllowed
+    ? `Model tidak teridentifikasi; dari B = ${B} replikasi klaster entitas, ${validBoot} replikasi (${((validBoot / B) * 100).toFixed(1)}%) konvergen.`
+    : statisticalTieTop2 && r1 && r2
+      ? `PERHATIAN STATISTICAL TIE: 95% Cluster CI Error SD antara #1 (${r1.displayName}: [${r1.errorSdCi95[0].toFixed(3)}, ${r1.errorSdCi95[1].toFixed(3)}]) dan #2 (${r2.displayName}: [${r2.errorSdCi95[0].toFixed(3)}, ${r2.errorSdCi95[1].toFixed(3)}]) saling tumpang-tindih (P(Rank #1) = ${r1.bootstrapRank1ProbPct.toFixed(1)}%).`
+      : r1
+        ? `Pemisahan peringkat tegas: #1 (${r1.displayName}) mencapai P(Rank #1) = ${r1.bootstrapRank1ProbPct.toFixed(1)}% dari B = ${B} replikasi.`
+        : '';
+
+  const bootstrapDiagnostics: MsmaBootstrapDiagnostics = {
+    requestedReplications: B,
+    bootstrapSeed: cleanSeed,
+    validConvergedDraws: validBoot,
+    heywoodOrSingularDraws: heywoodBoot,
+    convergenceRatePct: (validBoot / B) * 100,
+    heywoodDrawRatePct: (heywoodBoot / B) * 100,
+    statisticalTieTop2,
+    statisticalTieNote
+  };
 
   return {
     result: {
@@ -622,6 +669,7 @@ export function runMultiSourceCollocationEngine(
       alternativeEstimates: altEsts,
       estimatedErrorCovariances
     },
+    bootstrapDiagnostics,
     residualsBySource
   };
 }

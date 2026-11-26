@@ -158,7 +158,8 @@ export const MultiSourceAccuracyTab: React.FC = () => {
       preferredMethodOverride: null,
       demingLambdaRatio: 1,
       demingLambdaExternalKnown: false,
-      bootstrapReplications: 250
+      bootstrapReplications: 250,
+      bootstrapSeed: 20261126
     }),
     [initialPreset]
   );
@@ -1975,6 +1976,49 @@ export const MultiSourceAccuracyTab: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+
+              {analysis.diagnostics.overallStatus !== 'Selesai' && (
+                <div
+                  className="card"
+                  style={{
+                    padding: '14px 18px',
+                    borderLeft: '4px solid var(--warn)',
+                    background: 'var(--warn-bg)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '12px',
+                    flexWrap: 'wrap'
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: '250px', fontSize: '12.5px', color: 'var(--text)', lineHeight: 1.55 }}>
+                    <strong>Panduan Alur Step 6 ke Step 7:</strong> Meskipun terdapat asumsi yang berstatus{' '}
+                    <strong>Tidak memenuhi</strong> atau <strong>Perlu perhatian</strong> pada skala data saat ini, Anda{' '}
+                    <strong>tetap dapat dan disarankan lanjut ke Step 7</strong>. Step 7 akan menyimulasikan 12 kandidat transformasi/prapemrosesan secara otomatis untuk mencari opsi terbaik yang memulihkan linearitas maupun keteridentifikasian matriks kovarians.
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {!analysis.classification.allowsJointCollocationRanking && (
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() => goToStep(4)}
+                        style={{ minHeight: '44px', padding: '8px 14px', fontSize: '12.5px', fontWeight: 700 }}
+                      >
+                        Cek Konstruk di Step 4
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => goToStep(7)}
+                      style={{ minHeight: '44px', padding: '8px 16px', fontSize: '12.5px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <span>Lanjut ke Step 7: Cari Rekomendasi Perbaikan</span>
+                      <ArrowRight size={15} aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1983,37 +2027,161 @@ export const MultiSourceAccuracyTab: React.FC = () => {
               ========================================================= */}
           {currentStep === 7 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div className="card" style={{ padding: '16px 18px', borderLeft: '4px solid var(--primary)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--text)' }}>
-                  Rekomendasi Utama Sistem: <code>{analysis.transformation.primaryRecommendationId}</code>
-                </div>
-                <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
-                  {analysis.transformation.primarySelectionReason}
-                </p>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
-                  <button
-                    type="button"
-                    className="btn btn-outline"
-                    onClick={restoreOriginalData}
-                    style={{ minHeight: '40px', padding: '6px 12px', fontSize: '12px' }}
+              {(() => {
+                const bestRec =
+                  analysis.transformation.recommendations.find(
+                    r => r.id === analysis.transformation.primaryRecommendationId
+                  ) ?? analysis.transformation.recommendations[0];
+                const isBestApplied = bestRec?.status === 'Diterapkan';
+                return (
+                  <div
+                    className="card"
+                    style={{
+                      padding: '16px 18px',
+                      borderLeft: '4px solid var(--primary)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px'
+                    }}
                   >
-                    Kembali ke Data Asli (NONE)
-                  </button>
-                </div>
-              </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text)' }}>
+                          Rekomendasi Terbaik Multi-Kriteria: <code>{analysis.transformation.primaryRecommendationId}</code>
+                        </span>
+                        {bestRec && (
+                          <span
+                            style={{
+                              padding: '3px 9px',
+                              borderRadius: '999px',
+                              fontSize: '11.5px',
+                              fontWeight: 800,
+                              background: 'var(--info-bg)',
+                              color: 'var(--primary)',
+                              border: '1px solid var(--info-border)'
+                            }}
+                          >
+                            Skor Kelayakan: {bestRec.empiricalScore}/100
+                          </span>
+                        )}
+                        {bestRec && (
+                          <span
+                            style={{
+                              padding: '3px 9px',
+                              borderRadius: '999px',
+                              fontSize: '11.5px',
+                              fontWeight: 800,
+                              background: bestRec.identifiableAfter ? 'var(--success-bg)' : 'var(--danger-bg)',
+                              color: bestRec.identifiableAfter ? 'var(--success)' : 'var(--danger)',
+                              border: `1px solid ${bestRec.identifiableAfter ? 'var(--success-border)' : 'var(--danger-border)'}`
+                            }}
+                          >
+                            {bestRec.identifiableAfter ? 'Model Step 8 Teridentifikasi ✓' : 'Belum Teridentifikasi'}
+                          </span>
+                        )}
+                      </div>
+                      <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-muted)' }}>
+                        {analysis.transformation.identifiableCandidateIds.length} dari 10 skema skala lolos identifikasi bebas Heywood
+                      </span>
+                    </div>
+
+                    <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+                      {analysis.transformation.primarySelectionReason}
+                    </p>
+
+                    {analysis.transformation.noSilverBulletWarning && (
+                      <div
+                        role="alert"
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: '8px',
+                          background: 'var(--danger-bg)',
+                          border: '1px solid var(--danger-border)',
+                          fontSize: '12.5px',
+                          color: 'var(--text)',
+                          lineHeight: 1.55
+                        }}
+                      >
+                        <strong>Mengapa Transformasi Tidak Otomatis Membuat Data Teridentifikasi?</strong>{' '}
+                        {analysis.transformation.noSilverBulletWarning}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '2px' }}>
+                      {bestRec && bestRec.eligibleOnCurrentData && (
+                        <button
+                          type="button"
+                          className={isBestApplied ? 'btn btn-outline' : 'btn btn-primary'}
+                          onClick={() => {
+                            if (bestRec.id === 'UNIT_CONSTRUCT_HARMONIZATION') {
+                              goToStep(4);
+                              return;
+                            }
+                            if (bestRec.id === 'OUTLIER_WINSORIZE_SENSITIVITY') {
+                              commitChange(
+                                prev => ({ ...prev, outlierHandling: 'WINSORIZE_2_5' }),
+                                7,
+                                'Terapkan Rekomendasi Terbaik (Winsorize 2.5%)',
+                                'Mengaktifkan Winsorize 2.5% sesuai skor multi-kriteria tertinggi.'
+                              );
+                            } else {
+                              commitChange(
+                                prev => ({
+                                  ...prev,
+                                  activeTransformation: bestRec.id,
+                                  rejectedTransformations: prev.rejectedTransformations.filter(x => x !== bestRec.id)
+                                }),
+                                7,
+                                `Terapkan Rekomendasi Terbaik (${bestRec.id})`,
+                                `Menerapkan "${bestRec.recommendationLabel}" (Skor ${bestRec.empiricalScore}/100).`
+                              );
+                            }
+                          }}
+                          style={{ minHeight: '42px', padding: '7px 14px', fontSize: '12.5px', fontWeight: 800 }}
+                        >
+                          {bestRec.id === 'UNIT_CONSTRUCT_HARMONIZATION'
+                            ? 'Buka Harmonisasi Fisik di Step 4'
+                            : isBestApplied
+                              ? `Rekomendasi Terbaik Aktif (${bestRec.id}) ✓`
+                              : `Terapkan Rekomendasi Terbaik (${bestRec.id})`}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={restoreOriginalData}
+                        style={{ minHeight: '42px', padding: '7px 12px', fontSize: '12px' }}
+                      >
+                        Kembali ke Data Asli (NONE)
+                      </button>
+                      {analysis.transformation.noSilverBulletWarning && (
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={() => goToStep(3)}
+                          style={{ minHeight: '42px', padding: '7px 12px', fontSize: '12px', fontWeight: 700 }}
+                        >
+                          Periksa Kesamaan Satuan/Polutan di Step 3
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div tabIndex={0} role="region" aria-labelledby={transTableCaptionId} className="msma-table-wrapper">
                 <table className="msma-table">
                   <caption id={transTableCaptionId}>
-                    Evaluasi 12 Opsi Transformasi &amp; Prapemrosesan Data Panel (Persetujuan Eksplisit Pengguna)
+                    Evaluasi Empiris 12 Opsi Transformasi &amp; Prapemrosesan Data Panel (Skor Multi-Kriteria &amp; Uji Identifikasi Step 8)
                   </caption>
                   <thead>
                     <tr>
-                      <th>Rekomendasi &amp; Masalah</th>
-                      <th>Alasan Statistik &amp; Konsekuensi Interpretasi</th>
-                      <th>Command Stata</th>
-                      <th>Status</th>
-                      <th>Aksi</th>
+                      <th scope="col">Rekomendasi &amp; Masalah</th>
+                      <th scope="col">Skor &amp; Dampak Identifikasi Step 8</th>
+                      <th scope="col">Alasan Statistik &amp; Konsekuensi Interpretasi</th>
+                      <th scope="col">Command Stata</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Aksi</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2021,7 +2189,7 @@ export const MultiSourceAccuracyTab: React.FC = () => {
                       <tr key={rec.id}>
                         <th scope="row">
                           <div style={{ fontWeight: 800 }}>
-                            {rec.recommendationLabel} {rec.isPrimaryRecommendation ? '⭐ (Utama)' : ''}
+                            {rec.recommendationLabel} {rec.isPrimaryRecommendation ? '★ (Terbaik)' : ''}
                           </div>
                           <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '2px' }}>
                             <strong>Masalah:</strong> {rec.issueDetected}
@@ -2032,6 +2200,36 @@ export const MultiSourceAccuracyTab: React.FC = () => {
                             </div>
                           )}
                         </th>
+                        <td>
+                          <div style={{ fontWeight: 800, fontSize: '12.5px', color: 'var(--primary)' }}>
+                            Skor: {rec.empiricalScore}/100
+                          </div>
+                          <div
+                            style={{
+                              fontSize: '11.5px',
+                              fontWeight: 800,
+                              color: rec.identifiableAfter && !rec.hasHeywoodAfter ? 'var(--success)' : 'var(--danger)',
+                              marginTop: '2px'
+                            }}
+                          >
+                            {rec.identifiableAfter && !rec.hasHeywoodAfter
+                              ? 'Teridentifikasi ✓ (Bebas Heywood)'
+                              : rec.hasHeywoodAfter
+                                ? 'Kasus Heywood ✗ (Tidak Teridentifikasi)'
+                                : 'Belum Teridentifikasi'}
+                          </div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                            |Skew|: {rec.beforeAfterPreview.meanSkewnessBefore.toFixed(2)} ke {rec.beforeAfterPreview.meanSkewnessAfter.toFixed(2)}
+                            <br />
+                            ΔR²_quad: {rec.maxQuadDeltaR2Before.toFixed(3)} ke {rec.maxQuadDeltaR2After.toFixed(3)}
+                            {rec.topSourceAfter ? (
+                              <>
+                                <br />
+                                Kandidat #1: <strong>{rec.topSourceAfter}</strong>
+                              </>
+                            ) : null}
+                          </div>
+                        </td>
                         <td>
                           <div><strong>Alasan:</strong> {rec.statisticalRationale}</div>
                           <div style={{ marginTop: '4px', color: 'var(--text-secondary)' }}>
@@ -2053,6 +2251,7 @@ export const MultiSourceAccuracyTab: React.FC = () => {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                             <button
                               type="button"
+                              aria-label={`Terapkan ${rec.recommendationLabel}`}
                               className={rec.status === 'Diterapkan' ? 'btn btn-primary' : 'btn btn-outline'}
                               disabled={!rec.eligibleOnCurrentData}
                               onClick={() => {
@@ -2095,6 +2294,7 @@ export const MultiSourceAccuracyTab: React.FC = () => {
                             </button>
                             <button
                               type="button"
+                              aria-label={`Tolak ${rec.recommendationLabel}`}
                               className="btn btn-outline"
                               onClick={() =>
                                 commitChange(
@@ -2116,6 +2316,7 @@ export const MultiSourceAccuracyTab: React.FC = () => {
                             </button>
                             <button
                               type="button"
+                              aria-label={`Lihat perbandingan sebelum dan sesudah ${rec.recommendationLabel}`}
                               className="btn btn-outline"
                               onClick={() =>
                                 setBeforeAfterTransformPreviewId(prev => (prev === rec.id ? null : rec.id))
@@ -2154,8 +2355,11 @@ export const MultiSourceAccuracyTab: React.FC = () => {
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <StatTermButton termKey="bootstrap" onOpenTerm={setActiveGlossaryKey} />
                     <StatTermButton termKey="confidence_interval" onOpenTerm={setActiveGlossaryKey} />
+                    <label htmlFor="msma-boot-reps" style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text)' }}>
+                      Replikasi Cluster:
+                    </label>
                     <select
-                      aria-label="Jumlah replikasi Entity-Cluster Bootstrap"
+                      id="msma-boot-reps"
                       value={config.bootstrapReplications}
                       onChange={e =>
                         commitChange(
@@ -2167,11 +2371,31 @@ export const MultiSourceAccuracyTab: React.FC = () => {
                       }
                       style={{ minHeight: '42px', padding: '6px 10px', fontSize: '16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}
                     >
-                      <option value={150}>150 Cluster Bootstrap</option>
+                      <option value={100}>100 Cluster Bootstrap</option>
                       <option value={250}>250 Cluster Bootstrap</option>
                       <option value={500}>500 Cluster Bootstrap</option>
-                      <option value={800}>800 Cluster Bootstrap</option>
+                      <option value={1000}>1.000 Cluster Bootstrap</option>
+                      <option value={2000}>2.000 Cluster Bootstrap</option>
                     </select>
+
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      onClick={() => {
+                        const prevSeed = config.bootstrapSeed ?? 20261126;
+                        const nextSeed = ((prevSeed * 1664525 + 1013904223) >>> 0) % 89999999 + 10000000;
+                        commitChange(
+                          prev => ({ ...prev, bootstrapSeed: nextSeed }),
+                          8,
+                          'Acak Ulang Seed Cluster Bootstrap',
+                          `Seed bootstrap diubah ke ${nextSeed} (tersinkron ke Stata seed).`
+                        );
+                      }}
+                      style={{ minHeight: '42px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                    >
+                      <RefreshCw size={14} aria-hidden="true" />
+                      <span>Ubah Seed ({analysis.estimation.bootstrapSeed})</span>
+                    </button>
 
                     {config.sources.length >= 4 && analysis.classification.allowsJointCollocationRanking && (
                       <select
@@ -2203,6 +2427,58 @@ export const MultiSourceAccuracyTab: React.FC = () => {
                     <li key={i}>{j}</li>
                   ))}
                 </ul>
+
+                {/* Live Entity-Cluster Bootstrap Diagnostics Strip (Always visible when construct valid) */}
+                {analysis.classification.allowsJointCollocationRanking && (
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    style={{
+                      marginTop: '4px',
+                      padding: '12px 14px',
+                      borderRadius: '10px',
+                      background: 'var(--surface-muted)',
+                      border: '1px solid var(--border)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px'
+                    }}
+                  >
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(185px, 1fr))', gap: '8px' }}>
+                      <div style={{ padding: '8px 10px', borderRadius: '8px', background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)' }}>Konfigurasi Resampling Klaster</div>
+                        <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text)' }}>
+                          B = {analysis.estimation.bootstrapDiagnostics.requestedReplications} · seed({analysis.estimation.bootstrapDiagnostics.bootstrapSeed})
+                        </div>
+                      </div>
+                      <div style={{ padding: '8px 10px', borderRadius: '8px', background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)' }}>Replikasi Konvergen (Valid)</div>
+                        <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--success)' }}>
+                          {analysis.estimation.bootstrapDiagnostics.validConvergedDraws} / {analysis.estimation.bootstrapDiagnostics.requestedReplications} ({analysis.estimation.bootstrapDiagnostics.convergenceRatePct.toFixed(1)}%)
+                        </div>
+                      </div>
+                      <div style={{ padding: '8px 10px', borderRadius: '8px', background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)' }}>Replikasi Terkena Heywood</div>
+                        <div style={{ fontSize: '13px', fontWeight: 800, color: analysis.estimation.bootstrapDiagnostics.heywoodDrawRatePct > 20 ? 'var(--warn)' : 'var(--text)' }}>
+                          {analysis.estimation.bootstrapDiagnostics.heywoodOrSingularDraws} ({analysis.estimation.bootstrapDiagnostics.heywoodDrawRatePct.toFixed(1)}%)
+                        </div>
+                      </div>
+                      <div style={{ padding: '8px 10px', borderRadius: '8px', background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)' }}>Pemisahan 95% CI (#1 vs #2)</div>
+                        <div style={{ fontSize: '13px', fontWeight: 800, color: analysis.estimation.bootstrapDiagnostics.statisticalTieTop2 ? 'var(--warn)' : 'var(--primary)' }}>
+                          {config.sources.length === 2
+                            ? 'Khusus Kesepakatan (J=2)'
+                            : analysis.estimation.bootstrapDiagnostics.statisticalTieTop2
+                              ? 'Statistical Tie (Tumpang-Tindih)'
+                              : 'Terpisah Tegas / Non-Tie'}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                      <strong>Catatan Teknis Bootstrap:</strong> Titik estimasi utama (α̂, β̂, Error Variance, Error SD) dihitung analitik dari kovarians sampel penuh, sedangkan perubahan jumlah replikasi <code>B</code> atau <code>Seed</code> memperbarui <strong>SE Bootstrap (SE_boot)</strong>, <strong>lebar 95% CI</strong>, <strong>P(Rank #1)</strong>, dan rasio konvergensi. {analysis.estimation.bootstrapDiagnostics.statisticalTieNote}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Branch A: Two Sources (J = 2) */}
@@ -2316,8 +2592,12 @@ export const MultiSourceAccuracyTab: React.FC = () => {
                             <td>
                               <strong>{fmtAdaptive(est.errorStandardDeviation)}</strong>
                               <br />
+                              <span style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 700 }}>
+                                SE_boot = {fmtAdaptive(est.errorSdBootstrapSe)}
+                              </span>
+                              <br />
                               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                [{fmtAdaptive(est.errorSdCi95[0])}, {fmtAdaptive(est.errorSdCi95[1])}]
+                                95% CI [{fmtAdaptive(est.errorSdCi95[0])}, {fmtAdaptive(est.errorSdCi95[1])}]
                               </span>
                             </td>
                             <td>{est.relativeErrorPct.toFixed(2)}%</td>
@@ -2337,6 +2617,122 @@ export const MultiSourceAccuracyTab: React.FC = () => {
                   <MsmaResidualDiagnosticsChart estimation={analysis.estimation} sources={config.sources} />
                 </>
               )}
+
+              {/* Diagnosis & Recovery Card when Model is Unidentified / Heywood Case */}
+              {analysis.classification.allowsJointCollocationRanking &&
+                config.sources.length >= 3 &&
+                !(analysis.estimation.tcaResult?.rankingAllowed || analysis.estimation.multiSourceResult?.rankingAllowed) && (
+                  <div
+                    role="alert"
+                    className="card"
+                    style={{
+                      padding: '16px 18px',
+                      borderLeft: '4px solid var(--danger)',
+                      background: 'var(--danger-bg)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px'
+                    }}
+                  >
+                    <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--danger)' }}>
+                      Diagnosis Mengapa Hasil Step 8 &ldquo;Tidak Teridentifikasi&rdquo; (Kasus Heywood / Kovarians Non-Ideal)
+                    </div>
+                    <div style={{ fontSize: '12.5px', color: 'var(--text)', lineHeight: 1.55 }}>
+                      <strong>Penyebab Matematis:</strong>{' '}
+                      {analysis.estimation.tcaResult?.rankingBlockedReason ??
+                        analysis.estimation.multiSourceResult?.rankingBlockedReason ??
+                        'Matriks kovarians tidak memenuhi syarat keteridentifikasian positif.'}{' '}
+                      Transformasi skala monotonik (seperti <code>ln(X)</code>) memperbaiki kemiringan distribusi tetapi tidak mengubah tanda korelasi silang negatif maupun menghilangkan besaran fisik yang berbeda.
+                    </div>
+                    {analysis.transformation.anyCandidateIdentifiable ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text)' }}>
+                          Solusi Terdeteksi pada Dataset Ini — Opsi Step 7 Berikut Terbukti Memulihkan Identifikasi:
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          {analysis.transformation.identifiableCandidateIds.slice(0, 4).map(cid => {
+                            const recObj = analysis.transformation.recommendations.find(r => r.id === cid);
+                            return (
+                              <button
+                                key={cid}
+                                type="button"
+                                className="btn btn-primary"
+                                onClick={() => {
+                                  if (cid === 'OUTLIER_WINSORIZE_SENSITIVITY') {
+                                    commitChange(
+                                      prev => ({ ...prev, outlierHandling: 'WINSORIZE_2_5' }),
+                                      8,
+                                      'Aktifkan Winsorize 2.5% Pemulih Identifikasi',
+                                      'Mengaktifkan Winsorize 2.5% dari rekomendasi pemulihan Step 8.'
+                                    );
+                                  } else {
+                                    commitChange(
+                                      prev => ({ ...prev, activeTransformation: cid }),
+                                      8,
+                                      `Terapkan ${cid} Pemulih Identifikasi`,
+                                      `Mengaktifkan transformasi ${cid} yang lolos uji identifikasi.`
+                                    );
+                                  }
+                                }}
+                                style={{ minHeight: '42px', padding: '7px 14px', fontSize: '12px', fontWeight: 800 }}
+                              >
+                                Terapkan {recObj?.recommendationLabel ?? cid} (Skor {recObj?.empiricalScore ?? 0}/100)
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={() => goToStep(3)}
+                          style={{ minHeight: '42px', padding: '7px 14px', fontSize: '12px', fontWeight: 700 }}
+                        >
+                          Periksa Apakah Sumber Berbeda Polutan/Satuan di Step 3–4
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={() => goToStep(5)}
+                          style={{ minHeight: '42px', padding: '7px 14px', fontSize: '12px', fontWeight: 700 }}
+                        >
+                          Cek Korelasi Antarsumber di Step 5
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+              {/* Scientific Reference Decision Guide: Relative Accuracy vs Ground Truth */}
+              <div
+                className="card"
+                style={{
+                  padding: '16px 18px',
+                  borderLeft: '4px solid var(--success)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px'
+                }}
+              >
+                <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text)' }}>
+                  Panduan Keputusan Penelitian: Apakah Peringkat Ini Menunjukkan Data yang &ldquo;Paling Benar&rdquo;?
+                </div>
+                <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                  <ul style={{ margin: 0, paddingLeft: '18px' }}>
+                    <li>
+                      <strong>Sah sebagai Rujukan Akurasi Relatif (Presisi Terbaik):</strong> Sumber berperingkat <strong>#1</strong> memiliki simpangan kesalahan acak terkalibrasi (<code>Error SD</code>) paling rendah dan korelasi terhadap sinyal laten bersama (<code>ETC R²</code>) paling tinggi. Sumber ini paling direkomendasikan sebagai indikator utama pelacak variasi antarkota dan antarwaktu.
+                    </li>
+                    <li>
+                      <strong>Bukan Bukti Kebenaran Absolut 100% (Ground Truth):</strong> Tanpa standar emas eksternal (<em>Ground Truth</em>), metode kovarians tidak dapat mendeteksi bias serempak (<em>common-mode bias</em>, misal seluruh sumber sama-sama kelebihan ukur +15%) maupun pergeseran titik nol konstan (<code>α_k</code>).
+                    </li>
+                    <li>
+                      <strong>Syarat Sah Klaim Rujukan di Artikel Ilmiah:</strong> Pastikan (1) sumber sepadan secara fisik (Contoh A / Contoh B terkonversi), (2) model teridentifikasi bebas kasus Heywood, (3) 95% CI tidak mengalami <em>Statistical Tie</em>, dan (4) peringkat bertahan konsisten pada uji sensitivitas Step 9.
+                    </li>
+                  </ul>
+                </div>
+              </div>
 
               {!analysis.classification.allowsJointCollocationRanking && (
                 <div style={{ padding: '16px', borderRadius: '10px', background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', fontSize: '13px', fontWeight: 700 }}>

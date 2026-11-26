@@ -90,6 +90,7 @@ export function runTwoSourceAgreementEngine(
     demingLambdaRatio: number;
     demingLambdaExternalKnown: boolean;
     bootstrapReplications: number;
+    bootstrapSeed?: number;
   }
 ): MsmaTwoSourceResult {
   const paired = observations
@@ -154,8 +155,9 @@ export function runTwoSourceAgreementEngine(
     byEntityMap.set(p.entity, list);
   }
 
-  const B = Math.max(120, Math.min(1000, options.bootstrapReplications));
-  const rng = createSeededRng(20260802);
+  const B = Math.max(100, Math.min(2000, options.bootstrapReplications));
+  const cleanSeed = Math.max(1, Math.floor(Math.abs(options.bootstrapSeed || 20261126)));
+  const rng = createSeededRng(cleanSeed);
   const bootMeanDiffs: number[] = [];
   const bootLoaLo: number[] = [];
   const bootLoaHi: number[] = [];

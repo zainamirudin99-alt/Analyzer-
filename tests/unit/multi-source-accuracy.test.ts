@@ -3,8 +3,11 @@ import {
   buildRawSheetFromMatrix,
   buildRawSheetFromObjects,
   generateMsmaPresetCatalog,
+  profileSheetColumns,
   validateWorkbookForMsma
 } from '../../src/features/multi-source-accuracy/engine/data-validation';
+import { classifyMeasurementConstructs } from '../../src/features/multi-source-accuracy/engine/measurement-classification';
+import { autoSuggestMeasurementSources } from '../../src/features/multi-source-accuracy/engine/panel-detection';
 import { runFullMsmaPipeline } from '../../src/features/multi-source-accuracy/engine/report-generator';
 import {
   applySelectedTransformation,
@@ -334,5 +337,121 @@ describe('MSMA Option 4 — Statistical Engine & Synthetic Benchmarks (Section Q
     expect(wbMulti.activeSheetName).toBe('Panel_CO2_2020_2025');
     expect(wbMulti.sheets[0].rowCount).toBe(1);
     expect(wbMulti.sheets[1].rowCount).toBe(2);
+  });
+
+  it('Detects multi-pollutant Contoh B, promotes Heywood-curing transformation in Step 7, and updates Cluster Bootstrap diagnostics/seed', () => {
+    // 1. Multi-pollutant column auto-detector (Gg CO2 vs Sentinel-5P molec/cm2 vs SPKU PM2.5 ug/m3)
+    const mixedSheet = buildRawSheetFromObjects('Polutan_Campuran', [
+      {
+        kota: 'Jakarta',
+        tahun: 2020,
+        pelaporan_mandiri_emisi_gg_c: 120,
+        data_satelit_sentinel_5p_10_: 8.5,
+        data_sensor_lapangan_spku_pm: 42.1
+      },
+      {
+        kota: 'Surabaya',
+        tahun: 2020,
+        pelaporan_mandiri_emisi_gg_c: 95,
+        data_satelit_sentinel_5p_10_: 6.2,
+        data_sensor_lapangan_spku_pm: 35.4
+      }
+    ]);
+    const mixedProfiles = profileSheetColumns(mixedSheet);
+    const suggested = autoSuggestMeasurementSources(mixedProfiles, 'kota', 'tahun');
+    expect(suggested.length).toBe(3);
+    expect(suggested[0].physicalDimension).toBe('EMISSION_FLUX_MASS_PER_TIME');
+    expect(suggested[1].physicalDimension).toBe('ATMOSPHERIC_MOLE_FRACTION');
+    expect(suggested[2].physicalDimension).toBe('SURFACE_CONCENTRATION');
+    const mixedClass = classifyMeasurementConstructs(suggested, null, false);
+    expect(mixedClass.finalClassification).toBe('CONTOH_B');
+    expect(mixedClass.allowsJointCollocationRanking).toBe(false);
+
+    // 2. Step 7 Multi-Criteria Recommender promotes DEMEANING_WITHIN when entity fixed effects cause Heywood on NONE & LOG
+    const rng = createSeededRng(20269911);
+    const rowsHeywood: Array<Record<string, unknown>> = [];
+    for (let g = 1; g <= 30; g++) {
+      // Conflicting city-level fixed effect u_g creates negative cross-covariance on raw levels,
+      // while within-city temporal signal w_gt is clean and positive across all 3 sources!
+      const cityOffset = (g - 15.5) * 18;
+      for (let t = 2019; t <= 2025; t++) {
+        const wSignal = randomStandardNormal(rng) * 8;
+        const x1 = 500 + cityOffset + wSignal + randomStandardNormal(rng) * 1.6;
+        const x2 = 500 - 1.2 * cityOffset + 1.05 * wSignal + randomStandardNormal(rng) * 2.4;
+        const x3 = 500 + 0.9 * cityOffset + 0.95 * wSignal + randomStandardNormal(rng) * 1.1;
+        rowsHeywood.push({
+          city: `City_${g}`,
+          year: t,
+          emisi_pemkot: x1,
+          emisi_satelit: x2,
+          emisi_sensor: x3
+        });
+      }
+    }
+    const shHey = buildRawSheetFromObjects('Heywood_FE', rowsHeywood);
+    const wbHey = validateWorkbookForMsma('Heywood_FE.xlsx', 8192, 'upload', [shHey]);
+    const profHey = profileSheetColumns(shHey);
+    const srcHey = autoSuggestMeasurementSources(profHey, 'city', 'year');
+
+    const baseSnap: MsmaConfigurableSnapshot = {
+      activeSheetName: 'Heywood_FE',
+      headerRowIndex: 0,
+      entityColumn: 'city',
+      timeColumn: 'year',
+      sources: srcHey,
+      classificationOverride: null,
+      userConfirmedClassification: true,
+      activeTransformation: 'NONE',
+      rejectedTransformations: [],
+      dropDuplicates: false,
+      outlierHandling: 'KEEP_ALL',
+      missingHandling: 'COMPLETE_CASE',
+      preferredMethodOverride: null,
+      demingLambdaRatio: 1,
+      demingLambdaExternalKnown: false,
+      bootstrapReplications: 150,
+      bootstrapSeed: 20261126
+    };
+
+    const rawPipeline = runFullMsmaPipeline(wbHey, baseSnap);
+    expect(rawPipeline.estimation.tcaResult?.isIdentifiable).toBe(false);
+    expect(rawPipeline.transformation.anyCandidateIdentifiable).toBe(true);
+    expect(rawPipeline.transformation.identifiableCandidateIds).toContain('DEMEANING_WITHIN');
+    // Best recommended option must NOT be NONE or LOG (both fail Heywood), and applying it cures Step 8!
+    const bestId = rawPipeline.transformation.primaryRecommendationId;
+    expect(bestId).not.toBe('NONE');
+    expect(bestId).not.toBe('LOG');
+
+    const curedPipeline = runFullMsmaPipeline(wbHey, {
+      ...baseSnap,
+      activeTransformation: bestId
+    });
+    expect(curedPipeline.estimation.tcaResult?.isIdentifiable).toBe(true);
+    expect(curedPipeline.estimation.tcaResult?.rankingAllowed).toBe(true);
+
+    // 3. Entity-Cluster Bootstrap responds to replication count B and bootstrapSeed + syncs Stata seed
+    const { workbook: wbA, config: cfgA } = makeDefaultConfigFromPreset(0);
+    const runBoot1 = runFullMsmaPipeline(wbA, {
+      ...cfgA,
+      bootstrapReplications: 120,
+      bootstrapSeed: 20261126
+    });
+    const runBoot2 = runFullMsmaPipeline(wbA, {
+      ...cfgA,
+      bootstrapReplications: 600,
+      bootstrapSeed: 87654321
+    });
+
+    expect(runBoot1.estimation.bootstrapDiagnostics.requestedReplications).toBe(120);
+    expect(runBoot2.estimation.bootstrapDiagnostics.requestedReplications).toBe(600);
+    expect(runBoot2.estimation.bootstrapDiagnostics.bootstrapSeed).toBe(87654321);
+    expect(runBoot2.stepStataCommands[7].stataCode).toContain('seed(87654321)');
+    expect(runBoot2.stepStataCommands[7].stataCode).toContain('reps(600)');
+
+    const se1 = runBoot1.estimation.tcaResult?.estimates[0].errorSdBootstrapSe ?? 0;
+    const se2 = runBoot2.estimation.tcaResult?.estimates[0].errorSdBootstrapSe ?? 0;
+    expect(se1).toBeGreaterThan(0);
+    expect(se2).toBeGreaterThan(0);
+    expect(se1).not.toBe(se2);
   });
 });

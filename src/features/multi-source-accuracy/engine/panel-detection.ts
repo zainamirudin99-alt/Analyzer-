@@ -175,7 +175,7 @@ export function detectPanelStructure(
   };
 }
 
-function inferMetadataFromColumnName(colName: string, idx: number): {
+export function inferMetadataFromColumnName(colName: string, idx: number): {
   displayName: string;
   unit: string;
   constructDefinition: string;
@@ -184,16 +184,76 @@ function inferMetadataFromColumnName(colName: string, idx: number): {
   sourceOriginInfo: string;
 } {
   const lower = colName.toLowerCase();
-  if (/ppm|xco2|konsentrasi_sat/i.test(lower)) {
+
+  // 1. Specific satellite column molecule density (Sentinel-5P, TROPOMI NO2/SO2/CO, molec/cm2)
+  if (/molec|10\^?15|10_15|sentinel[\s_-]*5p|(^|[_\s-])(no2|so2)([_\s-]|$)/i.test(lower)) {
     return {
       displayName: colName.replace(/_/g, ' '),
-      unit: 'ppm',
-      constructDefinition: 'Fraksi mol / konsentrasi CO₂ atmosfer',
-      physicalDimension: /lokal|sensor|surface/i.test(lower)
+      unit: '10^15 molec/cm²',
+      constructDefinition: 'Kerapatan kolom molekul gas jejak atmosfer (satelit)',
+      physicalDimension: 'ATMOSPHERIC_MOLE_FRACTION',
+      spatialScope: 'Kolom atmosfer grid satelit',
+      sourceOriginInfo: 'Pengamatan kolom atmosfer satelit (Sentinel-5P / TROPOMI)'
+    };
+  }
+
+  // 2. Surface particulate / ambient air quality concentration (PM2.5, PM10, ug/m3, SPKU)
+  if (/pm2[._]?5|pm10|ug[\s_/]*m3|µg|mcg|(^|[_\s-])(spku|pm)([_\s-]|$)/i.test(lower)) {
+    return {
+      displayName: colName.replace(/_/g, ' '),
+      unit: 'µg/m³',
+      constructDefinition: 'Konsentrasi partikulat udara ambien permukaan',
+      physicalDimension: 'SURFACE_CONCENTRATION',
+      spatialScope: 'Titik stasiun pemantauan udara ambien (SPKU)',
+      sourceOriginInfo: 'Sensor kualitas udara ambien permukaan'
+    };
+  }
+
+  // 3. Composite air/environmental quality index (ISPU, AQI, indeks)
+  if (/(^|[_\s-])(ispu|aqi)([_\s-]|$)|indeks|index_score/i.test(lower)) {
+    return {
+      displayName: colName.replace(/_/g, ' '),
+      unit: 'skor indeks',
+      constructDefinition: 'Skor indeks kualitas udara / lingkungan',
+      physicalDimension: 'INDEX_SCORE',
+      spatialScope: 'Wilayah kota/entitas',
+      sourceOriginInfo: 'Indeks komposit kualitas lingkungan'
+    };
+  }
+
+  // 4. Atmospheric or surface mole fraction (ppm, ppb, XCO2)
+  if (/ppm|ppb|xco2|konsentrasi_sat/i.test(lower)) {
+    return {
+      displayName: colName.replace(/_/g, ' '),
+      unit: /ppb/i.test(lower) ? 'ppb' : 'ppm',
+      constructDefinition: 'Fraksi mol / konsentrasi gas atmosfer',
+      physicalDimension: /lokal|sensor|surface|ambien/i.test(lower)
         ? 'SURFACE_CONCENTRATION'
         : 'ATMOSPHERIC_MOLE_FRACTION',
       spatialScope: /lokal|sensor/i.test(lower) ? 'Titik sensor lokal' : 'Kolom atmosfer grid satelit',
       sourceOriginInfo: 'Pengukuran konsentrasi atmosfer/ambien'
+    };
+  }
+
+  // 5. Explicit mass emission flux units (Gg, Mt, ton)
+  if (/(^|[_\s])gg([_\s]|$)|gigagram/i.test(lower)) {
+    return {
+      displayName: colName.replace(/_/g, ' '),
+      unit: 'Gg CO₂/tahun',
+      constructDefinition: 'Total emisi tahunan wilayah',
+      physicalDimension: 'EMISSION_FLUX_MASS_PER_TIME',
+      spatialScope: 'Wilayah kota/entitas',
+      sourceOriginInfo: 'Inventaris / estimasi fluks emisi massa tahunan (Gg)'
+    };
+  }
+  if (/(^|[_\s])mt([_\s]|$)|megaton/i.test(lower)) {
+    return {
+      displayName: colName.replace(/_/g, ' '),
+      unit: 'Mt CO₂/tahun',
+      constructDefinition: 'Total emisi tahunan wilayah',
+      physicalDimension: 'EMISSION_FLUX_MASS_PER_TIME',
+      spatialScope: 'Wilayah kota/entitas',
+      sourceOriginInfo: 'Inventaris / estimasi fluks emisi massa tahunan (Mt)'
     };
   }
   if (/tonthn|ton_thn|_ton$/i.test(lower)) {
@@ -206,6 +266,8 @@ function inferMetadataFromColumnName(colName: string, idx: number): {
       sourceOriginInfo: 'Inventaris / estimasi fluks emisi tahunan'
     };
   }
+
+  // 6. Generic city emission sources when no conflicting physical unit is present
   if (/pemkot|mandiri|inventaris|report/i.test(lower)) {
     return {
       displayName: 'Pelaporan Mandiri Pemkot',

@@ -36,6 +36,7 @@ export function buildStepStataCommands(params: {
   transformation: MsmaTransformationBundle;
   demingLambdaRatio: number;
   bootstrapReplications: number;
+  bootstrapSeed?: number;
 }): MsmaStepStataBundle[] {
   const {
     fileName,
@@ -46,7 +47,8 @@ export function buildStepStataCommands(params: {
     decision,
     transformation,
     demingLambdaRatio,
-    bootstrapReplications
+    bootstrapReplications,
+    bootstrapSeed = 20261126
   } = params;
 
   const entVar = toStataVarName(panel.entityColumn, 0);
@@ -176,7 +178,7 @@ export function buildStepStataCommands(params: {
       `}`,
       `end`,
       `bootstrap slope=r(slope) intercept=r(intercept) mean_diff=r(mean_diff), ///`,
-      `    reps(${bootstrapReplications}) seed(20261126) cluster(panel_entity_id): ///`,
+      `    reps(${bootstrapReplications}) seed(${bootstrapSeed}) cluster(panel_entity_id): ///`,
       `    msma_deming_ba harm_${srcVars[0]} harm_${srcVars[1]}, lambda(${demingLambdaRatio})`
     ].join('\n');
   } else if (sources.length === 3) {
@@ -221,7 +223,7 @@ export function buildStepStataCommands(params: {
       `msma_tca3 ${srcVars.map(v => `harm_${v}`).join(' ')}`,
       `return list`,
       `bootstrap ev1=r(err_var_1) ev2=r(err_var_2) ev3=r(err_var_3), ///`,
-      `    reps(${bootstrapReplications}) seed(20261126) cluster(panel_entity_id): ///`,
+      `    reps(${bootstrapReplications}) seed(${bootstrapSeed}) cluster(panel_entity_id): ///`,
       `    msma_tca3 ${srcVars.map(v => `harm_${v}`).join(' ')}`
     ].join('\n');
   } else {

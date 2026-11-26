@@ -1,5 +1,6 @@
 
 import {
+  MsmaBootstrapDiagnostics,
   MsmaSourceAccuracyEstimate,
   MsmaSourceConfig,
   MsmaTcaResult
@@ -9,7 +10,8 @@ import {
   createSeededRng,
   mean,
   pearsonCorrAndP,
-  quantileSorted
+  quantileSorted,
+  sampleSd
 } from '../utils/numerical';
 import { AlignedPanelObservation } from './descriptive-statistics';
 
@@ -161,9 +163,11 @@ export function runTripleCollocationEngine(
   observations: AlignedPanelObservation[],
   sources: [MsmaSourceConfig, MsmaSourceConfig, MsmaSourceConfig],
   propagatedConvVars: Record<string, number>,
-  bootstrapReplications = 400
+  bootstrapReplications = 400,
+  bootstrapSeed = 20261126
 ): {
   result: MsmaTcaResult;
+  bootstrapDiagnostics: MsmaBootstrapDiagnostics;
   residualsBySource: Record<string, Array<{ entity: string; period: number; approxResidual: number }>>;
 } {
   const complete = observations.filter(o =>
@@ -245,14 +249,16 @@ export function runTripleCollocationEngine(
     byEntityRows.set(row.entity, list);
   });
 
-  const B = Math.max(120, Math.min(1000, bootstrapReplications));
-  const rng = createSeededRng(20260803);
+  const B = Math.max(100, Math.min(2000, bootstrapReplications));
+  const cleanSeed = Math.max(1, Math.floor(Math.abs(bootstrapSeed || 20261126)));
+  const rng = createSeededRng(cleanSeed);
   const bootErrVars: [number[], number[], number[]] = [[], [], []];
   const bootErrSds: [number[], number[], number[]] = [[], [], []];
   const bootBetas: [number[], number[], number[]] = [[], [], []];
   const rank1Counts = [0, 0, 0];
   const rankSums = [0, 0, 0];
   let validBootCount = 0;
+  let heywoodBootCount = 0;
 
   if (nEntities >= 3 && nCompleteTriplets >= 9) {
     for (let b = 0; b < B; b++) {
@@ -266,9 +272,15 @@ export function runTripleCollocationEngine(
           bCols[2].push(cols[2][rIdx]);
         }
       }
-      if (bCols[0].length < 6) continue;
+      if (bCols[0].length < 6) {
+        heywoodBootCount++;
+        continue;
+      }
       const bRes = solveTcaCore3(bCols);
-      if (!bRes.identifiable) continue;
+      if (!bRes.identifiable) {
+        heywoodBootCount++;
+        continue;
+      }
 
       validBootCount++;
       const totals = [0, 1, 2].map(
@@ -289,7 +301,7 @@ export function runTripleCollocationEngine(
   }
 
   const getCi = (arr: number[], fallback: number): [number, number] => {
-    if (arr.length < 10) return [fallback, fallback];
+    if (arr.length < 5) return [fallback, fallback];
     const sorted = [...arr].sort((a, b) => a - b);
     return [quantileSorted(sorted, 0.025), quantileSorted(sorted, 0.975)];
   };
@@ -313,6 +325,7 @@ export function runTripleCollocationEngine(
     const convVar = propagatedConvVars[src.id] ?? 0;
     const totalVar = totalComparableVars[k];
     const errSd = totalVar >= 0 ? Math.sqrt(totalVar) : -Math.sqrt(Math.abs(totalVar));
+    const bootSe = bootErrSds[k].length >= 5 ? sampleSd(bootErrSds[k]) : 0;
     return {
       sourceId: src.id,
       displayName: src.displayName,
@@ -326,6 +339,7 @@ export function runTripleCollocationEngine(
       totalComparableErrorVariance: totalVar,
       errorVarianceCi95: getCi(bootErrVars[k], totalVar),
       errorStandardDeviation: errSd,
+      errorSdBootstrapSe: bootSe,
       errorSdCi95: getCi(bootErrSds[k], Math.max(0, errSd)),
       relativeErrorPct: totalVar >= 0 ? (Math.sqrt(totalVar) / refMeanAbs) * 100 : 0,
       etcCorrelationR2: main.etcR2[k],
@@ -337,6 +351,36 @@ export function runTripleCollocationEngine(
       identifiable: main.identifiable
     };
   });
+
+  const rankedSorted = [...estimates]
+    .filter(e => e.relativeRank !== null)
+    .sort((a, b) => (a.relativeRank ?? 99) - (b.relativeRank ?? 99));
+  const r1 = rankedSorted[0];
+  const r2 = rankedSorted[1];
+  const statisticalTieTop2 = Boolean(
+    r1 &&
+      r2 &&
+      validBootCount >= 10 &&
+      (r1.errorSdCi95[1] >= r2.errorSdCi95[0] || r1.bootstrapRank1ProbPct < 75)
+  );
+  const statisticalTieNote = !rankingAllowed
+    ? `Model utama tidak teridentifikasi; dari B = ${B} replikasi klaster entitas, ${validBootCount} replikasi (${((validBootCount / B) * 100).toFixed(1)}%) konvergen bebas Heywood dan ${heywoodBootCount} replikasi (${((heywoodBootCount / B) * 100).toFixed(1)}%) mengalami kasus Heywood.`
+    : statisticalTieTop2 && r1 && r2
+      ? `PERHATIAN STATISTICAL TIE: 95% Cluster CI Error SD antara #1 (${r1.displayName}: [${r1.errorSdCi95[0].toFixed(3)}, ${r1.errorSdCi95[1].toFixed(3)}]) dan #2 (${r2.displayName}: [${r2.errorSdCi95[0].toFixed(3)}, ${r2.errorSdCi95[1].toFixed(3)}]) saling tumpang-tindih (P(Rank #1) = ${r1.bootstrapRank1ProbPct.toFixed(1)}%). Keunggulan #1 atas #2 belum terpisah secara tegas pada tingkat kepercayaan 95%.`
+      : r1
+        ? `Pemisahan peringkat tegas: #1 (${r1.displayName}) mencapai P(Rank #1) = ${r1.bootstrapRank1ProbPct.toFixed(1)}% dengan 95% Cluster CI yang terpisah baik pada B = ${B} replikasi.`
+        : '';
+
+  const bootstrapDiagnostics: MsmaBootstrapDiagnostics = {
+    requestedReplications: B,
+    bootstrapSeed: cleanSeed,
+    validConvergedDraws: validBootCount,
+    heywoodOrSingularDraws: heywoodBootCount,
+    convergenceRatePct: (validBootCount / B) * 100,
+    heywoodDrawRatePct: (heywoodBootCount / B) * 100,
+    statisticalTieTop2,
+    statisticalTieNote
+  };
 
   const correlatedTcNote = main.hasHeywood
     ? 'Kasus Heywood terdeteksi (σ²_ε < 0): pada J = 3 sumber, model Correlated Triple Collocation memiliki 7 parameter untuk 6 momen kovarians sehingga TIDAK teridentifikasi tanpa nilai kovarians galat eksternal. Pemeringkatan TCA klasik diblokir; periksa kurva sensitivitas korelasi galat pada Step 9 atau tambahkan sumber independen ke-4 untuk Extended Collocation.'
@@ -363,6 +407,7 @@ export function runTripleCollocationEngine(
         : main.reason ?? 'Ukuran observasi triplet lengkap terlalu kecil (< 12 baris).',
       estimates
     },
+    bootstrapDiagnostics,
     residualsBySource
   };
 }

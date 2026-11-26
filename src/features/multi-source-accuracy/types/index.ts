@@ -303,6 +303,12 @@ export interface MsmaTransformationRecommendation {
   eligibleOnCurrentData: boolean;
   ineligibilityReason: string | null;
   isPrimaryRecommendation: boolean;
+  empiricalScore: number;
+  identifiableAfter: boolean;
+  hasHeywoodAfter: boolean;
+  maxQuadDeltaR2Before: number;
+  maxQuadDeltaR2After: number;
+  topSourceAfter: string | null;
   status: 'Belum diterapkan' | 'Diterapkan' | 'Ditolak';
   beforeAfterPreview: {
     meanSkewnessBefore: number;
@@ -321,6 +327,9 @@ export interface MsmaTransformationBundle {
   missingHandling: 'COMPLETE_CASE' | 'WITHIN_ENTITY_INTERPOLATE';
   primaryRecommendationId: MsmaTransformationId;
   primarySelectionReason: string;
+  anyCandidateIdentifiable: boolean;
+  identifiableCandidateIds: MsmaTransformationId[];
+  noSilverBulletWarning: string | null;
   recommendations: MsmaTransformationRecommendation[];
 }
 
@@ -385,6 +394,7 @@ export interface MsmaSourceAccuracyEstimate {
   totalComparableErrorVariance: number;
   errorVarianceCi95: [number, number];
   errorStandardDeviation: number;
+  errorSdBootstrapSe: number;
   errorSdCi95: [number, number];
   relativeErrorPct: number;
   etcCorrelationR2: number;
@@ -446,11 +456,24 @@ export interface MsmaMultiSourceCollocationResult {
   estimatedErrorCovariances: MsmaErrorCovariancePair[];
 }
 
+export interface MsmaBootstrapDiagnostics {
+  requestedReplications: number;
+  bootstrapSeed: number;
+  validConvergedDraws: number;
+  heywoodOrSingularDraws: number;
+  convergenceRatePct: number;
+  heywoodDrawRatePct: number;
+  statisticalTieTop2: boolean;
+  statisticalTieNote: string;
+}
+
 export interface MsmaEstimationBundle {
   executedMethod: MsmaMethodId;
   executedMethodLabel: string;
   uncertaintyMethod: 'ENTITY_CLUSTER_BOOTSTRAP' | 'ANALYTICAL_AND_CLUSTER_BOOTSTRAP' | 'NONE_BLOCKED';
   bootstrapReplications: number;
+  bootstrapSeed: number;
+  bootstrapDiagnostics: MsmaBootstrapDiagnostics;
   workingScaleNote: string;
   twoSourceResult: MsmaTwoSourceResult | null;
   tcaResult: MsmaTcaResult | null;
@@ -593,6 +616,7 @@ export interface MsmaConfigurableSnapshot {
   demingLambdaRatio: number;
   demingLambdaExternalKnown: boolean;
   bootstrapReplications: number;
+  bootstrapSeed?: number;
 }
 
 export interface MsmaAuditTrailEntry {

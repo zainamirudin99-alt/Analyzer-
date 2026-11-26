@@ -330,6 +330,10 @@ export const MsmaFinalReportStep: React.FC<{
                         <td>
                           <strong>{fmtAdaptive(e.errorStandardDeviation)}</strong>
                           <br />
+                          <span style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 700 }}>
+                            SE_boot = {fmtAdaptive(e.errorSdBootstrapSe)}
+                          </span>
+                          <br />
                           <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                             [{fmtAdaptive(e.errorSdCi95[0])}, {fmtAdaptive(e.errorSdCi95[1])}]
                           </span>
@@ -372,6 +376,16 @@ export const MsmaFinalReportStep: React.FC<{
               </p>
             </section>
           </div>
+
+          {/* Methodological Reference Decision Box in Final Report */}
+          <section className="card" style={{ padding: '16px 18px', borderLeft: '4px solid var(--warn)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 800, color: 'var(--text)' }}>
+              J.9c. Batas Klaim Rujukan: Akurasi Relatif Terbaik vs Kebenaran Mutlak (Ground Truth)
+            </h4>
+            <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              Peringkat pada laporan ini mengukur <strong>presisi dan akurasi relatif</strong> terhadap sinyal laten konsensus antarsumber (varians kesalahan acak terkalibrasi σ̂²_ε terendah), <strong>bukan kebenaran absolut bebas bias (Ground Truth)</strong>. Gunakan sumber Peringkat #1 sebagai rujukan indikator panel paling konsisten apabila konstruk fisik sepadan, bebas kasus Heywood, tidak terjadi tumpang-tindih lebar 95% CI ({result.estimation.bootstrapDiagnostics.statisticalTieTop2 ? 'terdeteksi indikasi Statistical Tie antara #1 dan #2' : 'pemisahan 95% CI tegas'}), dan stabil pada uji ketahanan Step 9 ({result.robustness.rankingStabilityPct.toFixed(1)}%).
+            </p>
+          </section>
         </div>
       </div>
 
