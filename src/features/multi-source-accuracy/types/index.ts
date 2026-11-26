@@ -160,11 +160,55 @@ export interface MsmaConstructClassificationResult {
   checks: MsmaConstructDimensionCheck[];
   primaryWarning: string | null;
   harmonizationPossible: boolean;
+  isExploratoryEmpiricalBridge: boolean;
   harmonizationMethodSummary: string;
   propagatedConversionVarianceBySource: Record<string, number>;
   allowsJointCollocationRanking: boolean;
   classificationReasons: string[];
   alternativeResearchRecommendations: string[];
+}
+
+export type MsmaConversionRecommendationTier =
+  | 'EXACT_METRIC'
+  | 'EMPIRICAL_SAME_GAS_BRIDGE'
+  | 'CROSS_POLLUTANT_OR_WEAK';
+
+export interface MsmaStep4SourceRecommendation {
+  sourceId: string;
+  displayName: string;
+  sourceUnit: string;
+  targetUnit: string;
+  sourceSpecies: string;
+  targetSpecies: string;
+  tier: MsmaConversionRecommendationTier;
+  shouldApplyConversion: boolean;
+  nPairedObs: number;
+  pearsonR: number;
+  rSquared: number;
+  recommendedSlope: number;
+  recommendedIntercept: number;
+  recommendedUncertaintySd: number;
+  recommendedFormulaNote: string;
+  recommendedLiteratureRef: string;
+  rationale: string;
+  caveatWarning: string;
+}
+
+export interface MsmaStep4ConversionAdvisor {
+  referenceSourceId: string;
+  referenceSourceName: string;
+  referenceUnit: string;
+  overallTier:
+    | 'SAME_CONSTRUCT'
+    | 'EXACT_METRIC_READY'
+    | 'EXPLORATORY_SAME_GAS'
+    | 'CROSS_POLLUTANT_NOT_RECOMMENDED';
+  headlineRecommendation: string;
+  scientificExplanation: string;
+  probeIdentifiableIfApplied: boolean;
+  probeHasHeywoodIfApplied: boolean;
+  probeTopSourceIfApplied: string | null;
+  sourceRecommendations: MsmaStep4SourceRecommendation[];
 }
 
 export interface MsmaDescriptiveSourceRow {
@@ -585,6 +629,7 @@ export interface MsmaFullAnalysisResult {
   computedAt: string;
   panel: MsmaPanelStructureResult;
   classification: MsmaConstructClassificationResult;
+  step4Advisor: MsmaStep4ConversionAdvisor;
   descriptives: MsmaDescriptiveBundle;
   decision: SelectMeasurementMethodOutput;
   diagnostics: MsmaDiagnosticsBundle;

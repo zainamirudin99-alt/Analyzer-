@@ -454,4 +454,81 @@ describe('MSMA Option 4 — Statistical Engine & Synthetic Benchmarks (Section Q
     expect(se2).toBeGreaterThan(0);
     expect(se1).not.toBe(se2);
   });
+
+  it('Step 4 Conversion Advisor recommends empirical CO2 bridge + RMSE sigma_conv, exact metric scaling, and flags cross-pollutant risk', () => {
+    // 1. Same-gas Contoh B preset (CO2 ton/yr vs XCO2 ppm vs Sensor ppm)
+    const { workbook: wbB, config: cfgB } = makeDefaultConfigFromPreset(1);
+    const resB = runFullMsmaPipeline(wbB, cfgB);
+    expect(resB.step4Advisor.overallTier).toBe('EXPLORATORY_SAME_GAS');
+    expect(resB.step4Advisor.sourceRecommendations.length).toBe(2);
+    const recSat = resB.step4Advisor.sourceRecommendations[0];
+    expect(recSat.tier).toBe('EMPIRICAL_SAME_GAS_BRIDGE');
+    expect(recSat.shouldApplyConversion).toBe(true);
+    expect(recSat.recommendedSlope).toBeGreaterThan(10000);
+    expect(recSat.recommendedUncertaintySd).toBeGreaterThan(0);
+    expect(recSat.recommendedFormulaNote).toContain('Jembatan Kalibrasi Empiris');
+    expect(recSat.recommendedLiteratureRef).toContain('Yang et al.');
+
+    // Applying recommended empirical bridges enables harmonized pipeline + flags exploratory bridge
+    const appliedCfgB: MsmaConfigurableSnapshot = {
+      ...cfgB,
+      sources: cfgB.sources.map((s, idx) => {
+        if (idx === 0) return s;
+        const r = resB.step4Advisor.sourceRecommendations.find(x => x.sourceId === s.id)!;
+        return {
+          ...s,
+          conversionModelEnabled: true,
+          conversionSlope: r.recommendedSlope,
+          conversionIntercept: r.recommendedIntercept,
+          conversionUncertaintySd: r.recommendedUncertaintySd,
+          conversionFormulaNote: r.recommendedFormulaNote,
+          conversionLiteratureRef: r.recommendedLiteratureRef
+        };
+      })
+    };
+    const resBApplied = runFullMsmaPipeline(wbB, appliedCfgB);
+    expect(resBApplied.classification.harmonizationPossible).toBe(true);
+    expect(resBApplied.classification.isExploratoryEmpiricalBridge).toBe(true);
+    expect(resBApplied.estimation.tcaResult?.isIdentifiable).toBe(true);
+
+    // 2. Cross-pollutant Contoh B (CO2 Gg vs Sentinel-5P NO2 vs SPKU PM2.5) -> advises NOT forcing conversion while still pre-computing exploratory draft
+    const rowsCross: Array<Record<string, unknown>> = [];
+    for (let g = 1; g <= 10; g++) {
+      for (let t = 2020; t <= 2022; t++) {
+        rowsCross.push({
+          Kota: `K${g}`,
+          Tahun: t,
+          Pelaporan_Mandiri_Emisi_Gg_CO2: 100 + g * 12 + t,
+          Data_Satelit_Sentinel_5P_molec_cm2: 4 + g * 0.5,
+          Data_Sensor_Lapangan_SPKU_PM25: 18 + g * 2.1
+        });
+      }
+    }
+    const shCross = buildRawSheetFromObjects('CrossPol', rowsCross);
+    const wbCross = validateWorkbookForMsma('CrossPol.xlsx', 4096, 'upload', [shCross]);
+    const srcCross = autoSuggestMeasurementSources(profileSheetColumns(shCross), 'Kota', 'Tahun');
+    const resCross = runFullMsmaPipeline(wbCross, {
+      activeSheetName: 'CrossPol',
+      headerRowIndex: 0,
+      entityColumn: 'Kota',
+      timeColumn: 'Tahun',
+      sources: srcCross,
+      classificationOverride: null,
+      userConfirmedClassification: false,
+      activeTransformation: 'NONE',
+      rejectedTransformations: [],
+      dropDuplicates: false,
+      outlierHandling: 'KEEP_ALL',
+      missingHandling: 'COMPLETE_CASE',
+      preferredMethodOverride: null,
+      demingLambdaRatio: 1,
+      demingLambdaExternalKnown: false,
+      bootstrapReplications: 150,
+      bootstrapSeed: 20261126
+    });
+    expect(resCross.classification.finalClassification).toBe('CONTOH_B');
+    expect(resCross.step4Advisor.overallTier).toBe('CROSS_POLLUTANT_NOT_RECOMMENDED');
+    expect(resCross.step4Advisor.sourceRecommendations[0].shouldApplyConversion).toBe(false);
+    expect(resCross.step4Advisor.sourceRecommendations[0].recommendedLiteratureRef.length).toBeGreaterThan(5);
+  });
 });

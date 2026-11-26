@@ -15,6 +15,7 @@ import { getMethodHumanLabel, selectMeasurementMethod } from './decision-engine'
 import { computeDescriptiveAndQualityAnalysis } from './descriptive-statistics';
 import { runMethodDiagnostics } from './diagnostics';
 import { classifyMeasurementConstructs } from './measurement-classification';
+import { evaluateStep4ConversionAdvisor } from './conversion-advisor';
 import { runMultiSourceCollocationEngine } from './n-cornered-hat-ec';
 import { detectPanelStructure } from './panel-detection';
 import {
@@ -47,6 +48,14 @@ export function runFullMsmaPipeline(
     config.sources,
     config.classificationOverride,
     config.userConfirmedClassification
+  );
+
+  const step4Advisor = evaluateStep4ConversionAdvisor(
+    activeSheet,
+    panel.entityColumn,
+    panel.timeColumn,
+    config.sources,
+    classification
   );
 
   const baseObservations = extractAlignedBaseObservations(
@@ -375,6 +384,7 @@ export function runFullMsmaPipeline(
     computedAt: new Date().toISOString(),
     panel,
     classification,
+    step4Advisor,
     descriptives,
     decision,
     diagnostics,
@@ -442,8 +452,12 @@ function buildDualLevelInterpretations(params: {
       ? ` Selain itu, Extended Collocation mendeteksi kovarians galat lintas-sumber signifikan pada pasangan ${estimation.multiSourceResult.estimatedErrorCovariances.map(c => `${c.sourceAName}–${c.sourceBName} (r̂_ε = ${c.estimatedErrorCorrelation.toFixed(3)})`).join(', ')}.`
       : '';
 
+  const bridgeNote = classification.isExploratoryEmpiricalBridge
+    ? ' [CATATAN MODE EKSPLORATORI CONTOH B: Sumber berkonstruk fisik berbeda diharmonisasi memakai jembatan regresi empiris beserta penalti propagasi σ²_conv; bukan pengganti model inversi fisika murni.]'
+    : '';
+
   return {
-    technicalInterpretation: `Berdasarkan estimasi ${estimation.executedMethodLabel} pada struktur panel G = ${panel.nEntities} entitas × T = ${panel.nPeriods} periode (N_CC = ${estimation.tcaResult?.nCompleteTriplets ?? estimation.multiSourceResult?.nCompleteCases ?? 0}; ${estimation.bootstrapReplications} replikasi Entity-Cluster Bootstrap), urutan akurasi relatif dari varians galat terkalibrasi terendah ke tertinggi adalah: ${rankingListStr}.${ecNote} Uji ketahanan spesifikasi pada Step 9 mencatat stabilitas peringkat #1 sebesar ${robustness.rankingStabilityPct.toFixed(1)}%. Seluruh inferensi berlaku relatif terhadap sinyal laten bersama di bawah asumsi ortogonalitas galat dan bebas common-mode bias absolut.`,
+    technicalInterpretation: `Berdasarkan estimasi ${estimation.executedMethodLabel} pada struktur panel G = ${panel.nEntities} entitas × T = ${panel.nPeriods} periode (N_CC = ${estimation.tcaResult?.nCompleteTriplets ?? estimation.multiSourceResult?.nCompleteCases ?? 0}; ${estimation.bootstrapReplications} replikasi Entity-Cluster Bootstrap), urutan akurasi relatif dari varians galat terkalibrasi terendah ke tertinggi adalah: ${rankingListStr}.${ecNote}${bridgeNote} Uji ketahanan spesifikasi pada Step 9 mencatat stabilitas peringkat #1 sebesar ${robustness.rankingStabilityPct.toFixed(1)}%. Seluruh inferensi berlaku relatif terhadap sinyal laten bersama di bawah asumsi ortogonalitas galat dan bebas common-mode bias absolut.`,
     simpleInterpretation: `Berdasarkan estimasi ${estimation.executedMethodLabel}, sumber ${best.displayName} memiliki estimasi error variance paling rendah (simpangan galat ${fmtAdaptive(best.errorStandardDeviation)} ${best.unit}) dibandingkan sumber lainnya${second ? ` seperti ${second.displayName} (${fmtAdaptive(second.errorStandardDeviation)} ${second.unit})` : ''}. Dengan asumsi model terpenuhi, hasil ini menunjukkan bahwa ${best.displayName} mempunyai akurasi relatif paling baik dan paling konsisten di antara sumber pengukuran yang dianalisis (stabil pada ${robustness.rankingStabilityPct.toFixed(1)}% skenario pengujian ulang).`
   };
 }

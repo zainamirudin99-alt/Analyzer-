@@ -62,6 +62,7 @@ import {
   MsmaTimeSeriesChart
 } from './MsmaCharts';
 import { MsmaFinalReportStep } from './MsmaFinalReportStep';
+import { MsmaStep4ConversionSection } from './MsmaStep4ConversionSection';
 import {
   MsmaBibliographyModal,
   MsmaGlossaryModal,
@@ -1678,185 +1679,85 @@ export const MultiSourceAccuracyTab: React.FC = () => {
                 </div>
               </div>
 
-              {/* Physical Conversion Model Form when Contoh B */}
+              {/* Physical Conversion Model Form & System Recommendations when Contoh B */}
               {analysis.classification.finalClassification === 'CONTOH_B' && (
-                <div className="card" style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div>
-                    <h4 style={{ margin: 0, fontSize: '14.5px', fontWeight: 800, color: 'var(--text)' }}>
-                      Pemeriksaan Model Konversi Fisik &amp; Propagasi Uncertainty (Contoh B)
-                    </h4>
-                    <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                      Standardisasi Z-score, Min-Max, atau normalisasi persentil <strong>ditolak</strong> karena tidak menyamakan konstruk fisik. Jika Anda memiliki persamaan konversi fisik terverifikasi (mis. hasil model inversi transpor atmosfer dengan simpangan baku ketidakpastian konversi), aktifkan di bawah ini.
-                    </p>
-                  </div>
-
-                  {config.sources.slice(1).map(src => (
-                    <div key={src.id} style={{ padding: '12px', borderRadius: '10px', background: 'var(--surface-muted)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 800 }}>
-                        <input
-                          type="checkbox"
-                          checked={src.conversionModelEnabled}
-                          onChange={e =>
-                            commitChange(
-                              prev => ({
-                                ...prev,
-                                sources: prev.sources.map(s =>
-                                  s.id === src.id ? { ...s, conversionModelEnabled: e.target.checked } : s
-                                )
-                              }),
-                              4,
-                              'Toggle Model Konversi Fisik',
-                              `Model konversi "${src.displayName}": ${e.target.checked}.`
-                            )
-                          }
-                        />
-                        <span>Aktifkan Konversi Fisik untuk {src.displayName} ({src.unit} → {config.sources[0]?.unit})</span>
-                      </label>
-
-                      {src.conversionModelEnabled && (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(185px, 1fr))', gap: '8px' }}>
-                          <div>
-                            <label htmlFor={`msma-conv-slope-${src.id}`} style={{ fontSize: '11px', fontWeight: 700 }}>
-                              Slope Konversi Fisik
-                            </label>
-                            <input
-                              id={`msma-conv-slope-${src.id}`}
-                              type="number"
-                              step="any"
-                              value={src.conversionSlope}
-                              onChange={e =>
-                                commitChange(
-                                  prev => ({
-                                    ...prev,
-                                    sources: prev.sources.map(s =>
-                                      s.id === src.id ? { ...s, conversionSlope: Number(e.target.value) || 1 } : s
-                                    )
-                                  }),
-                                  4,
-                                  'Ubah Slope Konversi',
-                                  `Slope konversi ${src.displayName} = ${e.target.value}`
-                                )
+                <MsmaStep4ConversionSection
+                  sources={config.sources}
+                  classification={analysis.classification}
+                  advisor={analysis.step4Advisor}
+                  onApplyAllRecommendations={() =>
+                    commitChange(
+                      prev => ({
+                        ...prev,
+                        sources: prev.sources.map((s, idx) => {
+                          if (idx === 0) return s;
+                          const rec = analysis.step4Advisor.sourceRecommendations.find(
+                            r => r.sourceId === s.id
+                          );
+                          if (!rec) return s;
+                          return {
+                            ...s,
+                            conversionModelEnabled: true,
+                            conversionSlope: rec.recommendedSlope,
+                            conversionIntercept: rec.recommendedIntercept,
+                            conversionUncertaintySd: rec.recommendedUncertaintySd,
+                            conversionFormulaNote: rec.recommendedFormulaNote,
+                            conversionLiteratureRef: rec.recommendedLiteratureRef
+                          };
+                        })
+                      }),
+                      4,
+                      'Terapkan Semua Rekomendasi Konversi Step 4',
+                      'Mengisi otomatis parameter Slope, Intercept, σ_conv, Persamaan, dan Referensi sesuai rekomendasi sistem.'
+                    )
+                  }
+                  onApplySingleRecommendation={rec =>
+                    commitChange(
+                      prev => ({
+                        ...prev,
+                        sources: prev.sources.map(s =>
+                          s.id === rec.sourceId
+                            ? {
+                                ...s,
+                                conversionModelEnabled: true,
+                                conversionSlope: rec.recommendedSlope,
+                                conversionIntercept: rec.recommendedIntercept,
+                                conversionUncertaintySd: rec.recommendedUncertaintySd,
+                                conversionFormulaNote: rec.recommendedFormulaNote,
+                                conversionLiteratureRef: rec.recommendedLiteratureRef
                               }
-                              style={{ width: '100%', minHeight: '40px', padding: '6px 8px', fontSize: '16px', borderRadius: '6px', border: '1px solid var(--border)' }}
-                            />
-                          </div>
-                          <div>
-                            <label htmlFor={`msma-conv-int-${src.id}`} style={{ fontSize: '11px', fontWeight: 700 }}>
-                              Intercept Konversi
-                            </label>
-                            <input
-                              id={`msma-conv-int-${src.id}`}
-                              type="number"
-                              step="any"
-                              value={src.conversionIntercept}
-                              onChange={e =>
-                                commitChange(
-                                  prev => ({
-                                    ...prev,
-                                    sources: prev.sources.map(s =>
-                                      s.id === src.id ? { ...s, conversionIntercept: Number(e.target.value) || 0 } : s
-                                    )
-                                  }),
-                                  4,
-                                  'Ubah Intercept Konversi',
-                                  `Intercept konversi ${src.displayName} = ${e.target.value}`
-                                )
-                              }
-                              style={{ width: '100%', minHeight: '40px', padding: '6px 8px', fontSize: '16px', borderRadius: '6px', border: '1px solid var(--border)' }}
-                            />
-                          </div>
-                          <div>
-                            <label htmlFor={`msma-conv-sd-${src.id}`} style={{ fontSize: '11px', fontWeight: 700 }}>
-                              Uncertainty Konversi SD (σ_conv)
-                            </label>
-                            <input
-                              id={`msma-conv-sd-${src.id}`}
-                              type="number"
-                              step="any"
-                              min="0"
-                              value={src.conversionUncertaintySd}
-                              onChange={e =>
-                                commitChange(
-                                  prev => ({
-                                    ...prev,
-                                    sources: prev.sources.map(s =>
-                                      s.id === src.id ? { ...s, conversionUncertaintySd: Math.max(0, Number(e.target.value) || 0) } : s
-                                    )
-                                  }),
-                                  4,
-                                  'Ubah Uncertainty Konversi',
-                                  `Uncertainty SD ${src.displayName} = ${e.target.value}`
-                                )
-                              }
-                              style={{ width: '100%', minHeight: '40px', padding: '6px 8px', fontSize: '16px', borderRadius: '6px', border: '1px solid var(--border)' }}
-                            />
-                          </div>
-                          <div>
-                            <label htmlFor={`msma-conv-eq-${src.id}`} style={{ fontSize: '11px', fontWeight: 700 }}>
-                              Dokumentasi Persamaan
-                            </label>
-                            <input
-                              id={`msma-conv-eq-${src.id}`}
-                              type="text"
-                              placeholder="Mis. Box-model mass balance..."
-                              value={src.conversionFormulaNote}
-                              onChange={e =>
-                                commitChange(
-                                  prev => ({
-                                    ...prev,
-                                    sources: prev.sources.map(s =>
-                                      s.id === src.id ? { ...s, conversionFormulaNote: e.target.value } : s
-                                    )
-                                  }),
-                                  4,
-                                  'Dokumentasi Model Konversi',
-                                  'Catatan rumus konversi diperbarui.'
-                                )
-                              }
-                              style={{ width: '100%', minHeight: '40px', padding: '6px 8px', fontSize: '16px', borderRadius: '6px', border: '1px solid var(--border)' }}
-                            />
-                          </div>
-                          <div>
-                            <label htmlFor={`msma-conv-ref-${src.id}`} style={{ fontSize: '11px', fontWeight: 700 }}>
-                              Referensi Ilmiah Konversi
-                            </label>
-                            <input
-                              id={`msma-conv-ref-${src.id}`}
-                              type="text"
-                              placeholder="Mis. Yang et al. (2023)"
-                              value={src.conversionLiteratureRef}
-                              onChange={e =>
-                                commitChange(
-                                  prev => ({
-                                    ...prev,
-                                    sources: prev.sources.map(s =>
-                                      s.id === src.id ? { ...s, conversionLiteratureRef: e.target.value } : s
-                                    )
-                                  }),
-                                  4,
-                                  'Referensi Konversi',
-                                  'Sumber literatur konversi diperbarui.'
-                                )
-                              }
-                              style={{ width: '100%', minHeight: '40px', padding: '6px 8px', fontSize: '16px', borderRadius: '6px', border: '1px solid var(--border)' }}
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-
-                  {analysis.classification.alternativeResearchRecommendations.length > 0 && (
-                    <div style={{ padding: '12px 14px', borderRadius: '8px', background: 'var(--warn-bg)', border: '1px solid var(--warn-border)', fontSize: '12.5px' }}>
-                      <strong>Rekomendasi Penelitian Alternatif (Tanpa Konversi Langsung):</strong>
-                      <ul style={{ margin: '6px 0 0', paddingLeft: '18px' }}>
-                        {analysis.classification.alternativeResearchRecommendations.map((rec, i) => (
-                          <li key={i}>{rec}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
+                            : s
+                        )
+                      }),
+                      4,
+                      `Isi Rekomendasi Konversi ${rec.displayName}`,
+                      `Mengisi parameter konversi ${rec.displayName} (Slope=${rec.recommendedSlope}, σ_conv=${rec.recommendedUncertaintySd}).`
+                    )
+                  }
+                  onDisableAllConversions={() =>
+                    commitChange(
+                      prev => ({
+                        ...prev,
+                        sources: prev.sources.map(s => ({ ...s, conversionModelEnabled: false }))
+                      }),
+                      4,
+                      'Nonaktifkan Konversi Paksa Contoh B',
+                      'Menonaktifkan model konversi dan mempertahankan pemisahan konstruk Contoh B.'
+                    )
+                  }
+                  onUpdateSource={(sourceId, updater, actionLabel, detail) =>
+                    commitChange(
+                      prev => ({
+                        ...prev,
+                        sources: prev.sources.map(s => (s.id === sourceId ? updater(s) : s))
+                      }),
+                      4,
+                      actionLabel,
+                      detail
+                    )
+                  }
+                  onGoToStep3={() => goToStep(3)}
+                />
               )}
             </div>
           )}

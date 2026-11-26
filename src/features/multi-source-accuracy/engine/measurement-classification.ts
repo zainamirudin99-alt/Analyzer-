@@ -18,22 +18,25 @@ function canonicalUnitGroup(unit: string): {
   if (!u || u === 'satuan asli') {
     return { group: 'UNKNOWN_OR_CUSTOM', deterministicMultiplierToKt: null };
   }
-  if (/^(kt|kiloton|kilo\s*ton)/i.test(u)) {
+  if (/^(kt|gg|kiloton|kilo\s*ton|gigagram)/i.test(u)) {
     return { group: 'MASS_RATE', deterministicMultiplierToKt: 1 };
   }
-  if (/^(mt|megaton|juta\s*ton)/i.test(u)) {
+  if (/^(mt|tg|megaton|teragram|juta\s*ton)/i.test(u)) {
     return { group: 'MASS_RATE', deterministicMultiplierToKt: 1000 };
   }
-  if (/^(t|ton|tonne)(\s|\/|$)/i.test(u)) {
+  if (/^(t|ton|tonne|mg)(\s|\/|$)/i.test(u)) {
     return { group: 'MASS_RATE', deterministicMultiplierToKt: 0.001 };
   }
   if (/^(kg)(\s|\/|$)/i.test(u)) {
     return { group: 'MASS_RATE', deterministicMultiplierToKt: 1e-6 };
   }
-  if (/ppm|ppb|xco2|mole/i.test(u)) {
+  if (/molec|cm2|cm²/i.test(u)) {
     return { group: 'MOLE_FRACTION', deterministicMultiplierToKt: null };
   }
-  if (/ug\/m3|mg\/m3|µg\/m3/i.test(u)) {
+  if (/ppm|ppb|xco2/i.test(u)) {
+    return { group: 'MOLE_FRACTION', deterministicMultiplierToKt: null };
+  }
+  if (/ug\/m3|mg\/m3|µg\/m³|µg\/m3/i.test(u)) {
     return { group: 'CONCENTRATION_DENSITY', deterministicMultiplierToKt: null };
   }
   return { group: 'UNKNOWN_OR_CUSTOM', deterministicMultiplierToKt: null };
@@ -53,6 +56,7 @@ export function classifyMeasurementConstructs(
       checks: [],
       primaryWarning: 'Pilih minimal 2 sumber pengukuran terlebih dahulu pada Step 3.',
       harmonizationPossible: false,
+      isExploratoryEmpiricalBridge: false,
       harmonizationMethodSummary: 'Belum cukup sumber pengukuran untuk dievaluasi.',
       propagatedConversionVarianceBySource: {},
       allowsJointCollocationRanking: false,
@@ -218,6 +222,15 @@ export function classifyMeasurementConstructs(
             s.conversionLiteratureRef.trim().length >= 4)
       ));
 
+  const isExploratoryEmpiricalBridge =
+    harmonizationPossible &&
+    finalClassification === 'CONTOH_B' &&
+    sources.some(
+      s =>
+        s.conversionModelEnabled &&
+        /eksploratori|jembatan kalibrasi empiris|lintas-polutan/i.test(s.conversionFormulaNote)
+    );
+
   const allowsJointCollocationRanking =
     finalClassification === 'CONTOH_A' || (finalClassification === 'CONTOH_B' && harmonizationPossible);
 
@@ -236,9 +249,11 @@ export function classifyMeasurementConstructs(
       ? sameUnitExact
         ? 'Konstruk dan satuan sudah sepadan; tidak diperlukan konversi lintas-besaran fisik.'
         : 'Penyetaraan faktor skalar metrik deterministik (unitScaleMultiplier) diterapkan sebelum evaluasi collocation.'
-      : harmonizationPossible
-        ? 'Harmonisasi menggunakan model konversi fisik terdokumentasi dengan propagasi varians ketidakpastian konversi (σ²_total = σ²_ε + σ²_konversi).'
-        : 'Harmonisasi langsung TIDAK valid tanpa model inversi transpor atmosfer / keseimbangan massa fisik. Pemeringkatan akurasi bersama diblokir.';
+      : isExploratoryEmpiricalBridge
+        ? 'Mode Eksploratori Aktif: Harmonisasi menggunakan Jembatan Kalibrasi Empiris (bukan model inversi fisika murni) dengan propagasi penuh RMSE ketidakpastian konversi (σ²_total = σ²_ε + σ²_conv).'
+        : harmonizationPossible
+          ? 'Harmonisasi menggunakan model konversi fisik terdokumentasi dengan propagasi varians ketidakpastian konversi (σ²_total = σ²_ε + σ²_konversi).'
+          : 'Harmonisasi langsung TIDAK valid tanpa model inversi transpor atmosfer / keseimbangan massa fisik. Pemeringkatan akurasi bersama diblokir.';
 
   const alternativeResearchRecommendations =
     finalClassification === 'CONTOH_B' && !harmonizationPossible
@@ -257,6 +272,7 @@ export function classifyMeasurementConstructs(
     checks,
     primaryWarning,
     harmonizationPossible,
+    isExploratoryEmpiricalBridge,
     harmonizationMethodSummary,
     propagatedConversionVarianceBySource,
     allowsJointCollocationRanking,
